@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -14,7 +14,7 @@ from iwanttowatch.availability import (
     regions,
     watchable,
 )
-from iwanttowatch.models import LibraryItem
+from iwanttowatch.models import Availability, LibraryItem
 
 router = APIRouter(prefix="/api/v1")
 
@@ -66,10 +66,14 @@ def list_providers(user: CurrentUser, tmdb: Tmdb, region: Region | None = None) 
 
 
 @router.put("/me/streaming")
-def set_streaming(body: StreamingUpdate, user: CurrentUser, session: DbSession) -> Me:
+def set_streaming(
+    body: StreamingUpdate, user: CurrentUser, session: DbSession, request: Request
+) -> Me:
     user.region = body.region
     user.subscriptions = list(dict.fromkeys(body.subscriptions))
     session.commit()
+    # Candidates come partly from the user's services, so rebuild the feed.
+    request.app.state.feed_worker.request(user.id)
     return Me.model_validate(user)
 
 
@@ -89,20 +93,21 @@ def read_availability(
             )
         )
     )
-    result = []
-    for tmdb_id in dict.fromkeys(ids):
-        row = rows.get(tmdb_id)
-        result.append(
-            TitleAvailability(
-                tmdb_id=tmdb_id,
-                on_jellyfin=tmdb_id in in_library,
-                offers=[Offer(**o) for o in watchable(row.offers, user.subscriptions)]
-                if row
-                else [],
-                link=row.link if row else None,
-                # SQLite returns stored UTC times without their time zone.
-                checked_at=row.checked_at.replace(tzinfo=UTC) if row else None,
-                stale=is_stale(row) if row else False,
-            )
-        )
-    return result
+    return [
+        title_availability(tmdb_id, rows.get(tmdb_id), tmdb_id in in_library, user.subscriptions)
+        for tmdb_id in dict.fromkeys(ids)
+    ]
+
+
+def title_availability(
+    tmdb_id: int, row: Availability | None, on_jellyfin: bool, subscriptions: list[int]
+) -> TitleAvailability:
+    return TitleAvailability(
+        tmdb_id=tmdb_id,
+        on_jellyfin=on_jellyfin,
+        offers=[Offer(**o) for o in watchable(row.offers, subscriptions)] if row else [],
+        link=row.link if row else None,
+        # SQLite returns stored UTC times without their time zone.
+        checked_at=row.checked_at.replace(tzinfo=UTC) if row else None,
+        stale=is_stale(row) if row else False,
+    )

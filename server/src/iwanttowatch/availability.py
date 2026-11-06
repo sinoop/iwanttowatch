@@ -10,6 +10,7 @@ from datetime import UTC, timedelta
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
 
 from iwanttowatch.db import utcnow
@@ -73,14 +74,25 @@ def availability(
     for tmdb_id, result in zip(due, fetched, strict=True):
         if result is None:
             continue  # Keep the last known offers.
-        row = known.get(tmdb_id)
-        if row is None:
-            row = known[tmdb_id] = Availability(tmdb_id=tmdb_id, region=region)
-            session.add(row)
-        row.offers, row.link = result
-        row.checked_at = utcnow()
+        offers, link = result
+        values = {"offers": offers, "link": link, "checked_at": utcnow()}
+        # An upsert, because a feed build and a page view may check the same title.
+        session.execute(
+            insert(Availability)
+            .values(tmdb_id=tmdb_id, region=region, **values)
+            .on_conflict_do_update(
+                index_elements=[Availability.tmdb_id, Availability.region], set_=values
+            )
+        )
     session.commit()
-    return known
+    return {
+        row.tmdb_id: row
+        for row in session.scalars(
+            select(Availability)
+            .where(Availability.tmdb_id.in_(tmdb_ids), Availability.region == region)
+            .execution_options(populate_existing=True)
+        )
+    }
 
 
 def _fetch(

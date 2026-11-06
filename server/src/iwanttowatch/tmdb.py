@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 from sqlalchemy import Engine, delete, select
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
 
 from iwanttowatch.db import utcnow
@@ -75,9 +76,13 @@ class TmdbClient:
                 return cached
         body = self._request(path, params)
         if cache_for:
+            values = {"body": json.dumps(body), "expires_at": utcnow() + cache_for}
             with Session(self._engine) as session:
-                session.merge(
-                    ApiCache(key=key, body=json.dumps(body), expires_at=utcnow() + cache_for)
+                # An upsert: parallel requests may cache the same response.
+                session.execute(
+                    insert(ApiCache)
+                    .values(key=key, **values)
+                    .on_conflict_do_update(index_elements=[ApiCache.key], set_=values)
                 )
                 session.commit()
         return body

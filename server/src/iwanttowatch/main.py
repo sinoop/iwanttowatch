@@ -5,10 +5,11 @@ from fastapi.responses import FileResponse
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
-from iwanttowatch.api import auth, imports, jellyfin, library, reactions, streaming
+from iwanttowatch.api import auth, feed, imports, jellyfin, library, reactions, streaming
 from iwanttowatch.api import settings as settings_api
 from iwanttowatch.config import Settings
 from iwanttowatch.db import create_db_engine, upgrade_database
+from iwanttowatch.feed import FeedWorker
 from iwanttowatch.imports import ImportWorker
 from iwanttowatch.jellyfin import JellyfinWorker
 
@@ -24,7 +25,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="iWantToWatch", version="0.1.0")
     app.state.engine = engine
     app.state.tmdb_base_url = settings.tmdb_base_url
-    app.state.import_worker = ImportWorker(engine, settings.tmdb_base_url)
+    app.state.feed_worker = FeedWorker(engine, settings.tmdb_base_url)
+    app.state.feed_worker.start()
+    # A finished import changes the user's taste, so their feed is rebuilt.
+    app.state.import_worker = ImportWorker(
+        engine, settings.tmdb_base_url, on_done=app.state.feed_worker.request
+    )
     app.state.import_worker.start()
     app.state.jellyfin_worker = JellyfinWorker(engine, settings.tmdb_base_url)
     app.state.jellyfin_worker.start()
@@ -35,7 +41,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_age=SESSION_MAX_AGE,
         same_site="lax",
     )
-    for module in (auth, settings_api, imports, library, reactions, jellyfin, streaming):
+    for module in (auth, settings_api, imports, library, reactions, jellyfin, streaming, feed):
         app.include_router(module.router)
 
     @app.get("/healthz", include_in_schema=False)

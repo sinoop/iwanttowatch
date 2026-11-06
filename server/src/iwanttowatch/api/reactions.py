@@ -43,7 +43,8 @@ class ReactionUpdate(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=MAX_TAGS)
 
 
-def _title(session: DbSession, request: Request, tmdb_id: int) -> Title:
+def load_title(session: DbSession, request: Request, tmdb_id: int) -> Title:
+    """The title, fetched from TMDb if it isn't stored yet."""
     title = session.get(Title, tmdb_id)
     if title is not None:
         return title
@@ -98,7 +99,7 @@ def _out(title: Title, entry: UserTitle | None) -> TitleReaction:
 def read_reaction(
     tmdb_id: int, user: CurrentUser, session: DbSession, request: Request
 ) -> TitleReaction:
-    title = _title(session, request, tmdb_id)
+    title = load_title(session, request, tmdb_id)
     return _out(title, _entry(session, user.id, tmdb_id))
 
 
@@ -106,7 +107,7 @@ def read_reaction(
 def set_reaction(
     tmdb_id: int, body: ReactionUpdate, user: CurrentUser, session: DbSession, request: Request
 ) -> TitleReaction:
-    title = _title(session, request, tmdb_id)
+    title = load_title(session, request, tmdb_id)
     positive = body.reaction != "disliked"
     tags = list(dict.fromkeys(body.tags))
     for tag in tags:

@@ -444,6 +444,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Feed
+         * @description The user's recommendations, best first. Films they have since watched or rated
+         *     drop out at once; the first visit starts building the feed.
+         */
+        get: operations["read_feed_api_v1_feed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/feed/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Feed */
+        post: operations["refresh_feed_api_v1_feed_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/titles/{tmdb_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Title */
+        get: operations["read_title_api_v1_titles__tmdb_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -467,6 +522,54 @@ export interface components {
             year: number | null;
             /** Poster Path */
             poster_path: string | null;
+        };
+        /** FeedItem */
+        FeedItem: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Original Title */
+            original_title: string;
+            /** Original Language */
+            original_language: string;
+            /** Year */
+            year: number | null;
+            /** Runtime */
+            runtime: number | null;
+            /** Poster Path */
+            poster_path: string | null;
+            /** Genres */
+            genres: string[];
+            /** Moods */
+            moods: string[];
+            /** Match */
+            match: number;
+            /** Reasons */
+            reasons: string[];
+            availability: components["schemas"]["TitleAvailability"];
+        };
+        /** FeedPage */
+        FeedPage: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "none" | "queued" | "building" | "ready" | "failed";
+            /** Step */
+            step: string | null;
+            /** Error */
+            error: string | null;
+            /** Built At */
+            built_at: string | null;
+            /** Total */
+            total: number;
+            /** Items */
+            items: components["schemas"]["FeedItem"][];
+            /** Languages */
+            languages: components["schemas"]["LanguageCount"][];
+            /** Genres */
+            genres: string[];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -800,6 +903,42 @@ export interface components {
             checked_at: string | null;
             /** Stale */
             stale: boolean;
+        };
+        /** TitleDetail */
+        TitleDetail: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Original Title */
+            original_title: string;
+            /** Original Language */
+            original_language: string;
+            /** Year */
+            year: number | null;
+            /** Runtime */
+            runtime: number | null;
+            /** Poster Path */
+            poster_path: string | null;
+            /** Overview */
+            overview: string;
+            /** Tagline */
+            tagline: string;
+            /** Genres */
+            genres: string[];
+            /** Moods */
+            moods: string[];
+            /** Directors */
+            directors: string[];
+            /** Cast */
+            cast: string[];
+            /** Match */
+            match: number | null;
+            /** Reasons */
+            reasons: string[];
+            availability: components["schemas"]["TitleAvailability"];
+            /** Jellyfin Url */
+            jellyfin_url: string | null;
         };
         /** TitleReaction */
         TitleReaction: {
@@ -1688,6 +1827,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TitleAvailability"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_feed_api_v1_feed_get: {
+        parameters: {
+            query?: {
+                available_only?: boolean;
+                language?: string | null;
+                genre?: string | null;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_feed_api_v1_feed_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    read_title_api_v1_titles__tmdb_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleDetail"];
                 };
             };
             /** @description Validation Error */

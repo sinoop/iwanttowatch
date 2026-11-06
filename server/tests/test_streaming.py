@@ -64,6 +64,8 @@ def test_badges_show_only_what_each_person_can_play_in_their_region(
     assert watch_requests(mock) == before + 1
 
     # After three days titles are rechecked; if TMDb fails, the old offers stay, marked stale.
+    # (First let the feed build that changing services started finish its own checks.)
+    client.app.state.feed_worker.wait_until_idle()  # type: ignore[attr-defined]
     with Session(engine) as session:
         session.execute(update(Availability).values(checked_at=utcnow() - timedelta(days=4)))
         set_setting(session, API_KEY_SETTING, "revoked-key-0123456789")

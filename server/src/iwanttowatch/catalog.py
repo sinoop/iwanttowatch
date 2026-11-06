@@ -2,37 +2,81 @@
 
 import re
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from difflib import SequenceMatcher
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
 
 from iwanttowatch.db import utcnow
 from iwanttowatch.models import Title
-from iwanttowatch.tmdb import TmdbClient
+from iwanttowatch.tmdb import TmdbClient, TmdbNotFound
 
 TITLE_REFRESH_AFTER = timedelta(days=30)
 LOOKUP_CACHE = timedelta(days=30)
 DETAIL_APPENDS = "credits,keywords,translations,alternative_titles"
+PARALLEL_REQUESTS = 8
 
 
 def ensure_title(session: Session, tmdb: TmdbClient, tmdb_id: int) -> Title:
     """Return the title, fetching or refreshing its metadata from TMDb when needed."""
     title = session.get(Title, tmdb_id)
-    if title is not None and utcnow() - title.fetched_at.replace(tzinfo=UTC) < TITLE_REFRESH_AFTER:
+    if title is not None and not _stale(title):
         return title
-    details = tmdb.get(f"/movie/{tmdb_id}", {"append_to_response": DETAIL_APPENDS})
-    fields = _title_fields(details)
-    if title is None:
-        title = Title(tmdb_id=tmdb_id, **fields)
-        session.add(title)
-    else:
-        for name, value in fields.items():
-            setattr(title, name, value)
-    title.fetched_at = utcnow()
+    title = _store(session, title, tmdb_id, _details(tmdb, tmdb_id))
     session.flush()
     return title
+
+
+def ensure_titles(session: Session, tmdb: TmdbClient, tmdb_ids: list[int]) -> dict[int, Title]:
+    """Like ensure_title for many films at once, fetching in parallel. Films TMDb
+    doesn't have are left out."""
+    titles = {
+        t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(tmdb_ids)))
+    }
+    due = [i for i in dict.fromkeys(tmdb_ids) if i not in titles or _stale(titles[i])]
+
+    def fetch(tmdb_id: int) -> dict[str, Any] | None:
+        try:
+            return _details(tmdb, tmdb_id)
+        except TmdbNotFound:
+            return None
+
+    with ThreadPoolExecutor(PARALLEL_REQUESTS) as pool:
+        for tmdb_id, details in zip(due, pool.map(fetch, due), strict=True):
+            if details is not None:
+                titles[tmdb_id] = _store(session, titles.get(tmdb_id), tmdb_id, details)
+    session.flush()
+    return titles
+
+
+def _stale(title: Title) -> bool:
+    return utcnow() - title.fetched_at.replace(tzinfo=UTC) >= TITLE_REFRESH_AFTER
+
+
+def _details(tmdb: TmdbClient, tmdb_id: int) -> dict[str, Any]:
+    return tmdb.get(f"/movie/{tmdb_id}", {"append_to_response": DETAIL_APPENDS})
+
+
+def _store(session: Session, title: Title | None, tmdb_id: int, details: dict[str, Any]) -> Title:
+    fields = {**_title_fields(details), "fetched_at": utcnow()}
+    if title is not None:
+        for name, value in fields.items():
+            setattr(title, name, value)
+        return title
+    # An upsert, because imports, Jellyfin syncs, and feed builds run on separate
+    # threads and may add the same film at the same time.
+    session.execute(
+        insert(Title)
+        .values(tmdb_id=tmdb_id, **fields)
+        .on_conflict_do_update(index_elements=[Title.tmdb_id], set_=fields)
+    )
+    stored = session.get(Title, tmdb_id)
+    assert stored is not None
+    return stored
 
 
 def _title_fields(d: dict[str, Any]) -> dict[str, Any]:

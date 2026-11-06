@@ -6,6 +6,7 @@ import logging
 import queue
 import threading
 import zipfile
+from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 
@@ -247,9 +248,16 @@ def _to_date(value: str | None) -> date | None:
 class ImportWorker:
     """Runs import jobs one at a time on a background thread."""
 
-    def __init__(self, engine: Engine, tmdb_base_url: str) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        tmdb_base_url: str,
+        on_done: Callable[[int], None] | None = None,
+    ) -> None:
         self._engine = engine
         self._tmdb_base_url = tmdb_base_url
+        # Called with the user's ID when one of their imports completes.
+        self._on_done = on_done
         self._queue: queue.Queue[int] = queue.Queue()
 
     def start(self) -> None:
@@ -272,6 +280,10 @@ class ImportWorker:
             job_id = self._queue.get()
             try:
                 run_job(self._engine, self._tmdb_base_url, job_id)
+                with Session(self._engine) as session:
+                    job = session.get(ImportJob, job_id)
+                    if job is not None and job.status == "done" and self._on_done:
+                        self._on_done(job.user_id)
             except Exception:
                 log.exception("Import job %s crashed", job_id)
                 with Session(self._engine) as session:

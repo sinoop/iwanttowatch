@@ -111,6 +111,25 @@ def fake_tmdb(request: httpx.Request) -> httpx.Response:
             for n, p in enumerate(CATALOGUE.get(region, []))
         ]
         return httpx.Response(200, json={"results": services[::-1]})
+    if path == "/discover/movie":
+        if params.get("page", "1") != "1":
+            return httpx.Response(200, json={"results": []})
+        language = params.get("with_original_language")
+        providers = {int(p) for p in params.get("with_watch_providers", "").split("|") if p}
+        kinds = params.get("with_watch_monetization_types", "").split("|")
+        region = params.get("watch_region", "")
+
+        def streams(tmdb_id: int) -> bool:
+            offers = WATCH.get(tmdb_id, {}).get(region, {})
+            return any(p["provider_id"] in providers for k in kinds for p in offers.get(k, []))
+
+        hits = [_summary(i) for i, m in MOVIES.items()
+                if (not language or m["lang"] == language) and (not providers or streams(i))]  # fmt: skip
+        return httpx.Response(200, json={"results": hits})
+    if path.startswith("/movie/") and path.endswith("/recommendations"):
+        tmdb_id = int(path.split("/")[2])
+        hits = [_summary(i) for i in MOVIES if i != tmdb_id]
+        return httpx.Response(200, json={"results": hits})
     if path.startswith("/movie/") and path.endswith("/watch/providers"):
         tmdb_id = int(path.split("/")[2])
         if tmdb_id not in MOVIES:

@@ -204,6 +204,38 @@ class Availability(Base):
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Recommendation(Base):
+    """A scored film in a user's discovery feed."""
+
+    __tablename__ = "recommendations"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    tmdb_id: Mapped[int] = mapped_column(ForeignKey("titles.tmdb_id"), primary_key=True)
+    # Calibrated predicted percentile of the user's ratings, 0–1.
+    score: Mapped[float]
+    # Position in the feed after diversity re-ranking.
+    rank: Mapped[int]
+    reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+
+class FeedBuild(Base):
+    """Progress of building a user's feed in the background."""
+
+    __tablename__ = "feed_builds"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    # "queued", "building", "ready", or "failed".
+    status: Mapped[str] = mapped_column(String(16))
+    # What a running build is doing, for the progress message.
+    step: Mapped[str | None]
+    error: Mapped[str | None]
+    built_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ApiCache(Base):
     """Cached responses from external APIs, so re-imports and retries don't refetch."""
 

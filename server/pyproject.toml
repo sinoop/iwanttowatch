@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.162.0",
     "httpx>=0.28.1",
     "itsdangerous>=2.2.0",
+    "numpy>=2.5.4",
     "pydantic-settings>=2.16.2",
     "python-multipart>=0.0.33",
     "sqlalchemy>=2.1.8",
@@ -44,8 +45,9 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.ruff.lint.per-file-ignores]
 # Test fixtures embed real export rows verbatim.
 "tests/*" = ["E501"]
-# The tag vocabulary is a table, one tag per line.
+# The tag and mood vocabularies are tables, one entry per line.
 "src/iwanttowatch/tags.py" = ["E501"]
+"src/iwanttowatch/moods.py" = ["E501"]
 
 [tool.mypy]
 strict = true
