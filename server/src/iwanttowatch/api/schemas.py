@@ -18,6 +18,8 @@ class Me(BaseModel):
 
 class SetupStatus(BaseModel):
     complete: bool
+    # Whether people can sign in with their Jellyfin username and password.
+    jellyfin_login: bool
 
 
 class SetupRequest(BaseModel):

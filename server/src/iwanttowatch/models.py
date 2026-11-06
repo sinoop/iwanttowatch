@@ -90,7 +90,7 @@ class UserTitle(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     tmdb_id: Mapped[int] = mapped_column(ForeignKey("titles.tmdb_id"), index=True)
-    # "imdb", "letterboxd", "app" (rated in iWantToWatch); later "jellyfin", "trakt".
+    # "imdb", "letterboxd", "app" (rated in iWantToWatch), "jellyfin"; later "trakt".
     source: Mapped[str] = mapped_column(String(16))
     # Normalised to 0–10.
     rating: Mapped[float | None]
@@ -150,6 +150,41 @@ class ImportRow(Base):
     tmdb_id: Mapped[int | None]
     candidates: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     message: Mapped[str | None]
+
+
+class LibraryItem(Base):
+    """A movie in the Jellyfin libraries a linked user can see, with their play state.
+
+    Jellyfin can hold several items for one film (editions, duplicates); the user's
+    "jellyfin" UserTitle row merges them.
+    """
+
+    __tablename__ = "library_items"
+    __table_args__ = (UniqueConstraint("user_id", "item_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # Jellyfin's item ID, as 32 lowercase hex digits.
+    item_id: Mapped[str] = mapped_column(String(32), index=True)
+    # Null when the item couldn't be matched to a TMDb movie.
+    tmdb_id: Mapped[int | None] = mapped_column(index=True)
+    name: Mapped[str]
+    year: Mapped[int | None]
+    played: Mapped[bool] = mapped_column(default=False)
+    last_played: Mapped[date | None]
+    favorite: Mapped[bool] = mapped_column(default=False)
+
+
+class ConnectorStatus(Base):
+    """Health of a background connector, shown in Settings."""
+
+    __tablename__ = "connector_status"
+
+    connector: Mapped[str] = mapped_column(String(32), primary_key=True)
+    synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The last sync's error; cleared by the next successful sync.
+    error: Mapped[str | None]
+    webhook_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ApiCache(Base):

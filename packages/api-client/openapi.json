@@ -183,6 +183,78 @@
         }
       }
     },
+    "/api/v1/settings/jellyfin": {
+      "put": {
+        "summary": "Set Jellyfin",
+        "description": "Connect a Jellyfin server; the API key is checked first, then a full sync starts.",
+        "operationId": "set_jellyfin_api_v1_settings_jellyfin_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JellyfinUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Disconnect Jellyfin",
+        "description": "Stop syncing. Watch history already synced stays; the library listing goes.",
+        "operationId": "disconnect_jellyfin_api_v1_settings_jellyfin_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/jellyfin/sync": {
+      "post": {
+        "summary": "Sync Jellyfin",
+        "operationId": "sync_jellyfin_api_v1_settings_jellyfin_sync_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings/llm": {
       "put": {
         "summary": "Set Llm",
@@ -696,6 +768,112 @@
           }
         }
       }
+    },
+    "/api/v1/me/jellyfin": {
+      "get": {
+        "summary": "Read Jellyfin Account",
+        "operationId": "read_jellyfin_account_api_v1_me_jellyfin_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JellyfinAccount"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Link Jellyfin Account",
+        "description": "Link the signed-in account to a Jellyfin user, proven by their Jellyfin password.",
+        "operationId": "link_jellyfin_account_api_v1_me_jellyfin_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JellyfinLogin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JellyfinAccount"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Unlink Jellyfin Account",
+        "description": "Unlink Jellyfin and forget everything synced from it.",
+        "operationId": "unlink_jellyfin_account_api_v1_me_jellyfin_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JellyfinAccount"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/jellyfin": {
+      "post": {
+        "summary": "Jellyfin Webhook",
+        "description": "Receive Jellyfin Webhook plugin notifications (Generic destination).\n\nOnly the user and item IDs are used: the item is then re-read from Jellyfin.",
+        "operationId": "jellyfin_webhook_api_v1_webhooks_jellyfin_post",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -946,6 +1124,182 @@
           "message"
         ],
         "title": "ImportRowOut"
+      },
+      "JellyfinAccount": {
+        "properties": {
+          "server_configured": {
+            "type": "boolean",
+            "title": "Server Configured"
+          },
+          "linked": {
+            "type": "boolean",
+            "title": "Linked"
+          },
+          "can_unlink": {
+            "type": "boolean",
+            "title": "Can Unlink"
+          },
+          "library_movies": {
+            "type": "integer",
+            "title": "Library Movies"
+          },
+          "watched": {
+            "type": "integer",
+            "title": "Watched"
+          },
+          "favorites": {
+            "type": "integer",
+            "title": "Favorites"
+          }
+        },
+        "type": "object",
+        "required": [
+          "server_configured",
+          "linked",
+          "can_unlink",
+          "library_movies",
+          "watched",
+          "favorites"
+        ],
+        "title": "JellyfinAccount"
+      },
+      "JellyfinLogin": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "JellyfinLogin"
+      },
+      "JellyfinSettings": {
+        "properties": {
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "linked_users": {
+            "type": "integer",
+            "title": "Linked Users"
+          },
+          "library_movies": {
+            "type": "integer",
+            "title": "Library Movies"
+          },
+          "unmatched": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unmatched"
+          },
+          "unmatched_count": {
+            "type": "integer",
+            "title": "Unmatched Count"
+          },
+          "synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Synced At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "webhook_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook At"
+          },
+          "webhook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "linked_users",
+          "library_movies",
+          "unmatched",
+          "unmatched_count",
+          "synced_at",
+          "error",
+          "webhook_at",
+          "webhook_path"
+        ],
+        "title": "JellyfinSettings"
+      },
+      "JellyfinUpdate": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Url"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "JellyfinUpdate"
       },
       "LanguageCount": {
         "properties": {
@@ -1371,12 +1725,16 @@
           },
           "llm": {
             "$ref": "#/components/schemas/LlmSettings"
+          },
+          "jellyfin": {
+            "$ref": "#/components/schemas/JellyfinSettings"
           }
         },
         "type": "object",
         "required": [
           "tmdb_configured",
-          "llm"
+          "llm",
+          "jellyfin"
         ],
         "title": "ServerSettings"
       },
@@ -1430,11 +1788,16 @@
           "complete": {
             "type": "boolean",
             "title": "Complete"
+          },
+          "jellyfin_login": {
+            "type": "boolean",
+            "title": "Jellyfin Login"
           }
         },
         "type": "object",
         "required": [
-          "complete"
+          "complete",
+          "jellyfin_login"
         ],
         "title": "SetupStatus"
       },

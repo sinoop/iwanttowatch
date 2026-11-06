@@ -15,6 +15,11 @@ export function useServerSettings() {
   return useQuery({
     queryKey: ['settings'],
     queryFn: async () => (await api.GET('/api/v1/settings')).data ?? null,
+    // Until a newly connected Jellyfin finishes its first sync.
+    refetchInterval: (query) => {
+      const jellyfin = query.state.data?.jellyfin
+      return jellyfin?.url && !jellyfin.synced_at && !jellyfin.error ? 2000 : false
+    },
   })
 }
 

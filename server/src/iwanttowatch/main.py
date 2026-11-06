@@ -5,11 +5,12 @@ from fastapi.responses import FileResponse
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
-from iwanttowatch.api import auth, imports, library, reactions
+from iwanttowatch.api import auth, imports, jellyfin, library, reactions
 from iwanttowatch.api import settings as settings_api
 from iwanttowatch.config import Settings
 from iwanttowatch.db import create_db_engine, upgrade_database
 from iwanttowatch.imports import ImportWorker
+from iwanttowatch.jellyfin import JellyfinWorker
 
 SESSION_MAX_AGE = 30 * 24 * 3600
 
@@ -25,6 +26,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.tmdb_base_url = settings.tmdb_base_url
     app.state.import_worker = ImportWorker(engine, settings.tmdb_base_url)
     app.state.import_worker.start()
+    app.state.jellyfin_worker = JellyfinWorker(engine, settings.tmdb_base_url)
+    app.state.jellyfin_worker.start()
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.resolve_secret_key(),
@@ -32,7 +35,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_age=SESSION_MAX_AGE,
         same_site="lax",
     )
-    for module in (auth, settings_api, imports, library, reactions):
+    for module in (auth, settings_api, imports, library, reactions, jellyfin):
         app.include_router(module.router)
 
     @app.get("/healthz", include_in_schema=False)

@@ -24,14 +24,14 @@ def client(tmp_path: Path) -> TestClient:
 
 
 def test_first_run_setup_creates_admin_once_and_sessions_work(client: TestClient) -> None:
-    assert client.get("/api/v1/setup").json() == {"complete": False}
+    assert client.get("/api/v1/setup").json() == {"complete": False, "jellyfin_login": False}
     assert client.get("/api/v1/me").status_code == 401
 
     created = client.post("/api/v1/setup", json=ADMIN)
     assert created.status_code == 201
     assert created.json()["is_admin"] is True
     assert client.get("/api/v1/me").json()["languages"] == ["ml", "en"]
-    assert client.get("/api/v1/setup").json() == {"complete": True}
+    assert client.get("/api/v1/setup").json() == {"complete": True, "jellyfin_login": False}
 
     # A second visitor cannot claim the server once an admin exists.
     assert client.post("/api/v1/setup", json={**ADMIN, "username": "intruder"}).status_code == 409
@@ -62,7 +62,7 @@ def test_web_app_fallback_does_not_swallow_api_routes(tmp_path: Path) -> None:
     assert client.get("/discover/123").text == "<div id=root></div>"
     assert client.get("/%2E%2E/secret.txt").text == "<div id=root></div>"
     assert client.get("/api/v1/does-not-exist").status_code == 404
-    assert client.get("/api/v1/setup").json() == {"complete": False}
+    assert client.get("/api/v1/setup").json() == {"complete": False, "jellyfin_login": False}
 
 
 def test_migrations_match_models(tmp_path: Path) -> None:

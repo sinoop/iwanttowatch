@@ -27,7 +27,7 @@ export default function SetupWizard() {
     },
     onSuccess: (me) => {
       queryClient.setQueryData(['me'], me)
-      queryClient.setQueryData(['setup'], { complete: true })
+      queryClient.setQueryData(['setup'], { complete: true, jellyfin_login: false })
     },
   })
 

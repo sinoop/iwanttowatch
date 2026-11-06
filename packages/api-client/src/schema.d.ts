@@ -110,6 +110,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/jellyfin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Jellyfin
+         * @description Connect a Jellyfin server; the API key is checked first, then a full sync starts.
+         */
+        put: operations["set_jellyfin_api_v1_settings_jellyfin_put"];
+        post?: never;
+        /**
+         * Disconnect Jellyfin
+         * @description Stop syncing. Watch history already synced stays; the library listing goes.
+         */
+        delete: operations["disconnect_jellyfin_api_v1_settings_jellyfin_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/jellyfin/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync Jellyfin */
+        post: operations["sync_jellyfin_api_v1_settings_jellyfin_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/llm": {
         parameters: {
             query?: never;
@@ -282,6 +323,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/jellyfin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Jellyfin Account */
+        get: operations["read_jellyfin_account_api_v1_me_jellyfin_get"];
+        /**
+         * Link Jellyfin Account
+         * @description Link the signed-in account to a Jellyfin user, proven by their Jellyfin password.
+         */
+        put: operations["link_jellyfin_account_api_v1_me_jellyfin_put"];
+        post?: never;
+        /**
+         * Unlink Jellyfin Account
+         * @description Unlink Jellyfin and forget everything synced from it.
+         */
+        delete: operations["unlink_jellyfin_account_api_v1_me_jellyfin_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/webhooks/jellyfin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Jellyfin Webhook
+         * @description Receive Jellyfin Webhook plugin notifications (Generic destination).
+         *
+         *     Only the user and item IDs are used: the item is then re-read from Jellyfin.
+         */
+        post: operations["jellyfin_webhook_api_v1_webhooks_jellyfin_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -373,6 +461,56 @@ export interface components {
             candidates: components["schemas"]["Candidate"][];
             /** Message */
             message: string | null;
+        };
+        /** JellyfinAccount */
+        JellyfinAccount: {
+            /** Server Configured */
+            server_configured: boolean;
+            /** Linked */
+            linked: boolean;
+            /** Can Unlink */
+            can_unlink: boolean;
+            /** Library Movies */
+            library_movies: number;
+            /** Watched */
+            watched: number;
+            /** Favorites */
+            favorites: number;
+        };
+        /** JellyfinLogin */
+        JellyfinLogin: {
+            /** Username */
+            username: string;
+            /** Password */
+            password: string;
+        };
+        /** JellyfinSettings */
+        JellyfinSettings: {
+            /** Url */
+            url: string | null;
+            /** Linked Users */
+            linked_users: number;
+            /** Library Movies */
+            library_movies: number;
+            /** Unmatched */
+            unmatched: string[];
+            /** Unmatched Count */
+            unmatched_count: number;
+            /** Synced At */
+            synced_at: string | null;
+            /** Error */
+            error: string | null;
+            /** Webhook At */
+            webhook_at: string | null;
+            /** Webhook Path */
+            webhook_path: string | null;
+        };
+        /** JellyfinUpdate */
+        JellyfinUpdate: {
+            /** Url */
+            url: string;
+            /** Api Key */
+            api_key?: string | null;
         };
         /** LanguageCount */
         LanguageCount: {
@@ -509,6 +647,7 @@ export interface components {
             /** Tmdb Configured */
             tmdb_configured: boolean;
             llm: components["schemas"]["LlmSettings"];
+            jellyfin: components["schemas"]["JellyfinSettings"];
         };
         /** SetupRequest */
         SetupRequest: {
@@ -527,6 +666,8 @@ export interface components {
         SetupStatus: {
             /** Complete */
             complete: boolean;
+            /** Jellyfin Login */
+            jellyfin_login: boolean;
         };
         /** TagOption */
         TagOption: {
@@ -756,6 +897,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_jellyfin_api_v1_settings_jellyfin_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JellyfinUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_jellyfin_api_v1_settings_jellyfin_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSettings"];
+                };
+            };
+        };
+    };
+    sync_jellyfin_api_v1_settings_jellyfin_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };
@@ -1123,6 +1337,108 @@ export interface operations {
             path: {
                 tmdb_id: number;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_jellyfin_account_api_v1_me_jellyfin_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JellyfinAccount"];
+                };
+            };
+        };
+    };
+    link_jellyfin_account_api_v1_me_jellyfin_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JellyfinLogin"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JellyfinAccount"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlink_jellyfin_account_api_v1_me_jellyfin_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JellyfinAccount"];
+                };
+            };
+        };
+    };
+    jellyfin_webhook_api_v1_webhooks_jellyfin_post: {
+        parameters: {
+            query?: {
+                token?: string;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

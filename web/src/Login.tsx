@@ -1,10 +1,14 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api, errorMessage } from './api'
 import { AuthCard, Button, ErrorText, Field } from './ui'
 
 export default function Login() {
   const queryClient = useQueryClient()
+  const setup = useQuery({
+    queryKey: ['setup'],
+    queryFn: async () => (await api.GET('/api/v1/setup')).data ?? null,
+  })
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const login = useMutation({
@@ -26,7 +30,11 @@ export default function Login() {
   return (
     <AuthCard>
       <h1 className="text-xl font-semibold">Sign in</h1>
-      <p className="mt-1 text-sm text-white/55">Welcome back. Your next favourite film is waiting.</p>
+      <p className="mt-1 text-sm text-white/55">
+        {setup.data?.jellyfin_login
+          ? 'Use your iWantToWatch account, or your Jellyfin username and password.'
+          : 'Welcome back. Your next favourite film is waiting.'}
+      </p>
       <form onSubmit={submit} className="mt-6 space-y-4">
         <Field
           label="Username"

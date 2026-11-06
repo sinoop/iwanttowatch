@@ -2,6 +2,7 @@ import type { Me, ServerSettings } from '@iwanttowatch/api-client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api, errorMessage, useServerSettings } from './api'
+import { JellyfinAccount, JellyfinServer } from './JellyfinSettings'
 import { Button, ErrorText, Field } from './ui'
 
 export default function Settings({ me }: { me: Me }) {
@@ -73,6 +74,8 @@ export default function Settings({ me }: { me: Me }) {
           <p className="mt-4 text-sm text-white/50">Only an admin can change this.</p>
         )}
       </section>
+      {settings.data && me.is_admin && <JellyfinServer settings={settings.data} />}
+      <JellyfinAccount />
       {settings.data && <LlmSection me={me} settings={settings.data} />}
     </>
   )
