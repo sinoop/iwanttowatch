@@ -7,6 +7,7 @@ import { Button, Logo } from './ui'
 
 const NAV = [
   { to: '/', label: 'Discover' },
+  { to: '/together', label: 'Watch together' },
   { to: '/taste', label: 'My taste' },
   { to: '/settings', label: 'Settings' },
 ]
@@ -22,14 +23,14 @@ export default function Shell({ me }: { me: Me }) {
     <div className="min-h-screen">
       <header className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-white/10 px-4 py-3 sm:px-6">
         <Logo />
-        <nav className="order-last flex w-full gap-1 sm:order-none sm:w-auto">
+        <nav className="order-last flex w-full overflow-x-auto sm:order-none sm:w-auto sm:gap-1">
           {NAV.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.to === '/'}
               className={({ isActive }) =>
-                `rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                `whitespace-nowrap rounded-lg px-2 py-1.5 text-sm transition-colors sm:px-3 ${
                   isActive ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white'
                 }`
               }

@@ -8,6 +8,7 @@ import Settings from './Settings'
 import SetupWizard from './SetupWizard'
 import Shell from './Shell'
 import Taste from './Taste'
+import Together from './Together'
 
 export default function App() {
   const setup = useQuery({
@@ -34,6 +35,7 @@ export default function App() {
       <Routes>
         <Route element={<Shell me={me.data} />}>
           <Route index element={<Discover me={me.data} />} />
+          <Route path="together" element={<Together me={me.data} />} />
           <Route path="taste" element={<Taste />} />
           <Route path="taste/imports/:jobId" element={<Review />} />
           <Route path="settings" element={<Settings me={me.data} />} />

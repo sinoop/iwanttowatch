@@ -1325,6 +1325,243 @@
           }
         }
       }
+    },
+    "/api/v1/together": {
+      "get": {
+        "summary": "Together Options",
+        "description": "Everyone on this server, the friends you've added, and your share link.",
+        "operationId": "together_options_api_v1_together_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TogetherOptions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/together/picks": {
+      "get": {
+        "summary": "Together Picks",
+        "description": "Films for everyone chosen, from the household members' feeds; where to watch\nthem is worked out for you, the host.",
+        "operationId": "together_picks_api_v1_together_picks_get",
+        "parameters": [
+          {
+            "name": "users",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "title": "Users"
+            }
+          },
+          {
+            "name": "guests",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "title": "Guests"
+            }
+          },
+          {
+            "name": "available_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Available Only"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 24,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/guests": {
+      "post": {
+        "summary": "Add Guest",
+        "description": "Add a friend from another server by the share link they sent you.",
+        "operationId": "add_guest_api_v1_guests_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuestOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/guests/{guest_id}": {
+      "delete": {
+        "summary": "Remove Guest",
+        "operationId": "remove_guest_api_v1_guests__guest_id__delete",
+        "parameters": [
+          {
+            "name": "guest_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Guest Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/share": {
+      "post": {
+        "summary": "Create Share",
+        "description": "Make a new share link; any earlier link stops working.",
+        "operationId": "create_share_api_v1_me_share_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Revoke Share",
+        "operationId": "revoke_share_api_v1_me_share_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
+    "/api/v1/shared/{token}": {
+      "get": {
+        "summary": "Read Share",
+        "description": "A user's shared taste, for friends' servers; no sign-in, only the secret link.",
+        "operationId": "read_share_api_v1_shared__token__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedTaste"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1897,6 +2134,195 @@
         ],
         "title": "FeedbackUpdate"
       },
+      "GroupItem": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "original_title": {
+            "type": "string",
+            "title": "Original Title"
+          },
+          "original_language": {
+            "type": "string",
+            "title": "Original Language"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime"
+          },
+          "poster_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Path"
+          },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres"
+          },
+          "moods": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Moods"
+          },
+          "match": {
+            "type": "integer",
+            "title": "Match"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/MemberMatch"
+            },
+            "type": "array",
+            "title": "Matches"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "availability": {
+            "$ref": "#/components/schemas/TitleAvailability"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "original_title",
+          "original_language",
+          "year",
+          "runtime",
+          "poster_path",
+          "genres",
+          "moods",
+          "match",
+          "matches",
+          "reasons",
+          "availability"
+        ],
+        "title": "GroupItem"
+      },
+      "GroupPage": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GroupItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "items"
+        ],
+        "title": "GroupPage"
+      },
+      "GuestCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "link": {
+            "type": "string",
+            "maxLength": 2048,
+            "pattern": "^https?://.+/api/v1/shared/[A-Za-z0-9_-]+$",
+            "title": "Link"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "link"
+        ],
+        "title": "GuestCreate"
+      },
+      "GuestOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "ratings": {
+            "type": "integer",
+            "title": "Ratings"
+          },
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fetched At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "ratings",
+          "fetched_at",
+          "error"
+        ],
+        "title": "GuestOut"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2445,6 +2871,29 @@
         ],
         "title": "Me"
       },
+      "MemberMatch": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "match": {
+            "type": "integer",
+            "title": "Match"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "match"
+        ],
+        "title": "MemberMatch"
+      },
       "Offer": {
         "properties": {
           "provider_id": {
@@ -2479,6 +2928,24 @@
           "kind"
         ],
         "title": "Offer"
+      },
+      "Person": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "Person"
       },
       "PersonaOut": {
         "properties": {
@@ -2850,6 +3317,89 @@
         ],
         "title": "SetupStatus"
       },
+      "ShareOut": {
+        "properties": {
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "ShareOut"
+      },
+      "SharedLabel": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "weight": {
+            "type": "number",
+            "title": "Weight"
+          },
+          "explicit": {
+            "type": "boolean",
+            "title": "Explicit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "value",
+          "weight",
+          "explicit"
+        ],
+        "title": "SharedLabel"
+      },
+      "SharedTaste": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "const": "iwanttowatch-taste",
+            "title": "Format"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/SharedLabel"
+            },
+            "type": "array",
+            "title": "Labels"
+          },
+          "seen": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Seen"
+          }
+        },
+        "type": "object",
+        "required": [
+          "format",
+          "version",
+          "labels",
+          "seen"
+        ],
+        "title": "SharedTaste"
+      },
       "StreamingRegion": {
         "properties": {
           "code": {
@@ -3209,6 +3759,34 @@
           "api_key"
         ],
         "title": "TmdbKey"
+      },
+      "TogetherOptions": {
+        "properties": {
+          "household": {
+            "items": {
+              "$ref": "#/components/schemas/Person"
+            },
+            "type": "array",
+            "title": "Household"
+          },
+          "guests": {
+            "items": {
+              "$ref": "#/components/schemas/GuestOut"
+            },
+            "type": "array",
+            "title": "Guests"
+          },
+          "share": {
+            "$ref": "#/components/schemas/ShareOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "household",
+          "guests",
+          "share"
+        ],
+        "title": "TogetherOptions"
       },
       "ValidationError": {
         "properties": {

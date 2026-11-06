@@ -236,6 +236,37 @@ class Feedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class TasteShare(Base):
+    """A secret link through which friends on other servers add a user's taste to
+    their group picks. Deleting it revokes the link."""
+
+    __tablename__ = "taste_shares"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    token: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Guest(Base):
+    """A friend from another server whose shared taste a user added for group picks."""
+
+    __tablename__ = "guests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    # What the owner calls them; shared profiles carry no names.
+    name: Mapped[str] = mapped_column(String(64))
+    link: Mapped[str] = mapped_column(Text)
+    # [{"tmdb_id": 1, "value": 0.8, "weight": 1.0, "explicit": true}], as in the share.
+    labels: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    seen: Mapped[list[int]] = mapped_column(JSON, default=list)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # The last refresh's error; the last good copy is kept until the link is revoked.
+    error: Mapped[str | None]
+
+
 class FeedBuild(Base):
     """Progress of building a user's feed in the background."""
 

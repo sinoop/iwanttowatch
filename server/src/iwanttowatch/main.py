@@ -14,6 +14,7 @@ from iwanttowatch.api import (
     library,
     reactions,
     streaming,
+    together,
 )
 from iwanttowatch.api import settings as settings_api
 from iwanttowatch.config import Settings
@@ -50,7 +51,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_age=SESSION_MAX_AGE,
         same_site="lax",
     )
-    modules = (auth, settings_api, imports, library, reactions, jellyfin, streaming, feed, backup)
+    modules = (
+        auth, settings_api, imports, library, reactions, jellyfin, streaming, feed, backup, together
+    )  # fmt: skip
     for module in modules:
         app.include_router(module.router)
 

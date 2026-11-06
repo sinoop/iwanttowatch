@@ -21,6 +21,9 @@ export type TitleDetail = Schemas['TitleDetail']
 export type FeedbackKind = Schemas['FeedbackUpdate']['kind']
 export type DataExport = Schemas['DataExport']
 export type RestoreSummary = Schemas['RestoreSummary']
+export type TogetherOptions = Schemas['TogetherOptions']
+export type GroupItem = Schemas['GroupItem']
+export type GuestProfile = Schemas['GuestOut']
 
 /**
  * Typed client for the iWantToWatch REST API.

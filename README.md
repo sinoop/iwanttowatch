@@ -2,7 +2,7 @@
 
 Self-hosted movie recommendations that learn your taste from your own history — Jellyfin, IMDb, Letterboxd, and Trakt — and only suggest films you haven't seen and can actually watch, on your Jellyfin server or your streaming subscriptions.
 
-> **Status:** early development (Phase 5: feedback loop). You can create an account, connect TMDb, import your IMDb and Letterboxd ratings, rate films in the app, connect Jellyfin so watched films and favourites sync on their own, pick your streaming services, and browse a Discover feed of unseen films ranked by match percentage, with where to watch each one and why it was picked. Thumbs up or down, "seen it", "not now", and "not interested" on each card re-rank the feed within seconds. You can also get an AI-written taste persona, and export your data to back it up or move it to another server.
+> **Status:** early development (Phase 5b: watch together). You can create an account, connect TMDb, import your IMDb and Letterboxd ratings, rate films in the app, connect Jellyfin so watched films and favourites sync on their own, pick your streaming services, and browse a Discover feed of unseen films ranked by match percentage, with where to watch each one and why it was picked. Thumbs up or down, "seen it", "not now", and "not interested" on each card re-rank the feed within seconds. You can also get an AI-written taste persona, and export your data to back it up or move it to another server. Watch together ranks films for everyone in the household, plus friends from other iWantToWatch servers who share a taste link, so nobody is likely to dislike the top picks.
 
 ## Planned features
 
@@ -48,8 +48,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup.
 2. Jellyfin connection and automatic scrobbling
 3. Streaming availability per region
 4. Recommendation engine and discovery feed
-5. **Feedback loop** ← *current*, then:
-   - Watch together: group and household picks
+5. **Feedback loop**, then:
+   - **Watch together: group and household picks** ← *current*
    - Child profiles with age limits
 6. Trakt, Watchmode, optional LLM (local Ollama or Google Gemini)
 7. First release (v0.1), then mobile apps

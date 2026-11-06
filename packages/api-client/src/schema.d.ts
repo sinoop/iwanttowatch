@@ -564,6 +564,125 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/together": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Together Options
+         * @description Everyone on this server, the friends you've added, and your share link.
+         */
+        get: operations["together_options_api_v1_together_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/together/picks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Together Picks
+         * @description Films for everyone chosen, from the household members' feeds; where to watch
+         *     them is worked out for you, the host.
+         */
+        get: operations["together_picks_api_v1_together_picks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/guests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Guest
+         * @description Add a friend from another server by the share link they sent you.
+         */
+        post: operations["add_guest_api_v1_guests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/guests/{guest_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Guest */
+        delete: operations["remove_guest_api_v1_guests__guest_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/share": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Share
+         * @description Make a new share link; any earlier link stops working.
+         */
+        post: operations["create_share_api_v1_me_share_post"];
+        /** Revoke Share */
+        delete: operations["revoke_share_api_v1_me_share_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shared/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Share
+         * @description A user's shared taste, for friends' servers; no sign-in, only the secret link.
+         */
+        get: operations["read_share_api_v1_shared__token__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -758,6 +877,64 @@ export interface components {
              */
             kind: "up" | "down" | "dismissed" | "snoozed" | "seen";
         };
+        /** GroupItem */
+        GroupItem: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Original Title */
+            original_title: string;
+            /** Original Language */
+            original_language: string;
+            /** Year */
+            year: number | null;
+            /** Runtime */
+            runtime: number | null;
+            /** Poster Path */
+            poster_path: string | null;
+            /** Genres */
+            genres: string[];
+            /** Moods */
+            moods: string[];
+            /** Match */
+            match: number;
+            /** Matches */
+            matches: components["schemas"]["MemberMatch"][];
+            /** Reasons */
+            reasons: string[];
+            availability: components["schemas"]["TitleAvailability"];
+        };
+        /** GroupPage */
+        GroupPage: {
+            /** Total */
+            total: number;
+            /** Items */
+            items: components["schemas"]["GroupItem"][];
+        };
+        /** GuestCreate */
+        GuestCreate: {
+            /** Name */
+            name: string;
+            /** Link */
+            link: string;
+        };
+        /** GuestOut */
+        GuestOut: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Ratings */
+            ratings: number;
+            /**
+             * Fetched At
+             * Format: date-time
+             */
+            fetched_at: string;
+            /** Error */
+            error: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -940,6 +1117,15 @@ export interface components {
             /** Subscriptions */
             subscriptions: number[];
         };
+        /** MemberMatch */
+        MemberMatch: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Match */
+            match: number;
+        };
         /** Offer */
         Offer: {
             /** Provider Id */
@@ -950,6 +1136,13 @@ export interface components {
             logo_path: string | null;
             /** Kind */
             kind: string;
+        };
+        /** Person */
+        Person: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
         };
         /** PersonaOut */
         PersonaOut: {
@@ -1064,6 +1257,36 @@ export interface components {
             /** Jellyfin Login */
             jellyfin_login: boolean;
         };
+        /** ShareOut */
+        ShareOut: {
+            /** Token */
+            token: string | null;
+        };
+        /** SharedLabel */
+        SharedLabel: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Value */
+            value: number;
+            /** Weight */
+            weight: number;
+            /** Explicit */
+            explicit: boolean;
+        };
+        /** SharedTaste */
+        SharedTaste: {
+            /**
+             * Format
+             * @constant
+             */
+            format: "iwanttowatch-taste";
+            /** Version */
+            version: number;
+            /** Labels */
+            labels: components["schemas"]["SharedLabel"][];
+            /** Seen */
+            seen: number[];
+        };
         /** StreamingRegion */
         StreamingRegion: {
             /** Code */
@@ -1161,6 +1384,14 @@ export interface components {
         TmdbKey: {
             /** Api Key */
             api_key: string;
+        };
+        /** TogetherOptions */
+        TogetherOptions: {
+            /** Household */
+            household: components["schemas"]["Person"][];
+            /** Guests */
+            guests: components["schemas"]["GuestOut"][];
+            share: components["schemas"]["ShareOut"];
         };
         /** ValidationError */
         ValidationError: {
@@ -2226,6 +2457,191 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RestoreSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    together_options_api_v1_together_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TogetherOptions"];
+                };
+            };
+        };
+    };
+    together_picks_api_v1_together_picks_get: {
+        parameters: {
+            query?: {
+                users?: number[];
+                guests?: number[];
+                available_only?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_guest_api_v1_guests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuestCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_guest_api_v1_guests__guest_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                guest_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_share_api_v1_me_share_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareOut"];
+                };
+            };
+        };
+    };
+    revoke_share_api_v1_me_share_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    read_share_api_v1_shared__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedTaste"];
                 };
             };
             /** @description Validation Error */
