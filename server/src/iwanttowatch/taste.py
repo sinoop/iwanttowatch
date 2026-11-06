@@ -50,7 +50,8 @@ def effective_ratings(user_id: int) -> Subquery:
 # Where each reaction sits in the user's own rating distribution (Criticker-style), and
 # the score used until there are enough numeric ratings to read that distribution from.
 REACTION_PERCENTILES = {"disliked": 0.15, "liked": 0.65, "loved": 0.90}
-REACTION_FALLBACK = {"disliked": 3.0, "liked": 7.0, "loved": 9.5}
+# The fallback scores sit near a typical rater's 5th, 65th and 90th percentiles.
+REACTION_FALLBACK = {"disliked": 3.0, "liked": 8.0, "loved": 9.5}
 MIN_RATINGS_FOR_DISTRIBUTION = 10
 
 

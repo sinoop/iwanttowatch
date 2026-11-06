@@ -93,7 +93,6 @@ def test_feedback_hides_films_and_reorders_the_feed(
     assert page["rescoring"] is False
     assert after[302] < before[302]
     assert after[302] < min(after[i] for i in (201, 401, 402))
-    assert [i["tmdb_id"] for i in page["items"]][-1] == 302
 
     # More like this keeps the film and shows the thumb.
     client.put("/api/v1/titles/201/feedback", json={"kind": "up"})

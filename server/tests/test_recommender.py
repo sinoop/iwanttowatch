@@ -45,8 +45,13 @@ def catalogue() -> tuple[dict[int, Title], dict[int, float]]:
     return titles, ratings
 
 
-def test_percentiles_share_ranks_for_ties() -> None:
-    assert percentiles({1: 3.0, 2: 8.0, 3: 8.0, 4: 10.0}) == {1: 0.125, 2: 0.5, 3: 0.5, 4: 0.875}
+def test_percentiles_lean_on_a_typical_rater_until_the_user_has_rated_enough() -> None:
+    # A new user who loved all seven films they rated: favourites, not their average.
+    few = percentiles({i: 9.5 for i in range(7)})
+    assert len(set(few.values())) == 1 and few[0] > 0.75
+    # A generous rater with many ratings: their 9s are their ordinary films.
+    generous = percentiles({i: 9.0 if i < 100 else 10.0 for i in range(200)})
+    assert 0.2 < generous[0] < 0.35 and generous[150] > 0.7
 
 
 def test_scores_follow_the_users_taste_not_popularity() -> None:

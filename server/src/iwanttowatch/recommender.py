@@ -45,6 +45,7 @@ NEIGHBOURS = 20
 # Pulls predictions from few or weak neighbours towards the user's average.
 NEIGHBOUR_SHRINK = 1.0
 RIDGE_ALPHA = 1.0
+BASELINE_WEIGHT = 5.0
 FOLDS = 5
 MIN_RATINGS_FOR_CV = 15
 # (neighbours, ridge, quality) weights tried by cross-validation.
@@ -75,11 +76,26 @@ class Scored:
     reasons: list[str] = field(default_factory=list)
 
 
+# How a typical person spreads ratings over 1–10 (roughly IMDb's), standing in for
+# the user's own spread until they have rated enough films. Without it, a new user
+# who loved all seven films they rated would have them all at the 50th percentile.
+TYPICAL_RATINGS = {
+    1: 0.01, 2: 0.01, 3: 0.02, 4: 0.04, 5: 0.07, 6: 0.13, 7: 0.22, 8: 0.25, 9: 0.15, 10: 0.10
+}  # fmt: skip
+TYPICAL_WEIGHT = 20
+
+
 def percentiles(ratings: dict[int, float]) -> dict[int, float]:
-    """Each rating's percentile among the user's ratings, ties sharing the average rank."""
-    ids = list(ratings)
-    ranks = _ranks(np.array([ratings[i] for i in ids], dtype=np.float64))
-    return {i: float((r + 0.5) / len(ids)) for i, r in zip(ids, ranks, strict=True)}
+    """Each rating's percentile among the user's ratings (ties count half), blended
+    with a typical rater's spread worth TYPICAL_WEIGHT ratings."""
+    values = np.array(list(ratings.values()), dtype=np.float64)
+
+    def below(r: float) -> float:
+        own = (values < r).sum() + 0.5 * (values == r).sum()
+        typical = sum(w if v < r else w / 2 if v == r else 0.0 for v, w in TYPICAL_RATINGS.items())
+        return float((own + TYPICAL_WEIGHT * typical) / (len(values) + TYPICAL_WEIGHT))
+
+    return {i: below(r) for i, r in ratings.items()}
 
 
 def _features(title: Title) -> dict[str, str]:
@@ -157,7 +173,10 @@ def _predict(vectors: Vectors, train: Sequence[Label], targets: Sequence[int]) -
     x_target = vectors.matrix[[vectors.rows[i] for i in targets]].astype(np.float64)
     y = np.array([label.value for label in train])
     w = np.array([label.weight for label in train])
-    mean = float(np.average(y, weights=w))
+    # Where films unlike anything rated start: the user's average, pulled toward the
+    # middle while they have few labels. Otherwise someone who has only rated
+    # favourites would see every film start out as a favourite.
+    mean = float((w @ y + BASELINE_WEIGHT * 0.5) / (w.sum() + BASELINE_WEIGHT))
 
     similarity = x_target @ x_train.T
     k = min(NEIGHBOURS, len(train))
