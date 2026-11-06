@@ -19,7 +19,7 @@ export default function App() {
   if (setup.isPending || (setup.data?.complete && me.isPending)) return null
   if (!setup.data) {
     return (
-      <p className="p-8 text-sm text-white/60">CineMatch server is unreachable. Is it running?</p>
+      <p className="p-8 text-sm text-white/60">iWantToWatch server is unreachable. Is it running?</p>
     )
   }
   if (!setup.data.complete) return <SetupWizard />

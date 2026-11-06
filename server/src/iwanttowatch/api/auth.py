@@ -3,14 +3,14 @@ from argon2.exceptions import VerificationError
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import exists, select
 
-from cinematch.api.deps import CurrentUser, DbSession
-from cinematch.api.schemas import LoginRequest, Me, SetupRequest, SetupStatus
-from cinematch.db import User
+from iwanttowatch.api.deps import CurrentUser, DbSession
+from iwanttowatch.api.schemas import LoginRequest, Me, SetupRequest, SetupStatus
+from iwanttowatch.db import User
 
 router = APIRouter(prefix="/api/v1")
 hasher = PasswordHasher()
 # Verified when the username is unknown, so both failures take the same time.
-_DUMMY_HASH = hasher.hash("cinematch-dummy-password")
+_DUMMY_HASH = hasher.hash("iwanttowatch-dummy-password")
 
 
 @router.get("/setup")

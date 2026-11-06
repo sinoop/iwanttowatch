@@ -1,4 +1,4 @@
-import type { Me } from '@cinematch/api-client'
+import type { Me } from '@iwanttowatch/api-client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from './api'
 import { Button, Logo } from './ui'
@@ -27,7 +27,7 @@ export default function Home({ me }: { me: Me }) {
       <main className="mx-auto max-w-3xl px-6 py-16">
         <h1 className="text-2xl font-semibold">Welcome, {me.display_name}</h1>
         <p className="mt-2 max-w-prose text-white/60">
-          Your discovery feed will appear here once CineMatch can learn your taste from Jellyfin and
+          Your discovery feed will appear here once iWantToWatch can learn your taste from Jellyfin and
           your IMDb or Letterboxd ratings.
         </p>
         <dl className="mt-8 grid gap-4 text-sm sm:grid-cols-2">

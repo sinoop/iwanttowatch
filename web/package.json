@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@cinematch/api-client": "workspace:*",
+    "@iwanttowatch/api-client": "workspace:*",
     "@tanstack/react-query": "^5.106.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

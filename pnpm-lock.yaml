@@ -124,7 +124,7 @@ importers:
 
   web:
     dependencies:
-      '@cinematch/api-client':
+      '@iwanttowatch/api-client':
         specifier: workspace:*
         version: link:../packages/api-client
       '@tanstack/react-query':

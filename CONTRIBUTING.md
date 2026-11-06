@@ -1,6 +1,6 @@
-# Contributing to CineMatch
+# Contributing to iWantToWatch
 
-Thanks for helping! CineMatch is early in development; the roadmap is in the [README](README.md#roadmap).
+Thanks for helping! iWantToWatch is early in development; the roadmap is in the [README](README.md#roadmap).
 
 ## Development setup
 
@@ -10,7 +10,7 @@ Requirements: [uv](https://docs.astral.sh/uv/), Node.js 26, and pnpm 12.
 # API server on http://localhost:8080 (data in server/data/)
 cd server
 uv sync
-uv run cinematch serve
+uv run iwanttowatch serve
 
 # Web app on http://localhost:5173, proxying /api to the server
 pnpm install
@@ -45,4 +45,4 @@ Review the generated file; the server applies migrations on startup.
 
 ## Licence
 
-By contributing, you agree that your contributions are licensed under the [AGPL-3.0-or-later](LICENSE), the same licence as the project. See [TRADEMARK.md](TRADEMARK.md) for use of the CineMatch name and logo.
+By contributing, you agree that your contributions are licensed under the [AGPL-3.0-or-later](LICENSE), the same licence as the project. See [TRADEMARK.md](TRADEMARK.md) for use of the iWantToWatch name and logo.

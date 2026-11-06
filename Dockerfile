@@ -25,17 +25,17 @@ RUN uv sync --frozen --no-dev --no-editable
 
 # 3. Runtime: Python, the virtualenv, and the built web app; no build tools.
 FROM python:3.12-slim
-RUN useradd --system --uid 1000 --home-dir /data cinematch \
-    && mkdir /data && chown cinematch:cinematch /data
+RUN useradd --system --uid 1000 --home-dir /data iwanttowatch \
+    && mkdir /data && chown iwanttowatch:iwanttowatch /data
 COPY --from=server /app/.venv /app/.venv
 COPY --from=web /src/web/dist /app/web
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
-    CINEMATCH_DATA_DIR=/data \
-    CINEMATCH_STATIC_DIR=/app/web
-USER cinematch
+    IWANTTOWATCH_DATA_DIR=/data \
+    IWANTTOWATCH_STATIC_DIR=/app/web
+USER iwanttowatch
 VOLUME /data
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4)"]
-CMD ["cinematch", "serve"]
+CMD ["iwanttowatch", "serve"]

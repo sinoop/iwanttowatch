@@ -5,9 +5,9 @@ from fastapi.responses import FileResponse
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
-from cinematch.api import auth
-from cinematch.config import Settings
-from cinematch.db import create_db_engine, upgrade_database
+from iwanttowatch.api import auth
+from iwanttowatch.config import Settings
+from iwanttowatch.db import create_db_engine, upgrade_database
 
 SESSION_MAX_AGE = 30 * 24 * 3600
 
@@ -18,12 +18,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     engine = create_db_engine(settings.database_url)
     upgrade_database(engine)
 
-    app = FastAPI(title="CineMatch", version="0.1.0")
+    app = FastAPI(title="iWantToWatch", version="0.1.0")
     app.state.engine = engine
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.resolve_secret_key(),
-        session_cookie="cinematch_session",
+        session_cookie="iwanttowatch_session",
         max_age=SESSION_MAX_AGE,
         same_site="lax",
     )

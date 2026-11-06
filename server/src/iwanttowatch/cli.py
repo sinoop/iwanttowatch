@@ -6,12 +6,12 @@ from pathlib import Path
 
 import uvicorn
 
-from cinematch.config import Settings
-from cinematch.main import create_app
+from iwanttowatch.config import Settings
+from iwanttowatch.main import create_app
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="cinematch")
+    parser = argparse.ArgumentParser(prog="iwanttowatch")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("serve", help="run the web server")
     commands.add_parser("openapi", help="print the OpenAPI schema as JSON")

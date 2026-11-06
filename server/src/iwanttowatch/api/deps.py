@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from cinematch.db import User, get_session
+from iwanttowatch.db import User, get_session
 
 DbSession = Annotated[Session, Depends(get_session)]
 

@@ -5,7 +5,7 @@ export type { components, paths }
 export type Me = components['schemas']['Me']
 
 /**
- * Typed client for the CineMatch REST API.
+ * Typed client for the iWantToWatch REST API.
  * The web app uses the same origin; mobile apps pass their server URL.
  */
 export function createApiClient(baseUrl = '') {

@@ -1,8 +1,8 @@
 from alembic import context
 from sqlalchemy import Connection
 
-from cinematch.config import Settings
-from cinematch.db import Base, create_db_engine
+from iwanttowatch.config import Settings
+from iwanttowatch.db import Base, create_db_engine
 
 
 def run(connection: Connection) -> None:

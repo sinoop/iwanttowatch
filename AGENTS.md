@@ -1,11 +1,11 @@
-# CineMatch
+# iWantToWatch
 
 Self-hosted movie recommender: Python API server, React web app, shared generated TypeScript client.
 
 ## Layout
 
-- `server/` — FastAPI app in `src/cinematch`; models in `db.py`; routes in `api/`; Alembic migrations in `migrations/versions/`. Tests in `server/tests`.
-- `web/` — React + Vite + Tailwind; talks to the API only through `@cinematch/api-client`.
+- `server/` — FastAPI app in `src/iwanttowatch`; models in `db.py`; routes in `api/`; Alembic migrations in `migrations/versions/`. Tests in `server/tests`.
+- `web/` — React + Vite + Tailwind; talks to the API only through `@iwanttowatch/api-client`.
 - `packages/api-client/` — `openapi.json` and `src/schema.d.ts` are generated; never edit them by hand.
 
 ## Commands

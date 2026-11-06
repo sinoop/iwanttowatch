@@ -1,5 +1,5 @@
 [project]
-name = "cinematch"
+name = "iwanttowatch"
 version = "0.1.0"
 description = "Self-hosted movie recommendations from your Jellyfin, IMDb, Letterboxd, and Trakt history"
 license = "AGPL-3.0-or-later"
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-cinematch = "cinematch.cli:main"
+iwanttowatch = "iwanttowatch.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13.0"]

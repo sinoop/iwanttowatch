@@ -1,4 +1,4 @@
-import { createApiClient } from '@cinematch/api-client'
+import { createApiClient } from '@iwanttowatch/api-client'
 
 export const api = createApiClient()
 

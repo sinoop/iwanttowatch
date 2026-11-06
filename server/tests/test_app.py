@@ -5,9 +5,9 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from fastapi.testclient import TestClient
 
-from cinematch.config import Settings
-from cinematch.db import Base
-from cinematch.main import create_app
+from iwanttowatch.config import Settings
+from iwanttowatch.db import Base
+from iwanttowatch.main import create_app
 
 ADMIN = {
     "username": "sinoop",

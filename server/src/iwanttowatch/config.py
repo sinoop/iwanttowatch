@@ -5,13 +5,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Process configuration, read from CINEMATCH_* environment variables.
+    """Process configuration, read from IWANTTOWATCH_* environment variables.
 
     Everything a household configures (connectors, region, users) lives in the
     database and is set through the web UI instead.
     """
 
-    model_config = SettingsConfigDict(env_prefix="CINEMATCH_")
+    model_config = SettingsConfigDict(env_prefix="IWANTTOWATCH_")
 
     data_dir: Path = Path("data")
     secret_key: str | None = None
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> str:
-        return f"sqlite:///{self.data_dir / 'cinematch.db'}"
+        return f"sqlite:///{self.data_dir / 'iwanttowatch.db'}"
 
     def resolve_secret_key(self) -> str:
         """Return the configured secret key, or one generated once and kept in the data dir."""

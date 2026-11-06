@@ -1,4 +1,4 @@
-# CineMatch
+# iWantToWatch
 
 Self-hosted movie recommendations that learn your taste from your own history — Jellyfin, IMDb, Letterboxd, and Trakt — and only suggest films you haven't seen and can actually watch, on your Jellyfin server or your streaming subscriptions.
 
@@ -19,12 +19,12 @@ Web app first; Android and iOS apps will use the same server API.
 ## Quick start (Docker)
 
 ```sh
-git clone https://ampcode.com/@sinoopjoy/cine-match cinematch
-cd cinematch
+git clone https://ampcode.com/@sinoopjoy/cine-match iwanttowatch
+cd iwanttowatch
 docker compose up -d
 ```
 
-Open `http://<your-server>:8080` and follow the setup wizard to create the admin account. Data is stored in the `cinematch-data` Docker volume.
+Open `http://<your-server>:8080` and follow the setup wizard to create the admin account. Data is stored in the `iwanttowatch-data` Docker volume.
 
 ## Project layout
 
@@ -50,6 +50,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup.
 
 ## Licence and trademark
 
-CineMatch is free software: you can redistribute it and/or modify it under the terms of the [GNU Affero General Public License v3.0 or later](LICENSE). If you run a modified version as a network service, you must offer its source code to its users.
+iWantToWatch is free software: you can redistribute it and/or modify it under the terms of the [GNU Affero General Public License v3.0 or later](LICENSE). If you run a modified version as a network service, you must offer its source code to its users.
 
-The CineMatch name and logo are trademarks; see [TRADEMARK.md](TRADEMARK.md) for what is allowed.
+The iWantToWatch name and logo are trademarks; see [TRADEMARK.md](TRADEMARK.md) for what is allowed.
