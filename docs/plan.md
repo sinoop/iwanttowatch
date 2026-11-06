@@ -4,6 +4,45 @@
 
 This file is the plan's source of truth: update it in the same commit as the work it describes. Sections 1–8 record the original design; where the code took a different path, the milestones in section 9 say so.
 
+## Pipeline
+
+Suggestions are ranked by your own ratings, and only unwatched films you can play reach the feed. Dashed boxes are optional inputs, skipped when not configured.
+
+```mermaid
+flowchart LR
+    ingest["Ingest<br/><small>Jellyfin, IMDb / Letterboxd CSV, in-app ratings</small>"]
+    match["Match IDs<br/><small>to TMDb IDs</small>"]
+    cands["Candidates<br/><small>TMDb Discover, recommendations, library</small>"]
+    score["Taste score<br/><small>your ratings</small>"]
+    filter["Filter<br/><small>seen, hidden, unavailable</small>"]
+    feed["Feed<br/><small>match %, badges, reasons</small>"]
+    dropped["Dropped<br/><small>never shown</small>"]
+    feedback["Feedback<br/><small>rate, thumbs, dismiss, snooze</small>"]
+    together["Watch together<br/><small>each person scored, least misery</small>"]
+    llm["AI picks<br/><small>LLM suggestions</small>"]
+    imdb["IMDb ratings<br/><small>daily dataset</small>"]
+
+    ingest --> match --> cands --> score --> filter --> feed
+    llm -.-> cands
+    imdb -.->|quality prior| score
+    filter -->|excluded| dropped
+    feed -->|you react| feedback
+    feedback -->|rescored in ~15 s| score
+    score --> together
+
+    classDef optional stroke-dasharray: 4 4
+    class llm,imdb optional
+```
+
+- **Ingest:** Jellyfin webhooks plus a 30-minute reconcile poll record plays, favourites, and the library with no manual logging. IMDb and Letterboxd CSV imports add historical ratings, and in-app ratings add a reaction and up to three tags for what you liked or didn't.
+- **Match IDs:** every source resolves to one TMDb movie ID. Jellyfin carries provider IDs, IMDb rows map through TMDb `/find`, and Letterboxd rows match on title and year, with a review queue for ambiguous rows.
+- **Candidates:** unwatched Jellyfin films, TMDb Discover per subscribed service and region, TMDb recommendations of your top-rated films, and per-language discovery so Malayalam or Korean films aren't crowded out. With an LLM configured, its suggestions from your taste summary join them.
+- **Taste score:** a per-user model predicts where each film would land among your own ratings: nearest neighbours blended with a ridge model on cast, crew, keywords, language, and decade, plus a quality prior from IMDb (or TMDb) votes judged within each language. An optional birth year lowers films from before it. Match % is that predicted percentile.
+- **Filter:** drops anything watched or rated in any source, dismissed or snoozed, and, with "Available only" on, anything neither on your Jellyfin server nor on a service you subscribe to in your region.
+- **Feed:** re-ranked for variety and shown as cards with match %, where to watch, IMDb rating, genre and mood tags, and a reason such as "Like Kumbalangi Nights, which you rated highly" or the AI's own reason.
+- **Feedback:** ratings and thumbs become training labels; dismissing or snoozing hides a film. The feed is rescored about 15 seconds after you stop.
+- **Watch together:** the same model scores each film for everyone watching; the group order penalises films anyone is likely to dislike.
+
 ## 1. Key decisions
 
 | Decision | Choice | Why |
