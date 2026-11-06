@@ -1148,6 +1148,87 @@
         }
       }
     },
+    "/api/v1/titles/{tmdb_id}/feedback": {
+      "put": {
+        "summary": "Give Feedback",
+        "description": "Thumbs up or down, not interested, not now (for 30 days), or seen it. Only the\nlatest applies; the feed is rescored shortly after.",
+        "operationId": "give_feedback_api_v1_titles__tmdb_id__feedback_put",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Undo Feedback",
+        "description": "Take back feedback, including \"seen it\" as long as the film wasn't rated.",
+        "operationId": "undo_feedback_api_v1_titles__tmdb_id__feedback_delete",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/titles/{tmdb_id}": {
       "get": {
         "summary": "Read Title",
@@ -1334,6 +1415,10 @@
           },
           "availability": {
             "$ref": "#/components/schemas/TitleAvailability"
+          },
+          "thumbs_up": {
+            "type": "boolean",
+            "title": "Thumbs Up"
           }
         },
         "type": "object",
@@ -1349,7 +1434,8 @@
           "moods",
           "match",
           "reasons",
-          "availability"
+          "availability",
+          "thumbs_up"
         ],
         "title": "FeedItem"
       },
@@ -1400,6 +1486,10 @@
             ],
             "title": "Built At"
           },
+          "rescoring": {
+            "type": "boolean",
+            "title": "Rescoring"
+          },
           "total": {
             "type": "integer",
             "title": "Total"
@@ -1432,12 +1522,71 @@
           "step",
           "error",
           "built_at",
+          "rescoring",
           "total",
           "items",
           "languages",
           "genres"
         ],
         "title": "FeedPage"
+      },
+      "FeedbackOut": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down",
+              "dismissed",
+              "snoozed",
+              "seen"
+            ],
+            "title": "Kind"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "kind",
+          "until"
+        ],
+        "title": "FeedbackOut"
+      },
+      "FeedbackUpdate": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down",
+              "dismissed",
+              "snoozed",
+              "seen"
+            ],
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "FeedbackUpdate"
       },
       "HTTPValidationError": {
         "properties": {

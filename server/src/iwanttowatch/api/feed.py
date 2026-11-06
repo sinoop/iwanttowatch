@@ -1,5 +1,5 @@
 from collections import Counter
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Literal, cast
 
 from fastapi import APIRouter, Query, Request, Response, status
@@ -8,17 +8,21 @@ from sqlalchemy import select
 
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.library import LanguageCount
+from iwanttowatch.api.reactions import SOURCE as APP_SOURCE
 from iwanttowatch.api.reactions import load_title
 from iwanttowatch.api.streaming import TitleAvailability, title_availability
 from iwanttowatch.availability import availability
-from iwanttowatch.feed import seen
+from iwanttowatch.db import utcnow
+from iwanttowatch.feed import SNOOZE, hidden, seen
 from iwanttowatch.jellyfin import URL_SETTING as JELLYFIN_URL_SETTING
 from iwanttowatch.models import (
     Availability,
+    Feedback,
     FeedBuild,
     LibraryItem,
     Recommendation,
     Title,
+    UserTitle,
     get_setting,
 )
 from iwanttowatch.moods import moods_for
@@ -26,6 +30,8 @@ from iwanttowatch.moods import moods_for
 router = APIRouter(prefix="/api/v1")
 
 FeedStatus = Literal["none", "queued", "building", "ready", "failed"]
+# "seen" marks the film watched (without a rating); the others are Feedback kinds.
+FeedbackKind = Literal["up", "down", "dismissed", "snoozed", "seen"]
 
 
 class FeedItem(BaseModel):
@@ -42,6 +48,8 @@ class FeedItem(BaseModel):
     match: int
     reasons: list[str]
     availability: TitleAvailability
+    # The user asked for more like this.
+    thumbs_up: bool
 
 
 class FeedPage(BaseModel):
@@ -50,6 +58,8 @@ class FeedPage(BaseModel):
     step: str | None
     error: str | None
     built_at: datetime | None
+    # Recent ratings or feedback haven't reached the order yet; it changes shortly.
+    rescoring: bool
     total: int
     items: list[FeedItem]
     # Languages and genres among the feed (before the language and genre filters).
@@ -81,7 +91,12 @@ def read_feed(
         .order_by(Recommendation.rank)
     ).all()
     ids = [title.tmdb_id for _, title in rows]
-    exclude = seen(session, user.id)
+    exclude = seen(session, user.id) | hidden(session, user.id)
+    thumbs_up = set(
+        session.scalars(
+            select(Feedback.tmdb_id).where(Feedback.user_id == user.id, Feedback.kind == "up")
+        )
+    )
     library = set(
         session.scalars(
             select(LibraryItem.tmdb_id).where(
@@ -120,6 +135,7 @@ def read_feed(
         step=state.step if state else None,
         error=state.error if state else None,
         built_at=state.built_at.replace(tzinfo=UTC) if state and state.built_at else None,
+        rescoring=request.app.state.feed_worker.rescoring(user.id),
         total=len(matching),
         items=[
             FeedItem(
@@ -135,6 +151,7 @@ def read_feed(
                 match=round(rec.score * 100),
                 reasons=rec.reasons,
                 availability=where,
+                thumbs_up=title.tmdb_id in thumbs_up,
             )
             for rec, title, where in matching[offset : offset + limit]
         ],
@@ -147,6 +164,75 @@ def read_feed(
 def refresh_feed(user: CurrentUser, request: Request) -> Response:
     request.app.state.feed_worker.request(user.id)
     return Response(status_code=status.HTTP_202_ACCEPTED)
+
+
+class FeedbackUpdate(BaseModel):
+    kind: FeedbackKind
+
+
+class FeedbackOut(BaseModel):
+    tmdb_id: int
+    kind: FeedbackKind
+    # When a snoozed film comes back to the feed.
+    until: datetime | None
+
+
+@router.put("/titles/{tmdb_id}/feedback")
+def give_feedback(
+    tmdb_id: int, body: FeedbackUpdate, user: CurrentUser, session: DbSession, request: Request
+) -> FeedbackOut:
+    """Thumbs up or down, not interested, not now (for 30 days), or seen it. Only the
+    latest applies; the feed is rescored shortly after."""
+    load_title(session, request, tmdb_id)
+    entry = session.get(Feedback, (user.id, tmdb_id))
+    until = None
+    if body.kind == "seen":
+        if entry is not None:
+            session.delete(entry)
+        watched = session.scalar(
+            select(UserTitle).where(
+                UserTitle.user_id == user.id,
+                UserTitle.tmdb_id == tmdb_id,
+                UserTitle.source == APP_SOURCE,
+            )
+        )
+        if watched is None:
+            watched = UserTitle(user_id=user.id, tmdb_id=tmdb_id, source=APP_SOURCE)
+            session.add(watched)
+        watched.watched = True
+        watched.watched_at = watched.watched_at or date.today()
+    else:
+        if entry is None:
+            entry = Feedback(user_id=user.id, tmdb_id=tmdb_id)
+            session.add(entry)
+        until = utcnow() + SNOOZE if body.kind == "snoozed" else None
+        entry.kind, entry.until, entry.created_at = body.kind, until, utcnow()
+    session.commit()
+    request.app.state.feed_worker.rescore_soon(user.id)
+    return FeedbackOut(tmdb_id=tmdb_id, kind=body.kind, until=until)
+
+
+@router.delete("/titles/{tmdb_id}/feedback", status_code=status.HTTP_204_NO_CONTENT)
+def undo_feedback(
+    tmdb_id: int, user: CurrentUser, session: DbSession, request: Request
+) -> Response:
+    """Take back feedback, including "seen it" as long as the film wasn't rated."""
+    entry = session.get(Feedback, (user.id, tmdb_id))
+    if entry is not None:
+        session.delete(entry)
+    watched = session.scalar(
+        select(UserTitle).where(
+            UserTitle.user_id == user.id,
+            UserTitle.tmdb_id == tmdb_id,
+            UserTitle.source == APP_SOURCE,
+            UserTitle.reaction.is_(None),
+        )
+    )
+    if watched is not None:
+        session.delete(watched)
+    session.commit()
+    request.app.state.feed_worker.rescore_soon(user.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 class TitleDetail(BaseModel):

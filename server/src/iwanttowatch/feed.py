@@ -5,14 +5,19 @@ best-rated films on their streaming services and in their languages, and TMDb's
 recommendations for their favourites), fetches their details and where they
 stream, scores them with the recommender, and stores the ranked result. The feed
 page reads that stored result, so it stays fast on small hardware.
+
+Ratings and feedback on feed cards trigger a rescore instead: the same candidates
+scored again with the new labels, with no TMDb requests, a few seconds after the
+user's last click.
 """
 
 import logging
 import queue
 import threading
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import Engine, delete, func, or_, select
 from sqlalchemy.orm import Session
@@ -20,12 +25,22 @@ from sqlalchemy.orm import Session
 from iwanttowatch.availability import availability
 from iwanttowatch.catalog import ensure_titles
 from iwanttowatch.db import utcnow
-from iwanttowatch.models import FeedBuild, LibraryItem, Recommendation, Title, User, UserTitle
-from iwanttowatch.recommender import Label, percentiles, score
+from iwanttowatch.models import (
+    Feedback,
+    FeedBuild,
+    LibraryItem,
+    Recommendation,
+    Title,
+    User,
+    UserTitle,
+)
+from iwanttowatch.recommender import Label, Scored, percentiles, score
 from iwanttowatch.taste import effective_ratings
 from iwanttowatch.tmdb import TmdbClient, TmdbError, TmdbNotFound, client_from_settings
 
 log = logging.getLogger(__name__)
+
+Job = Literal["build", "rescore"]
 
 MAX_CANDIDATES = 800
 # Top-rated films whose TMDb recommendations become candidates.
@@ -43,6 +58,13 @@ PARALLEL_REQUESTS = 8
 # Watched but unrated: a weak positive; also a favourite in Jellyfin: stronger.
 WATCHED_LABEL, WATCHED_WEIGHT = 0.6, 0.2
 FAVOURITE_LABEL, FAVOURITE_WEIGHT = 0.85, 0.5
+# Thumbs on a feed card, for a film the user hasn't seen: "more" or "less like this".
+THUMB_LABELS = {"up": 0.8, "down": 0.2}
+THUMB_WEIGHT = 0.5
+SNOOZE = timedelta(days=30)
+# Rescore this long after the user's last rating or feedback, so a burst of clicks
+# costs one rescore.
+RESCORE_AFTER_SECONDS = 15.0
 
 
 def user_labels(session: Session, user_id: int) -> list[Label]:
@@ -65,6 +87,15 @@ def user_labels(session: Session, user_id: int) -> list[Label]:
                 if favourite
                 else Label(tmdb_id, WATCHED_LABEL, WATCHED_WEIGHT, explicit=False)
             )
+    known = {label.tmdb_id for label in labels}
+    thumbs = session.execute(
+        select(Feedback.tmdb_id, Feedback.kind).where(
+            Feedback.user_id == user_id, Feedback.kind.in_(THUMB_LABELS)
+        )
+    )
+    for tmdb_id, kind in thumbs:
+        if tmdb_id not in known:
+            labels.append(Label(tmdb_id, THUMB_LABELS[kind], THUMB_WEIGHT, explicit=False))
     return labels
 
 
@@ -75,6 +106,21 @@ def seen(session: Session, user_id: int) -> set[int]:
             select(UserTitle.tmdb_id).where(
                 UserTitle.user_id == user_id,
                 or_(UserTitle.watched, UserTitle.rating.is_not(None)),
+            )
+        )
+    )
+
+
+def hidden(session: Session, user_id: int) -> set[int]:
+    """Films the user turned down, said they're not interested in, or snoozed."""
+    return set(
+        session.scalars(
+            select(Feedback.tmdb_id).where(
+                Feedback.user_id == user_id,
+                or_(
+                    Feedback.kind.in_(["down", "dismissed"]),
+                    (Feedback.kind == "snoozed") & (Feedback.until > utcnow()),
+                ),
             )
         )
     )
@@ -180,25 +226,52 @@ def build_feed(engine: Engine, tmdb_base_url: str, user_id: int) -> None:
             state.error = f"{error}. Try again in a few minutes."
             session.commit()
             return
-        session.execute(delete(Recommendation).where(Recommendation.user_id == user_id))
-        session.add_all(
-            Recommendation(
-                user_id=user_id, tmdb_id=s.tmdb_id, score=s.score, rank=rank, reasons=s.reasons
-            )
-            for rank, s in enumerate(scored)
-        )
+        _store(session, user_id, scored)
         state.status, state.step, state.error, state.built_at = "ready", None, None, utcnow()
         session.commit()
 
 
+def rescore_feed(engine: Engine, user_id: int) -> None:
+    """Score the feed's films again with the user's latest ratings and feedback."""
+    with Session(engine) as session:
+        ids = list(
+            session.scalars(select(Recommendation.tmdb_id).where(Recommendation.user_id == user_id))
+        )
+        if not ids:
+            return
+        labels = user_labels(session, user_id)
+        exclude = seen(session, user_id)
+        ids = [i for i in ids if i not in exclude]
+        wanted = {*ids, *(label.tmdb_id for label in labels)}
+        titles = {
+            t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(wanted)))
+        }
+        _store(session, user_id, score(titles, labels, ids))
+        session.commit()
+
+
+def _store(session: Session, user_id: int, scored: Sequence[Scored]) -> None:
+    session.execute(delete(Recommendation).where(Recommendation.user_id == user_id))
+    session.add_all(
+        Recommendation(
+            user_id=user_id, tmdb_id=s.tmdb_id, score=s.score, rank=rank, reasons=s.reasons
+        )
+        for rank, s in enumerate(scored)
+    )
+
+
 class FeedWorker:
-    """Builds feeds one at a time on a background thread, and rebuilds each user's
-    feed once it is a day old."""
+    """Builds and rescores feeds one at a time on a background thread, and rebuilds
+    each user's feed once it is a day old."""
 
     def __init__(self, engine: Engine, tmdb_base_url: str) -> None:
         self._engine = engine
         self._tmdb_base_url = tmdb_base_url
-        self._queue: queue.Queue[int] = queue.Queue()
+        self._queue: queue.Queue[tuple[Job, int]] = queue.Queue()
+        self._lock = threading.Lock()
+        # Users waiting for a rescore, and the timer that will queue it.
+        self._timers: dict[int, threading.Timer] = {}
+        self._rescoring: set[int] = set()
 
     def start(self) -> None:
         with Session(self._engine) as session:
@@ -206,10 +279,11 @@ class FeedWorker:
                 select(FeedBuild.user_id).where(FeedBuild.status.in_(["queued", "building"]))
             ).all()
         for user_id in unfinished:
-            self._queue.put(user_id)
+            self._queue.put(("build", user_id))
         threading.Thread(target=self._loop, name="feed", daemon=True).start()
 
     def request(self, user_id: int) -> None:
+        """Rebuild the user's feed from scratch, fetching fresh candidates."""
         with Session(self._engine) as session:
             state = session.get(FeedBuild, user_id) or FeedBuild(user_id=user_id, status="")
             if state.status == "queued":
@@ -219,22 +293,55 @@ class FeedWorker:
                 state.status, state.error = "queued", None
                 session.add(state)
                 session.commit()
-        self._queue.put(user_id)
+        self._queue.put(("build", user_id))
+
+    def rescore_soon(self, user_id: int) -> None:
+        """Rescore the user's feed once they stop rating and giving feedback for a moment."""
+        with self._lock:
+            if (pending := self._timers.get(user_id)) is not None:
+                pending.cancel()
+            timer = threading.Timer(RESCORE_AFTER_SECONDS, self._queue_rescore, [user_id])
+            timer.daemon = True
+            self._timers[user_id] = timer
+            self._rescoring.add(user_id)
+            timer.start()
+
+    def rescoring(self, user_id: int) -> bool:
+        """Whether a rescore is waiting or running, so the feed's order will change."""
+        with self._lock:
+            return user_id in self._rescoring
 
     def wait_until_idle(self) -> None:
+        """Run waiting rescores now, then wait for all queued work (for tests)."""
+        with self._lock:
+            waiting = list(self._timers.items())
+        for user_id, timer in waiting:
+            timer.cancel()
+            self._queue_rescore(user_id, timer)
         self._queue.join()
+
+    def _queue_rescore(self, user_id: int, timer: threading.Timer | None = None) -> None:
+        with self._lock:
+            # A newer request replaced this timer; that one will queue the rescore.
+            if self._timers.get(user_id) is not (timer or threading.current_thread()):
+                return
+            del self._timers[user_id]
+        self._queue.put(("rescore", user_id))
 
     def _loop(self) -> None:
         while True:
             try:
-                user_id = self._queue.get(timeout=CHECK_EVERY_SECONDS)
+                job, user_id = self._queue.get(timeout=CHECK_EVERY_SECONDS)
             except queue.Empty:
                 self._queue_old_feeds()
                 continue
             try:
-                build_feed(self._engine, self._tmdb_base_url, user_id)
+                if job == "build":
+                    build_feed(self._engine, self._tmdb_base_url, user_id)
+                else:
+                    self._rescore(user_id)
             except Exception:
-                log.exception("Building the feed of user %s crashed", user_id)
+                log.exception("Updating the feed of user %s crashed", user_id)
                 with Session(self._engine) as session:
                     state = session.get(FeedBuild, user_id)
                     if state is not None:
@@ -242,7 +349,19 @@ class FeedWorker:
                         state.error = "Unexpected error; see the server log"
                         session.commit()
             finally:
+                if job == "rescore":
+                    with self._lock:
+                        if user_id not in self._timers:
+                            self._rescoring.discard(user_id)
                 self._queue.task_done()
+
+    def _rescore(self, user_id: int) -> None:
+        with Session(self._engine) as session:
+            state = session.get(FeedBuild, user_id)
+            # A queued build reads the latest labels anyway.
+            if state is not None and state.status == "queued":
+                return
+        rescore_feed(self._engine, user_id)
 
     def _queue_old_feeds(self) -> None:
         with Session(self._engine) as session:

@@ -482,6 +482,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/titles/{tmdb_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Give Feedback
+         * @description Thumbs up or down, not interested, not now (for 30 days), or seen it. Only the
+         *     latest applies; the feed is rescored shortly after.
+         */
+        put: operations["give_feedback_api_v1_titles__tmdb_id__feedback_put"];
+        post?: never;
+        /**
+         * Undo Feedback
+         * @description Take back feedback, including "seen it" as long as the film wasn't rated.
+         */
+        delete: operations["undo_feedback_api_v1_titles__tmdb_id__feedback_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/titles/{tmdb_id}": {
         parameters: {
             query?: never;
@@ -548,6 +573,8 @@ export interface components {
             /** Reasons */
             reasons: string[];
             availability: components["schemas"]["TitleAvailability"];
+            /** Thumbs Up */
+            thumbs_up: boolean;
         };
         /** FeedPage */
         FeedPage: {
@@ -562,6 +589,8 @@ export interface components {
             error: string | null;
             /** Built At */
             built_at: string | null;
+            /** Rescoring */
+            rescoring: boolean;
             /** Total */
             total: number;
             /** Items */
@@ -570,6 +599,26 @@ export interface components {
             languages: components["schemas"]["LanguageCount"][];
             /** Genres */
             genres: string[];
+        };
+        /** FeedbackOut */
+        FeedbackOut: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "up" | "down" | "dismissed" | "snoozed" | "seen";
+            /** Until */
+            until: string | null;
+        };
+        /** FeedbackUpdate */
+        FeedbackUpdate: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "up" | "down" | "dismissed" | "snoozed" | "seen";
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1891,6 +1940,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    give_feedback_api_v1_titles__tmdb_id__feedback_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_feedback_api_v1_titles__tmdb_id__feedback_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

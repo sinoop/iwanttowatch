@@ -126,13 +126,17 @@ def set_reaction(
     entry.watched = True
     entry.watched_at = entry.watched_at or today
     session.commit()
+    request.app.state.feed_worker.rescore_soon(user.id)
     return _out(title, entry)
 
 
 @router.delete("/{tmdb_id}/reaction", status_code=status.HTTP_204_NO_CONTENT)
-def clear_reaction(tmdb_id: int, user: CurrentUser, session: DbSession) -> Response:
+def clear_reaction(
+    tmdb_id: int, user: CurrentUser, session: DbSession, request: Request
+) -> Response:
     entry = _entry(session, user.id, tmdb_id)
     if entry is not None:
         session.delete(entry)
         session.commit()
+        request.app.state.feed_worker.rescore_soon(user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

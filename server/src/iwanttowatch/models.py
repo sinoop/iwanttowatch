@@ -220,6 +220,22 @@ class Recommendation(Base):
     reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
 
 
+class Feedback(Base):
+    """What a user said about a suggestion from a feed card: "up" or "down" (more or
+    less like this), "dismissed" (not interested), or "snoozed" (not now)."""
+
+    __tablename__ = "feedback"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    tmdb_id: Mapped[int] = mapped_column(ForeignKey("titles.tmdb_id"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    # When a snoozed film comes back.
+    until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class FeedBuild(Base):
     """Progress of building a user's feed in the background."""
 
