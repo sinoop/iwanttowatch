@@ -1,7 +1,9 @@
 import json
+import time
 from datetime import date
 
 import httpx
+import pytest
 import respx
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -52,7 +54,10 @@ def gemini_reply(*texts: str, thought: str | None = None) -> httpx.Response:
     return httpx.Response(200, json={"candidates": [{"content": {"parts": parts}}]})
 
 
-def test_gemini_persona_from_ratings(client: TestClient, mock: respx.MockRouter) -> None:
+def test_gemini_persona_from_ratings(
+    client: TestClient, mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     persona = client.get("/api/v1/me/persona").json()
     assert persona["text"] is None and persona["llm_configured"] is False
     assert client.post("/api/v1/me/persona").status_code == 409
@@ -62,7 +67,9 @@ def test_gemini_persona_from_ratings(client: TestClient, mock: respx.MockRouter)
     bad = client.put("/api/v1/settings/llm", json={"provider": "gemini", "gemini_api_key": "nope"})
     assert bad.status_code == 400 and "API key not valid" in bad.json()["detail"]
 
-    gemini.side_effect = [gemini_reply("OK")]
+    # A brief overload is retried rather than failing the test prompt.
+    busy = httpx.Response(503, json={"error": {"message": "high demand"}})
+    gemini.side_effect = [busy, gemini_reply("OK")]
     saved = client.put(
         "/api/v1/settings/llm", json={"provider": "gemini", "gemini_api_key": "g-key"}
     )

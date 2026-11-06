@@ -4,6 +4,7 @@ Nothing in iWantToWatch requires an LLM; features that use one are skipped when
 none is configured.
 """
 
+import time
 from typing import Any, Protocol
 
 import httpx
@@ -21,6 +22,9 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
 # Small CPU models on a home server can take a while.
 TIMEOUT_SECONDS = 180
+# Gemini answers 503 when overloaded and 429 at its free-tier limit, usually briefly.
+RETRY_STATUSES = {429, 500, 503}
+RETRY_DELAYS = (2.0, 5.0)
 
 
 class LlmError(Exception):
@@ -68,10 +72,14 @@ class GeminiProvider:
 
 
 def _post(http: httpx.Client, path: str, body: dict[str, Any], name: str) -> dict[str, Any]:
-    try:
-        response = http.post(path, json=body)
-    except httpx.TransportError as error:
-        raise LlmError(f"Couldn't reach {name}: {error}") from error
+    for delay in (*RETRY_DELAYS, None):
+        try:
+            response = http.post(path, json=body)
+        except httpx.TransportError as error:
+            raise LlmError(f"Couldn't reach {name}: {error}") from error
+        if response.status_code not in RETRY_STATUSES or delay is None:
+            break
+        time.sleep(delay)
     if response.status_code >= 400:
         try:
             detail = response.json().get("error")
