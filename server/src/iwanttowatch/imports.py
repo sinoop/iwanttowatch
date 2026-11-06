@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from iwanttowatch.catalog import LOOKUP_CACHE, ensure_title, find_by_title
 from iwanttowatch.db import utcnow
 from iwanttowatch.models import ImportJob, ImportRow, UserTitle
+from iwanttowatch.taste import mark_persona_stale, refresh_persona_quietly
 from iwanttowatch.tmdb import TmdbAuthError, TmdbClient, TmdbError, client_from_settings
 
 log = logging.getLogger(__name__)
@@ -185,8 +186,12 @@ def run_job(engine: Engine, tmdb_base_url: str, job_id: int) -> None:
             )
             session.commit()
             return
+        # Flag the persona before the job reads as done, so the UI keeps waiting for it.
+        rewrite = mark_persona_stale(session, job.user_id)
         job.status, job.finished_at = "done", utcnow()
         session.commit()
+        if rewrite:
+            refresh_persona_quietly(session, job.user_id)
 
 
 def _match_row(session: Session, tmdb: TmdbClient, job: ImportJob, row: ImportRow) -> None:

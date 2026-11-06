@@ -183,6 +183,45 @@
         }
       }
     },
+    "/api/v1/settings/llm": {
+      "put": {
+        "summary": "Set Llm",
+        "description": "Choose Ollama, Gemini, or no LLM. A short test prompt checks the choice first.",
+        "operationId": "set_llm_api_v1_settings_llm_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/imports": {
       "get": {
         "summary": "List Imports",
@@ -506,6 +545,41 @@
           }
         }
       }
+    },
+    "/api/v1/me/persona": {
+      "get": {
+        "summary": "Read Persona",
+        "operationId": "read_persona_api_v1_me_persona_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonaOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Regenerate Persona",
+        "description": "Ask the configured LLM to write a fresh persona from the user's ratings.",
+        "operationId": "regenerate_persona_api_v1_me_persona_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonaOut"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -775,6 +849,112 @@
         ],
         "title": "LanguageCount"
       },
+      "LlmSettings": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "none",
+              "ollama",
+              "gemini"
+            ],
+            "title": "Provider"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "ollama_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ollama Url"
+          },
+          "gemini_configured": {
+            "type": "boolean",
+            "title": "Gemini Configured"
+          },
+          "default_gemini_model": {
+            "type": "string",
+            "title": "Default Gemini Model",
+            "default": "gemini-flash-latest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "ollama_url",
+          "gemini_configured"
+        ],
+        "title": "LlmSettings"
+      },
+      "LlmUpdate": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "none",
+              "ollama",
+              "gemini"
+            ],
+            "title": "Provider"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "ollama_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ollama Url"
+          },
+          "gemini_api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gemini Api Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider"
+        ],
+        "title": "LlmUpdate"
+      },
       "LoginRequest": {
         "properties": {
           "username": {
@@ -833,6 +1013,64 @@
           "languages"
         ],
         "title": "Me"
+      },
+      "PersonaOut": {
+        "properties": {
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          },
+          "based_on_ratings": {
+            "type": "integer",
+            "title": "Based On Ratings"
+          },
+          "current_ratings": {
+            "type": "integer",
+            "title": "Current Ratings"
+          },
+          "min_ratings": {
+            "type": "integer",
+            "title": "Min Ratings"
+          },
+          "llm_configured": {
+            "type": "boolean",
+            "title": "Llm Configured"
+          },
+          "refreshing": {
+            "type": "boolean",
+            "title": "Refreshing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "generated_at",
+          "based_on_ratings",
+          "current_ratings",
+          "min_ratings",
+          "llm_configured",
+          "refreshing"
+        ],
+        "title": "PersonaOut"
       },
       "RatedTitle": {
         "properties": {
@@ -968,11 +1206,15 @@
           "tmdb_configured": {
             "type": "boolean",
             "title": "Tmdb Configured"
+          },
+          "llm": {
+            "$ref": "#/components/schemas/LlmSettings"
           }
         },
         "type": "object",
         "required": [
-          "tmdb_configured"
+          "tmdb_configured",
+          "llm"
         ],
         "title": "ServerSettings"
       },

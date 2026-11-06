@@ -110,6 +110,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/llm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Llm
+         * @description Choose Ollama, Gemini, or no LLM. A short test prompt checks the choice first.
+         */
+        put: operations["set_llm_api_v1_settings_llm_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/imports": {
         parameters: {
             query?: never;
@@ -222,6 +242,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/persona": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Persona */
+        get: operations["read_persona_api_v1_me_persona_get"];
+        put?: never;
+        /**
+         * Regenerate Persona
+         * @description Ask the configured LLM to write a fresh persona from the user's ratings.
+         */
+        post: operations["regenerate_persona_api_v1_me_persona_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -321,6 +362,39 @@ export interface components {
             /** Count */
             count: number;
         };
+        /** LlmSettings */
+        LlmSettings: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "none" | "ollama" | "gemini";
+            /** Model */
+            model: string | null;
+            /** Ollama Url */
+            ollama_url: string | null;
+            /** Gemini Configured */
+            gemini_configured: boolean;
+            /**
+             * Default Gemini Model
+             * @default gemini-flash-latest
+             */
+            default_gemini_model: string;
+        };
+        /** LlmUpdate */
+        LlmUpdate: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "none" | "ollama" | "gemini";
+            /** Model */
+            model?: string | null;
+            /** Ollama Url */
+            ollama_url?: string | null;
+            /** Gemini Api Key */
+            gemini_api_key?: string | null;
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Username */
@@ -342,6 +416,23 @@ export interface components {
             region: string;
             /** Languages */
             languages: string[];
+        };
+        /** PersonaOut */
+        PersonaOut: {
+            /** Text */
+            text: string | null;
+            /** Generated At */
+            generated_at: string | null;
+            /** Based On Ratings */
+            based_on_ratings: number;
+            /** Current Ratings */
+            current_ratings: number;
+            /** Min Ratings */
+            min_ratings: number;
+            /** Llm Configured */
+            llm_configured: boolean;
+            /** Refreshing */
+            refreshing: boolean;
         };
         /** RatedTitle */
         RatedTitle: {
@@ -384,6 +475,7 @@ export interface components {
         ServerSettings: {
             /** Tmdb Configured */
             tmdb_configured: boolean;
+            llm: components["schemas"]["LlmSettings"];
         };
         /** SetupRequest */
         SetupRequest: {
@@ -584,6 +676,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TmdbKey"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_llm_api_v1_settings_llm_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LlmUpdate"];
             };
         };
         responses: {
@@ -820,6 +945,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_persona_api_v1_me_persona_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonaOut"];
+                };
+            };
+        };
+    };
+    regenerate_persona_api_v1_me_persona_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonaOut"];
                 };
             };
         };

@@ -16,9 +16,95 @@ export default function Taste() {
         Everything iWantToWatch knows about what you like. Import your history from IMDb or
         Letterboxd; importing again later only adds what changed.
       </p>
+      <PersonaCard />
       <Imports />
       <Ratings />
     </>
+  )
+}
+
+function PersonaCard() {
+  const queryClient = useQueryClient()
+  const persona = useQuery({
+    queryKey: ['persona'],
+    queryFn: async () => (await api.GET('/api/v1/me/persona')).data ?? null,
+    refetchInterval: (query) => (query.state.data?.refreshing ? 2000 : false),
+  })
+  const write = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await api.POST('/api/v1/me/persona')
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => queryClient.setQueryData(['persona'], data),
+  })
+  const p = persona.data
+  if (!p) return null
+  const writing = write.isPending || p.refreshing
+  const enough = p.current_ratings >= p.min_ratings
+  const newRatings = p.current_ratings - p.based_on_ratings
+
+  if (!p.text && p.refreshing) {
+    return (
+      <section className="mt-8 rounded-xl border border-dashed border-white/15 p-5 text-sm text-white/60">
+        Writing the sketch of the person your taste describes…
+      </section>
+    )
+  }
+
+  if (!p.text) {
+    return (
+      <section className="mt-8 rounded-xl border border-dashed border-white/15 p-5 text-sm text-white/60">
+        {!p.llm_configured ? (
+          <>
+            Connect Ollama or Gemini in{' '}
+            <Link to="/settings" className="text-accent underline-offset-2 hover:underline">
+              Settings
+            </Link>{' '}
+            to get an AI-written sketch of the person your taste describes.
+          </>
+        ) : !enough ? (
+          `Rate at least ${p.min_ratings} movies and iWantToWatch will sketch the person your taste describes.`
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>Ready to sketch the person your taste describes.</span>
+            <Button onClick={() => write.mutate()} disabled={write.isPending}>
+              {write.isPending ? 'Writing…' : 'Write my persona'}
+            </Button>
+          </div>
+        )}
+        {write.error && (
+          <div className="mt-3">
+            <ErrorText>{write.error.message}</ErrorText>
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  return (
+    <section className="mt-8 rounded-xl border border-accent/25 bg-gradient-to-br from-accent/10 to-transparent p-5 sm:p-6">
+      <p className="text-xs font-medium tracking-wide text-accent uppercase">Your taste as a person</p>
+      <p className={`mt-3 max-w-prose text-lg leading-relaxed ${writing ? 'opacity-50' : ''}`}>
+        {p.text}
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-white/50">
+        <span>
+          Based on {p.based_on_ratings} ratings
+          {newRatings > 0 && ` · ${newRatings} new since`}
+        </span>
+        {p.llm_configured && (
+          <Button variant="ghost" onClick={() => write.mutate()} disabled={writing}>
+            {writing ? 'Writing… a local model can take a minute' : 'Write a new one'}
+          </Button>
+        )}
+      </div>
+      {write.error && (
+        <div className="mt-3">
+          <ErrorText>{write.error.message}</ErrorText>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -63,6 +149,7 @@ function Imports() {
   const statuses = (imports.data ?? []).map((job) => `${job.id}:${job.status}`).join()
   useEffect(() => {
     queryClient.invalidateQueries({ queryKey: ['ratings'] })
+    queryClient.invalidateQueries({ queryKey: ['persona'] })
   }, [statuses, queryClient])
 
   const ready = settings.data?.tmdb_configured

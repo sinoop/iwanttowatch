@@ -1,0 +1,154 @@
+import json
+from collections.abc import Iterator
+from datetime import date
+from pathlib import Path
+
+import httpx
+import pytest
+import respx
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+from test_imports import IMDB_NEW, KEY, fake_tmdb, upload
+
+from iwanttowatch.config import Settings
+from iwanttowatch.main import create_app
+from iwanttowatch.models import Title, UserTitle
+
+GEMINI = (
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
+)
+OLLAMA = "http://ollama.local:11434/api/chat"
+PERSONA = "If your movie taste were a person, they would cook fish curry at midnight."
+
+
+@pytest.fixture
+def mock() -> Iterator[respx.MockRouter]:
+    with respx.mock(assert_all_called=False) as router:
+        router.route(host="api.themoviedb.org").mock(side_effect=fake_tmdb)
+        yield router
+
+
+@pytest.fixture
+def client(tmp_path: Path, mock: respx.MockRouter) -> TestClient:
+    client = TestClient(create_app(Settings(data_dir=tmp_path, secret_key="t", static_dir=None)))
+    admin = {
+        "username": "sinoop",
+        "display_name": "Sinoop Joy",
+        "password": "password1",
+        "region": "IN",
+    }
+    client.post("/api/v1/setup", json=admin)
+    return client
+
+
+def add_ratings(client: TestClient, films: list[tuple[str, str, int, float, str, str]]) -> None:
+    """Insert rated titles directly: (title, language, year, rating, genre, director)."""
+    engine = client.app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        start = session.query(Title).count()
+        for i, (name, lang, year, rating, genre, director) in enumerate(films, start=start):
+            session.add(
+                Title(
+                    tmdb_id=9000 + i, title=name, original_title=name, original_language=lang,
+                    year=year, genres=[genre], directors=[{"id": i, "name": director}],
+                )
+            )  # fmt: skip
+            session.add(
+                UserTitle(
+                    user_id=1, tmdb_id=9000 + i, source="imdb", rating=rating,
+                    rated_at=date(2024, 1, 1 + i), watched=True,
+                )
+            )  # fmt: skip
+        session.commit()
+
+
+FILMS = [
+    ("Kumbalangi Nights", "ml", 2019, 10.0, "Drama", "Madhu C. Narayanan"),
+    ("Maheshinte Prathikaaram", "ml", 2016, 9.0, "Drama", "Dileesh Pothan"),
+    ("Thondimuthalum Driksakshiyum", "ml", 2017, 9.0, "Drama", "Dileesh Pothan"),
+    ("Joji", "ml", 2021, 8.0, "Drama", "Dileesh Pothan"),
+    ("The Godfather", "en", 1972, 9.0, "Crime", "Francis Ford Coppola"),
+    ("Transformers", "en", 2007, 3.0, "Action", "Michael Bay"),
+]
+
+
+def gemini_reply(*texts: str, thought: str | None = None) -> httpx.Response:
+    parts = ([{"text": thought, "thought": True}] if thought else []) + [{"text": t} for t in texts]
+    return httpx.Response(200, json={"candidates": [{"content": {"parts": parts}}]})
+
+
+def test_gemini_persona_from_ratings(client: TestClient, mock: respx.MockRouter) -> None:
+    persona = client.get("/api/v1/me/persona").json()
+    assert persona["text"] is None and persona["llm_configured"] is False
+    assert client.post("/api/v1/me/persona").status_code == 409
+
+    gemini = mock.post(GEMINI)
+    gemini.side_effect = [httpx.Response(400, json={"error": {"message": "API key not valid"}})]
+    bad = client.put("/api/v1/settings/llm", json={"provider": "gemini", "gemini_api_key": "nope"})
+    assert bad.status_code == 400 and "API key not valid" in bad.json()["detail"]
+
+    gemini.side_effect = [gemini_reply("OK")]
+    saved = client.put(
+        "/api/v1/settings/llm", json={"provider": "gemini", "gemini_api_key": "g-key"}
+    )
+    assert saved.json()["llm"] == {
+        "provider": "gemini",
+        "model": "gemini-flash-latest",
+        "ollama_url": None,
+        "gemini_configured": True,
+        "default_gemini_model": "gemini-flash-latest",
+    }
+    assert "g-key" not in saved.text
+
+    add_ratings(client, FILMS[:4])
+    assert client.post("/api/v1/me/persona").status_code == 409  # fewer than 5 ratings
+
+    add_ratings(client, FILMS[4:])
+
+    gemini.side_effect = [gemini_reply(f'"{PERSONA}"', thought="Let me think about this person")]
+    persona = client.post("/api/v1/me/persona").json()
+    assert persona["text"] == PERSONA
+    assert (persona["based_on_ratings"], persona["current_ratings"]) == (6, 6)
+
+    request = gemini.calls.last.request
+    assert request.headers["x-goog-api-key"] == "g-key"
+    body = json.loads(request.content)
+    assert "If your movie taste were a person" in body["systemInstruction"]["parts"][0]["text"]
+    prompt = body["contents"][0]["parts"][0]["text"]
+    assert "Rated films: 6" in prompt
+    assert "ml 66%" in prompt and "en 33%" in prompt  # 4 of 6 Malayalam, 2 of 6 English
+    assert "Dileesh Pothan (3 films)" in prompt
+    assert "Lowest rated: Transformers" in prompt
+    # The prompt describes taste, not the person: no username or display name.
+    assert "sinoop" not in prompt.lower()
+
+
+def test_ollama_persona_and_refresh_after_import(
+    client: TestClient, mock: respx.MockRouter
+) -> None:
+    ollama = mock.post(OLLAMA)
+    ollama.side_effect = [
+        httpx.Response(200, json={"message": {"role": "assistant", "content": "OK"}}),
+        httpx.Response(200, json={"message": {"role": "assistant", "content": PERSONA}}),
+    ]
+    saved = client.put(
+        "/api/v1/settings/llm",
+        json={
+            "provider": "ollama",
+            "ollama_url": "http://ollama.local:11434",
+            "model": "llama3.2:3b",
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert json.loads(ollama.calls.last.request.content)["model"] == "llama3.2:3b"
+
+    # Five ratings already exist; an import that adds one more rewrites the persona.
+    add_ratings(client, FILMS[:5])
+    assert client.put("/api/v1/settings/tmdb", json={"api_key": KEY}).status_code == 200
+    upload(client, "ratings.csv", IMDB_NEW.encode())
+
+    persona = client.get("/api/v1/me/persona").json()
+    assert persona["text"] == PERSONA and persona["based_on_ratings"] == 6
+    messages = json.loads(ollama.calls.last.request.content)["messages"]
+    assert [m["role"] for m in messages] == ["system", "user"]
+    assert "Léon: The Professional / Léon (1994, fr): 9/10" in messages[1]["content"]

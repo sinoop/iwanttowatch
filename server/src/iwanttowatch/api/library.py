@@ -1,13 +1,21 @@
-from datetime import date
+from datetime import date, datetime
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.imports import Candidate
 from iwanttowatch.catalog import search_movies
-from iwanttowatch.models import Title, UserTitle
+from iwanttowatch.llm import PROVIDER_SETTING, LlmError, provider_from_settings
+from iwanttowatch.models import Persona, Title, UserTitle, get_setting
+from iwanttowatch.taste import (
+    MIN_RATINGS_FOR_PERSONA,
+    effective_ratings,
+    generate_persona,
+    is_refreshing,
+    rating_count,
+)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -44,20 +52,7 @@ def list_ratings(
     offset: int = Query(0, ge=0),
 ) -> RatingsPage:
     """The user's ratings, newest first; when sources disagree the latest rating wins."""
-    latest = (
-        select(
-            UserTitle,
-            func.row_number()
-            .over(
-                partition_by=UserTitle.tmdb_id,
-                order_by=(UserTitle.rated_at.desc().nulls_last(), UserTitle.id.desc()),
-            )
-            .label("rank"),
-        )
-        .where(UserTitle.user_id == user.id, UserTitle.rating.is_not(None))
-        .subquery()
-    )
-    effective = select(latest).where(latest.c.rank == 1).subquery()
+    effective = effective_ratings(user.id)
     total = session.scalar(select(func.count()).select_from(effective)) or 0
     rows = session.execute(
         select(effective, Title)
@@ -104,3 +99,50 @@ def search_catalog(
     _user: CurrentUser, tmdb: Tmdb, query: str = Query(min_length=1), year: int | None = None
 ) -> list[Candidate]:
     return [Candidate(**c) for c in search_movies(tmdb, query, year)]
+
+
+class PersonaOut(BaseModel):
+    text: str | None
+    generated_at: datetime | None
+    # Ratings the persona was written from, and how many there are now.
+    based_on_ratings: int
+    current_ratings: int
+    min_ratings: int
+    llm_configured: bool
+    # A background rewrite is in progress; poll until it clears.
+    refreshing: bool
+
+
+def _persona_out(session: DbSession, user_id: int) -> PersonaOut:
+    persona = session.get(Persona, user_id)
+    return PersonaOut(
+        text=persona.text if persona else None,
+        generated_at=persona.generated_at if persona else None,
+        based_on_ratings=persona.rating_count if persona else 0,
+        current_ratings=rating_count(session, user_id),
+        min_ratings=MIN_RATINGS_FOR_PERSONA,
+        llm_configured=get_setting(session, PROVIDER_SETTING) is not None,
+        refreshing=is_refreshing(user_id),
+    )
+
+
+@router.get("/me/persona")
+def read_persona(user: CurrentUser, session: DbSession) -> PersonaOut:
+    return _persona_out(session, user.id)
+
+
+@router.post("/me/persona")
+def regenerate_persona(user: CurrentUser, session: DbSession) -> PersonaOut:
+    """Ask the configured LLM to write a fresh persona from the user's ratings."""
+    llm = provider_from_settings(session)
+    if llm is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Connect Ollama or Gemini in Settings first")
+    try:
+        persona = generate_persona(session, user.id, llm)
+    except LlmError as error:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
+    if persona is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, f"Rate at least {MIN_RATINGS_FOR_PERSONA} movies first"
+        )
+    return _persona_out(session, user.id)

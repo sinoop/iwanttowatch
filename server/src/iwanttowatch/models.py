@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, UniqueConstraint, delete
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from iwanttowatch.db import Base, utcnow
@@ -36,8 +36,12 @@ def get_setting(session: Session, key: str) -> str | None:
     return setting.value if setting else None
 
 
-def set_setting(session: Session, key: str, value: str) -> None:
-    session.merge(AppSetting(key=key, value=value))
+def set_setting(session: Session, key: str, value: str | None) -> None:
+    """Store a setting; None removes it."""
+    if value is None:
+        session.execute(delete(AppSetting).where(AppSetting.key == key))
+    else:
+        session.merge(AppSetting(key=key, value=value))
 
 
 class Title(Base):
@@ -97,6 +101,20 @@ class UserTitle(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class Persona(Base):
+    """An LLM-written sketch of the imaginary person whose taste matches a user's ratings."""
+
+    __tablename__ = "personas"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    text: Mapped[str] = mapped_column(Text)
+    # How many ratings it was written from, to tell when it is out of date.
+    rating_count: Mapped[int]
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class ImportJob(Base):

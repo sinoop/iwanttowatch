@@ -9,6 +9,8 @@ export type ImportRow = Schemas['ImportRowOut']
 export type Candidate = Schemas['Candidate']
 export type RatedTitle = Schemas['RatedTitle']
 export type RatingsPage = Schemas['RatingsPage']
+export type Persona = Schemas['PersonaOut']
+export type ServerSettings = Schemas['ServerSettings']
 
 /**
  * Typed client for the iWantToWatch REST API.

@@ -213,7 +213,7 @@ def test_imports_need_a_valid_tmdb_key(tmp_path: Path) -> None:
         assert client.post("/api/v1/imports", files=files).status_code == 409
         wrong = {"api_key": "wrong-key-wrong-key-wrong"}
         assert client.put("/api/v1/settings/tmdb", json=wrong).status_code == 400
-        assert client.get("/api/v1/settings").json() == {"tmdb_configured": False}
+        assert client.get("/api/v1/settings").json()["tmdb_configured"] is False
 
         assert client.put("/api/v1/settings/tmdb", json={"api_key": KEY}).status_code == 200
         notes = {"file": ("notes.csv", b"a,b\n1,2\n")}
