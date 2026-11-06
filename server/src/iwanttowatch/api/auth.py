@@ -5,7 +5,7 @@ from sqlalchemy import exists, select
 
 from iwanttowatch.api.deps import CurrentUser, DbSession
 from iwanttowatch.api.schemas import LoginRequest, Me, SetupRequest, SetupStatus
-from iwanttowatch.db import User
+from iwanttowatch.models import User
 
 router = APIRouter(prefix="/api/v1")
 hasher = PasswordHasher()

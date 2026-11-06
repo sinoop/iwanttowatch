@@ -1,8 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { api } from './api'
-import Home from './Home'
+import Discover from './Discover'
 import Login from './Login'
+import Review from './Review'
+import Settings from './Settings'
 import SetupWizard from './SetupWizard'
+import Shell from './Shell'
+import Taste from './Taste'
 
 export default function App() {
   const setup = useQuery({
@@ -24,5 +29,17 @@ export default function App() {
   }
   if (!setup.data.complete) return <SetupWizard />
   if (!me.data) return <Login />
-  return <Home me={me.data} />
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route element={<Shell me={me.data} />}>
+          <Route index element={<Discover me={me.data} />} />
+          <Route path="taste" element={<Taste />} />
+          <Route path="taste/imports/:jobId" element={<Review />} />
+          <Route path="settings" element={<Settings me={me.data} />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  )
 }

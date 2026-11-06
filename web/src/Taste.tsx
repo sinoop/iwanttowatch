@@ -1,0 +1,251 @@
+import type { ImportJob, RatedTitle } from '@iwanttowatch/api-client'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router'
+import { api, errorMessage, useServerSettings } from './api'
+import { Button, ErrorText, Poster } from './ui'
+
+const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
+const PAGE = 48
+
+export default function Taste() {
+  return (
+    <>
+      <h1 className="text-2xl font-semibold">My taste</h1>
+      <p className="mt-2 max-w-prose text-white/60">
+        Everything iWantToWatch knows about what you like. Import your history from IMDb or
+        Letterboxd; importing again later only adds what changed.
+      </p>
+      <Imports />
+      <Ratings />
+    </>
+  )
+}
+
+function useImports() {
+  return useQuery({
+    queryKey: ['imports'],
+    queryFn: async () => (await api.GET('/api/v1/imports')).data ?? [],
+    refetchInterval: (query) =>
+      query.state.data?.some((job) => job.status === 'pending' || job.status === 'running')
+        ? 1500
+        : false,
+  })
+}
+
+function Imports() {
+  const queryClient = useQueryClient()
+  const settings = useServerSettings()
+  const imports = useImports()
+  const input = useRef<HTMLInputElement>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const body = new FormData()
+      body.append('file', file)
+      // openapi-fetch sends FormData as-is, letting the browser set the multipart boundary.
+      const { data, error } = await api.POST('/api/v1/imports', {
+        body: body as unknown as { file: string },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onMutate: () => setError(null),
+    onError: (e) => setError(e.message),
+    onSettled: () => {
+      if (input.current) input.current.value = ''
+      queryClient.invalidateQueries({ queryKey: ['imports'] })
+    },
+  })
+
+  // When a job finishes or fails, refresh the ratings it added.
+  const statuses = (imports.data ?? []).map((job) => `${job.id}:${job.status}`).join()
+  useEffect(() => {
+    queryClient.invalidateQueries({ queryKey: ['ratings'] })
+  }, [statuses, queryClient])
+
+  const ready = settings.data?.tmdb_configured
+
+  return (
+    <section className="mt-8 rounded-xl border border-white/10 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="max-w-prose text-sm text-white/60">
+          <h2 className="text-base font-semibold text-white">Import ratings</h2>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            <li>
+              <span className="text-white/80">IMDb:</span> open Your Ratings, then use the menu to
+              export <code className="text-white/80">ratings.csv</code>.
+            </li>
+            <li>
+              <span className="text-white/80">Letterboxd:</span> Settings → Data → Export your data,
+              then upload the ZIP file as it is.
+            </li>
+          </ul>
+        </div>
+        <div>
+          <input
+            ref={input}
+            type="file"
+            accept=".csv,.zip"
+            className="hidden"
+            aria-label="Export file"
+            onChange={(e) => e.target.files?.[0] && upload.mutate(e.target.files[0])}
+          />
+          <Button
+            onClick={() => input.current?.click()}
+            disabled={!ready || upload.isPending}
+            title={ready ? undefined : 'Add a TMDb API key in Settings first'}
+          >
+            {upload.isPending ? 'Uploading…' : 'Choose file'}
+          </Button>
+        </div>
+      </div>
+      {!ready && settings.data && (
+        <p className="mt-4 text-sm text-amber-300">
+          Add a TMDb API key in <Link to="/settings" className="underline">Settings</Link> before
+          importing.
+        </p>
+      )}
+      {error && (
+        <div className="mt-4">
+          <ErrorText>{error}</ErrorText>
+        </div>
+      )}
+      {imports.data && imports.data.length > 0 && (
+        <ul className="mt-5 divide-y divide-white/5 border-t border-white/10">
+          {imports.data.map((job) => (
+            <ImportRow key={job.id} job={job} />
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+function ImportRow({ job }: { job: ImportJob }) {
+  const queryClient = useQueryClient()
+  const retry = useMutation({
+    mutationFn: () => api.POST('/api/v1/imports/{job_id}/retry', { params: { path: { job_id: job.id } } }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['imports'] }),
+  })
+  const { pending, matched, review, skipped } = job.counts
+  const total = pending + matched + review + skipped
+  const done = total - pending
+  const active = job.status === 'pending' || job.status === 'running'
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium">
+          {job.source === 'imdb' ? 'IMDb' : 'Letterboxd'}{' '}
+          <span className="font-normal text-white/45">{job.filename}</span>
+        </p>
+        <p className="text-white/55">
+          {active
+            ? `Matching ${done} of ${total}…`
+            : `${matched} matched · ${review} to review · ${skipped} skipped`}
+        </p>
+        {active && (
+          <div className="mt-2 h-1 w-full max-w-xs overflow-hidden rounded bg-white/10">
+            <div
+              className="h-full bg-accent transition-[width]"
+              style={{ width: `${total ? (done / total) * 100 : 0}%` }}
+            />
+          </div>
+        )}
+        {job.status === 'failed' && <p className="mt-1 text-red-300">{job.error}</p>}
+      </div>
+      {job.status === 'failed' && (
+        <Button variant="ghost" onClick={() => retry.mutate()} disabled={retry.isPending}>
+          Retry
+        </Button>
+      )}
+      {review > 0 && !active && (
+        <Link
+          to={`/taste/imports/${job.id}`}
+          className="rounded-lg border border-accent/40 px-3 py-1.5 font-medium text-accent hover:bg-accent/10"
+        >
+          Review {review}
+        </Link>
+      )}
+    </li>
+  )
+}
+
+function Ratings() {
+  const ratings = useInfiniteQuery({
+    queryKey: ['ratings'],
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) =>
+      (await api.GET('/api/v1/ratings', { params: { query: { limit: PAGE, offset: pageParam } } }))
+        .data ?? { total: 0, items: [], languages: [] },
+    getNextPageParam: (last, pages) => {
+      const loaded = pages.reduce((sum, page) => sum + page.items.length, 0)
+      return loaded < last.total ? loaded : undefined
+    },
+  })
+  const pages = ratings.data?.pages ?? []
+  const first = pages[0]
+  if (!first) return null
+  const items = pages.flatMap((page) => page.items)
+
+  return (
+    <section className="mt-10">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h2 className="text-lg font-semibold">
+          Your ratings <span className="font-normal text-white/45">{first.total}</span>
+        </h2>
+        {first.languages.length > 0 && (
+          <ul className="flex flex-wrap gap-2" aria-label="Languages you rated">
+            {first.languages.map((lang) => (
+              <li key={lang.language} className="rounded-full bg-white/5 px-3 py-1 text-xs text-white/70">
+                {languageName.of(lang.language) ?? lang.language}{' '}
+                <span className="text-white/40">{lang.count}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {items.length === 0 ? (
+        <p className="mt-4 text-sm text-white/50">No ratings yet. Import a file above to start.</p>
+      ) : (
+        <ul className="mt-5 grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-6">
+          {items.map((item) => (
+            <RatingCard key={item.tmdb_id} item={item} />
+          ))}
+        </ul>
+      )}
+      {ratings.hasNextPage && (
+        <div className="mt-6">
+          <Button variant="ghost" onClick={() => ratings.fetchNextPage()} disabled={ratings.isFetchingNextPage}>
+            Show more
+          </Button>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function RatingCard({ item }: { item: RatedTitle }) {
+  const showOriginal = item.original_title && item.original_title !== item.title
+  return (
+    <li className="min-w-0">
+      <div className="relative">
+        <Poster path={item.poster_path} title={item.title} />
+        <span className="absolute top-1.5 right-1.5 rounded-md bg-black/75 px-1.5 py-0.5 text-xs font-semibold text-accent-strong">
+          {item.favorite && <span aria-label="Liked">♥ </span>}
+          {Number.isInteger(item.rating) ? item.rating : item.rating.toFixed(1)}
+        </span>
+      </div>
+      <p className="mt-2 truncate text-sm font-medium" title={item.title}>
+        {item.title}
+      </p>
+      <p className="truncate text-xs text-white/45" title={showOriginal ? item.original_title : undefined}>
+        {[item.year, showOriginal ? item.original_title : languageName.of(item.original_language)]
+          .filter(Boolean)
+          .join(' · ')}
+      </p>
+    </li>
+  )
+}

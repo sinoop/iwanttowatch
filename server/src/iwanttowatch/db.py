@@ -6,8 +6,8 @@ from typing import Any
 from alembic import command
 from alembic.config import Config
 from fastapi import Request
-from sqlalchemy import JSON, DateTime, Engine, String, create_engine, event
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from sqlalchemy import Engine, create_engine, event
+from sqlalchemy.orm import DeclarativeBase, Session
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -16,21 +16,8 @@ class Base(DeclarativeBase):
     pass
 
 
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(String(64), unique=True)
-    display_name: Mapped[str] = mapped_column(String(128))
-    # Null for users who sign in through Jellyfin instead of a local password.
-    password_hash: Mapped[str | None]
-    jellyfin_user_id: Mapped[str | None] = mapped_column(String(64), unique=True)
-    is_admin: Mapped[bool] = mapped_column(default=False)
-    region: Mapped[str] = mapped_column(String(2))
-    languages: Mapped[list[str]] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(UTC)
-    )
+def utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 def create_db_engine(database_url: str) -> Engine:

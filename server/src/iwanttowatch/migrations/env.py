@@ -1,6 +1,7 @@
 from alembic import context
 from sqlalchemy import Connection
 
+from iwanttowatch import models  # noqa: F401  (registers tables on Base.metadata)
 from iwanttowatch.config import Settings
 from iwanttowatch.db import Base, create_db_engine
 

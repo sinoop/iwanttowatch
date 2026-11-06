@@ -126,10 +126,456 @@
           }
         }
       }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "summary": "Read Settings",
+        "operationId": "read_settings_api_v1_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/tmdb": {
+      "put": {
+        "summary": "Set Tmdb Key",
+        "operationId": "set_tmdb_key_api_v1_settings_tmdb_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TmdbKey"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/imports": {
+      "get": {
+        "summary": "List Imports",
+        "operationId": "list_imports_api_v1_imports_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImportJobOut"
+                  },
+                  "type": "array",
+                  "title": "Response List Imports Api V1 Imports Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Upload Export",
+        "description": "Upload an IMDb ratings.csv, a Letterboxd export ZIP, or one Letterboxd CSV.",
+        "operationId": "upload_export_api_v1_imports_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_export_api_v1_imports_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/imports/{job_id}/rows": {
+      "get": {
+        "summary": "List Rows",
+        "operationId": "list_rows_api_v1_imports__job_id__rows_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "review",
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ImportRowOut"
+                  },
+                  "title": "Response List Rows Api V1 Imports  Job Id  Rows Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/imports/{job_id}/retry": {
+      "post": {
+        "summary": "Retry Import",
+        "operationId": "retry_import_api_v1_imports__job_id__retry_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/imports/{job_id}/rows/{row_id}/resolve": {
+      "post": {
+        "summary": "Resolve Row",
+        "description": "Pick the right movie for a row the importer couldn't match, or skip it.",
+        "operationId": "resolve_row_api_v1_imports__job_id__rows__row_id__resolve_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "row_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Row Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Resolution"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportRowOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ratings": {
+      "get": {
+        "summary": "List Ratings",
+        "description": "The user's ratings, newest first; when sources disagree the latest rating wins.",
+        "operationId": "list_ratings_api_v1_ratings_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingsPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/catalog/search": {
+      "get": {
+        "summary": "Search Catalog",
+        "operationId": "search_catalog_api_v1_catalog_search_get",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Query"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Candidate"
+                  },
+                  "title": "Response Search Catalog Api V1 Catalog Search Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "Body_upload_export_api_v1_imports_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_export_api_v1_imports_post"
+      },
+      "Candidate": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "original_title": {
+            "type": "string",
+            "title": "Original Title"
+          },
+          "original_language": {
+            "type": "string",
+            "title": "Original Language"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "poster_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "original_title",
+          "original_language",
+          "year",
+          "poster_path"
+        ],
+        "title": "Candidate"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -142,6 +588,192 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ImportCounts": {
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "title": "Pending",
+            "default": 0
+          },
+          "matched": {
+            "type": "integer",
+            "title": "Matched",
+            "default": 0
+          },
+          "review": {
+            "type": "integer",
+            "title": "Review",
+            "default": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ImportCounts"
+      },
+      "ImportJobOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ImportCounts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "filename",
+          "status",
+          "error",
+          "created_at",
+          "finished_at",
+          "counts"
+        ],
+        "title": "ImportJobOut"
+      },
+      "ImportRowOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "tmdb_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tmdb Id"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/Candidate"
+            },
+            "type": "array",
+            "title": "Candidates"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "year",
+          "rating",
+          "status",
+          "tmdb_id",
+          "candidates",
+          "message"
+        ],
+        "title": "ImportRowOut"
+      },
+      "LanguageCount": {
+        "properties": {
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "language",
+          "count"
+        ],
+        "title": "LanguageCount"
       },
       "LoginRequest": {
         "properties": {
@@ -202,6 +834,148 @@
         ],
         "title": "Me"
       },
+      "RatedTitle": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "original_title": {
+            "type": "string",
+            "title": "Original Title"
+          },
+          "original_language": {
+            "type": "string",
+            "title": "Original Language"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "poster_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Path"
+          },
+          "rating": {
+            "type": "number",
+            "title": "Rating"
+          },
+          "rated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rated At"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "favorite": {
+            "type": "boolean",
+            "title": "Favorite"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "original_title",
+          "original_language",
+          "year",
+          "poster_path",
+          "rating",
+          "rated_at",
+          "source",
+          "favorite"
+        ],
+        "title": "RatedTitle"
+      },
+      "RatingsPage": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RatedTitle"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "languages": {
+            "items": {
+              "$ref": "#/components/schemas/LanguageCount"
+            },
+            "type": "array",
+            "title": "Languages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "items",
+          "languages"
+        ],
+        "title": "RatingsPage"
+      },
+      "Resolution": {
+        "properties": {
+          "tmdb_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tmdb Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id"
+        ],
+        "title": "Resolution"
+      },
+      "ServerSettings": {
+        "properties": {
+          "tmdb_configured": {
+            "type": "boolean",
+            "title": "Tmdb Configured"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_configured"
+        ],
+        "title": "ServerSettings"
+      },
       "SetupRequest": {
         "properties": {
           "username": {
@@ -259,6 +1033,21 @@
           "complete"
         ],
         "title": "SetupStatus"
+      },
+      "TmdbKey": {
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "maxLength": 1024,
+            "minLength": 16,
+            "title": "Api Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "api_key"
+        ],
+        "title": "TmdbKey"
       },
       "ValidationError": {
         "properties": {

@@ -1,0 +1,150 @@
+"""Movie metadata from TMDb, and matching titles from other sources to TMDb IDs."""
+
+import re
+import unicodedata
+from datetime import UTC, date, datetime, timedelta
+from difflib import SequenceMatcher
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from iwanttowatch.db import utcnow
+from iwanttowatch.models import Title
+from iwanttowatch.tmdb import TmdbClient
+
+TITLE_REFRESH_AFTER = timedelta(days=30)
+LOOKUP_CACHE = timedelta(days=30)
+DETAIL_APPENDS = "credits,keywords,translations,alternative_titles"
+
+
+def ensure_title(session: Session, tmdb: TmdbClient, tmdb_id: int) -> Title:
+    """Return the title, fetching or refreshing its metadata from TMDb when needed."""
+    title = session.get(Title, tmdb_id)
+    if title is not None and utcnow() - title.fetched_at.replace(tzinfo=UTC) < TITLE_REFRESH_AFTER:
+        return title
+    details = tmdb.get(f"/movie/{tmdb_id}", {"append_to_response": DETAIL_APPENDS})
+    fields = _title_fields(details)
+    if title is None:
+        title = Title(tmdb_id=tmdb_id, **fields)
+        session.add(title)
+    else:
+        for name, value in fields.items():
+            setattr(title, name, value)
+    title.fetched_at = utcnow()
+    session.flush()
+    return title
+
+
+def _title_fields(d: dict[str, Any]) -> dict[str, Any]:
+    release = _parse_date(d.get("release_date"))
+    crew = d.get("credits", {}).get("crew", [])
+    translations: dict[str, dict[str, str]] = {}
+    for t in d.get("translations", {}).get("translations", []):
+        data = t.get("data") or {}
+        text = {k: data[k] for k in ("title", "overview") if data.get(k)}
+        if text and t.get("iso_639_1") not in translations:
+            translations[t["iso_639_1"]] = text
+    return {
+        "imdb_id": d.get("imdb_id") or None,
+        "title": d.get("title") or d.get("original_title") or "",
+        "original_title": d.get("original_title") or d.get("title") or "",
+        "original_language": d.get("original_language") or "",
+        "spoken_languages": [lang["iso_639_1"] for lang in d.get("spoken_languages", [])],
+        "origin_countries": d.get("origin_country")
+        or [c["iso_3166_1"] for c in d.get("production_countries", [])],
+        "release_date": release,
+        "year": release.year if release else None,
+        "runtime": d.get("runtime") or None,
+        "overview": d.get("overview") or "",
+        "tagline": d.get("tagline") or "",
+        "genres": [g["name"] for g in d.get("genres", [])],
+        "keywords": [k["name"] for k in d.get("keywords", {}).get("keywords", [])],
+        "cast": _people(d.get("credits", {}).get("cast", []), limit=10),
+        "directors": _people([c for c in crew if c.get("job") == "Director"]),
+        "writers": _people([c for c in crew if c.get("department") == "Writing"], limit=5),
+        "alternative_titles": sorted(
+            {
+                t["title"]
+                for t in d.get("alternative_titles", {}).get("titles", [])
+                if t.get("title")
+            }
+        ),
+        "translations": translations,
+        "vote_average": d.get("vote_average"),
+        "vote_count": d.get("vote_count"),
+        "popularity": d.get("popularity"),
+        "poster_path": d.get("poster_path"),
+    }
+
+
+def _people(credits: list[dict[str, Any]], limit: int | None = None) -> list[dict[str, Any]]:
+    seen: dict[int, dict[str, Any]] = {}
+    for person in credits:
+        seen.setdefault(person["id"], {"id": person["id"], "name": person["name"]})
+    return list(seen.values())[:limit]
+
+
+def _parse_date(value: str | None) -> date | None:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date() if value else None
+    except ValueError:
+        return None
+
+
+def candidate(result: dict[str, Any]) -> dict[str, Any]:
+    """The fields of a TMDb search result shown when a user picks a match."""
+    release = _parse_date(result.get("release_date"))
+    return {
+        "tmdb_id": result["id"],
+        "title": result.get("title") or "",
+        "original_title": result.get("original_title") or "",
+        "original_language": result.get("original_language") or "",
+        "year": release.year if release else None,
+        "poster_path": result.get("poster_path"),
+    }
+
+
+def search_movies(tmdb: TmdbClient, query: str, year: int | None = None) -> list[dict[str, Any]]:
+    params = {"query": query, "year": year, "include_adult": "false"}
+    results: list[dict[str, Any]] = tmdb.get("/search/movie", params, LOOKUP_CACHE)["results"]
+    return [candidate(r) for r in results]
+
+
+def find_by_title(
+    tmdb: TmdbClient, name: str, year: int | None
+) -> tuple[int | None, list[dict[str, Any]]]:
+    """Match a title and year (as in Letterboxd exports) to a TMDb movie.
+
+    Returns the TMDb ID when the match is unambiguous, plus the candidates to show
+    the user otherwise.
+    """
+    results = search_movies(tmdb, name, year) if year else []
+    if len(results) == 1 and results[0]["year"] == year:
+        # TMDb also searches alternative and translated titles, so a single hit for the
+        # exact year is a match even when its display title is spelled differently.
+        return results[0]["tmdb_id"], results
+    if not results:
+        results = search_movies(tmdb, name)
+    close = [c for c in results[:10] if _title_similarity(name, c) >= 0.9]
+    if year:
+        close = [c for c in close if c["year"] and abs(c["year"] - year) <= 1]
+        close = [c for c in close if c["year"] == year] or close
+    if len(close) == 1:
+        return close[0]["tmdb_id"], results[:5]
+    return None, results[:5]
+
+
+def _title_similarity(name: str, c: dict[str, Any]) -> float:
+    wanted = _normalise(name)
+    return max(
+        SequenceMatcher(None, wanted, _normalise(c[field])).ratio()
+        for field in ("title", "original_title")
+    )
+
+
+def _normalise(title: str) -> str:
+    text = unicodedata.normalize("NFKD", title.casefold())
+    text = "".join(ch for ch in text if not unicodedata.combining(ch)).replace("&", " and ")
+    text = re.sub(r"[^\w\s]", " ", text)
+    text = re.sub(r"^(the|a|an)\s+", "", text.strip())
+    return " ".join(text.split())

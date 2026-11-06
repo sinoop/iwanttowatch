@@ -2,7 +2,13 @@ import createClient from 'openapi-fetch'
 import type { components, paths } from './schema'
 
 export type { components, paths }
-export type Me = components['schemas']['Me']
+type Schemas = components['schemas']
+export type Me = Schemas['Me']
+export type ImportJob = Schemas['ImportJobOut']
+export type ImportRow = Schemas['ImportRowOut']
+export type Candidate = Schemas['Candidate']
+export type RatedTitle = Schemas['RatedTitle']
+export type RatingsPage = Schemas['RatingsPage']
 
 /**
  * Typed client for the iWantToWatch REST API.

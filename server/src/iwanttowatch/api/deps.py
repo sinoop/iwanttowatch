@@ -3,7 +3,9 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from iwanttowatch.db import User, get_session
+from iwanttowatch.db import get_session
+from iwanttowatch.models import User
+from iwanttowatch.tmdb import TmdbClient, client_from_settings
 
 DbSession = Annotated[Session, Depends(get_session)]
 
@@ -17,3 +19,22 @@ def get_current_user(request: Request, session: DbSession) -> User:
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def get_admin_user(user: CurrentUser) -> User:
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only an admin can do this")
+    return user
+
+
+AdminUser = Annotated[User, Depends(get_admin_user)]
+
+
+def get_tmdb(request: Request, session: DbSession) -> TmdbClient:
+    tmdb = client_from_settings(session, request.app.state.engine, request.app.state.tmdb_base_url)
+    if tmdb is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Add a TMDb API key in Settings first")
+    return tmdb
+
+
+Tmdb = Annotated[TmdbClient, Depends(get_tmdb)]

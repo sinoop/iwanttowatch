@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     port: int = 8080
     # Directory holding the built web app; when unset, only the API is served.
     static_dir: Path | None = None
+    # Overridable for proxies and local testing against a stub.
+    tmdb_base_url: str = "https://api.themoviedb.org/3"
 
     @property
     def database_url(self) -> str:

@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
+import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react'
 
 export function Logo() {
   return (
@@ -64,5 +64,29 @@ export function ErrorText({ children }: { children: ReactNode }) {
     <p role="alert" className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-300">
       {children}
     </p>
+  )
+}
+
+const POSTER_BASE = 'https://image.tmdb.org/t/p/w185'
+
+/** A 2:3 movie poster from TMDb, showing the title when there is no image or it fails to load. */
+export function Poster({ path, title, className = '' }: { path: string | null; title: string; className?: string }) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <div className={`aspect-[2/3] overflow-hidden rounded-lg bg-white/5 ${className}`}>
+      {path && !failed ? (
+        <img
+          src={POSTER_BASE + path}
+          alt=""
+          loading="lazy"
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span className="flex h-full items-center justify-center p-2 text-center text-xs text-white/40">
+          {title}
+        </span>
+      )}
+    </div>
   )
 }
