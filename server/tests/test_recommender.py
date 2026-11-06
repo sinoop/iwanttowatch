@@ -73,6 +73,29 @@ def test_scores_follow_the_users_taste_not_popularity() -> None:
     )
 
 
+def test_quality_is_judged_within_a_language_only_when_it_has_enough_films() -> None:
+    def voted(tmdb_id: int, lang: str, average: float, votes: int) -> Title:
+        return Title(
+            tmdb_id=tmdb_id, title=str(tmdb_id), original_title=str(tmdb_id),
+            original_language=lang, genres=[], keywords=[], directors=[], writers=[], cast=[],
+            vote_average=average, vote_count=votes,
+        )  # fmt: skip
+
+    # English films rated 6.0–7.95 with 150 to 3,000 votes, Malayalam ones with about 50.
+    titles = {i: voted(i, "en", 6.0 + i / 20, 150 + (i * 397) % 2850) for i in range(40)}
+    titles[100] = voted(100, "en", 8.5, 30000)
+    titles |= {200 + i: voted(200 + i, "ml", 6.5 + i / 20, 40 + i) for i in range(20)}
+    titles[300] = voted(300, "ml", 8.2, 60)
+    titles[400] = voted(400, "nl", 8.6, 334)  # the only Dutch film
+    rank = [s.tmdb_id for s in sorted(score(titles, [], list(titles)), key=lambda s: -s.score)]
+
+    # A well-loved Malayalam film with few votes still ranks high among many films...
+    assert rank.index(300) < 3
+    # ...but a lone Dutch film isn't judged against Dutch norms made of itself alone,
+    # which would put its 334 votes' average above an established 8.5.
+    assert rank.index(100) < rank.index(400)
+
+
 def test_evaluation_compares_with_popularity() -> None:
     titles, ratings = catalogue()
     labels = [Label(i, p) for i, p in percentiles(ratings).items()]

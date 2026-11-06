@@ -46,6 +46,9 @@ NEIGHBOURS = 20
 NEIGHBOUR_SHRINK = 1.0
 RIDGE_ALPHA = 1.0
 BASELINE_WEIGHT = 5.0
+# How many films of a language must be in the pool before its vote norms count as
+# much as those of all films together.
+LANGUAGE_NORM_FILMS = 5
 FOLDS = 5
 MIN_RATINGS_FOR_CV = 15
 # (neighbours, ridge, quality) weights tried by cross-validation.
@@ -138,16 +141,33 @@ class Vectors:
         self.matrix = matrix / np.where(norms > 0, norms, 1)
 
 
+def _vote_norms(voted: Sequence[Title]) -> tuple[float, float]:
+    """The mean vote average and median vote count of some films."""
+    if not voted:
+        return 6.0, 1.0
+    return sum(t.vote_average or 0 for t in voted) / len(voted), median(
+        t.vote_count or 0 for t in voted
+    )
+
+
 def _quality(titles: Sequence[Title]) -> Floats:
     """Each film's percentile by Bayesian-averaged vote, within its own language."""
     by_language: dict[str, list[Title]] = defaultdict(list)
     for t in titles:
         by_language[t.original_language].append(t)
+    overall_mean, overall_votes = _vote_norms(
+        [t for t in titles if t.vote_count and t.vote_average is not None]
+    )
     averages: dict[int, float] = {}
     for group in by_language.values():
         voted = [t for t in group if t.vote_count and t.vote_average is not None]
-        mean_vote = sum(t.vote_average or 0 for t in voted) / len(voted) if voted else 6.0
-        prior_votes = median(t.vote_count or 0 for t in voted) if voted else 1
+        # A language's own norms take over as more of its films are in the pool;
+        # a film alone in its language would otherwise be averaged with itself.
+        own = len(voted) / (len(voted) + LANGUAGE_NORM_FILMS)
+        language_mean, language_votes = _vote_norms(voted)
+        mean_vote = own * language_mean + (1 - own) * overall_mean
+        # Vote counts span orders of magnitude between languages, so blend their logs.
+        prior_votes = math.exp(own * math.log(language_votes) + (1 - own) * math.log(overall_votes))
         for t in group:
             votes = t.vote_count or 0
             averages[t.tmdb_id] = (votes * (t.vote_average or 0) + prior_votes * mean_vote) / (
