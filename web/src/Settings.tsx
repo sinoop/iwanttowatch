@@ -1,6 +1,6 @@
 import type { Me, ServerSettings } from '@iwanttowatch/api-client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { api, errorMessage, useServerSettings } from './api'
 import { JellyfinAccount, JellyfinServer } from './JellyfinSettings'
 import { StreamingSettings } from './Streaming'
@@ -79,6 +79,7 @@ export default function Settings({ me }: { me: Me }) {
       <JellyfinAccount />
       {settings.data?.tmdb_configured && <StreamingSettings me={me} />}
       {settings.data && <LlmSection me={me} settings={settings.data} />}
+      <YourData tmdbReady={settings.data?.tmdb_configured === true} />
     </>
   )
 }
@@ -226,6 +227,86 @@ function LlmSection({ me, settings }: { me: Me; settings: ServerSettings }) {
         </form>
       ) : (
         <p className="mt-4 text-sm text-white/50">Only an admin can change this.</p>
+      )}
+    </section>
+  )
+}
+
+/** Download everything the user has told iWantToWatch, or restore it from such a file. */
+function YourData({ tmdbReady }: { tmdbReady: boolean }) {
+  const queryClient = useQueryClient()
+  const input = useRef<HTMLInputElement>(null)
+  const restore = useMutation({
+    mutationFn: async (file: File) => {
+      const body = new FormData()
+      body.append('file', file)
+      // openapi-fetch sends FormData as-is, letting the browser set the multipart boundary.
+      const { data, error } = await api.POST('/api/v1/me/import', {
+        body: body as unknown as { file: string },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: () => {
+      for (const key of ['me', 'ratings', 'feed', 'persona', 'availability']) {
+        queryClient.invalidateQueries({ queryKey: [key] })
+      }
+    },
+    onSettled: () => {
+      if (input.current) input.current.value = ''
+    },
+  })
+  const done = restore.data
+
+  return (
+    <section className="mt-6 max-w-xl rounded-xl border border-white/10 p-5">
+      <h2 className="font-semibold">Your data</h2>
+      <p className="mt-2 text-sm text-white/60">
+        Download your ratings, watches, favourites, feedback, and streaming settings as one file, to keep a
+        backup or move to another iWantToWatch server.
+      </p>
+      <a
+        href="/api/v1/me/export"
+        download
+        className="mt-4 inline-block rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black hover:bg-accent-strong focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
+      >
+        Export my data
+      </a>
+
+      <h3 className="mt-6 text-sm font-medium text-white/80">Restore from an export</h3>
+      <p className="mt-1 text-sm text-white/60">
+        Adds the file’s ratings and feedback to your account; where both have the same film, the file wins. Your
+        country, languages, and streaming services are set from the file too.
+      </p>
+      <input
+        ref={input}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        aria-label="iWantToWatch export file"
+        onChange={(e) => e.target.files?.[0] && restore.mutate(e.target.files[0])}
+      />
+      <Button
+        variant="ghost"
+        className="mt-3 border border-white/10"
+        onClick={() => input.current?.click()}
+        disabled={!tmdbReady || restore.isPending}
+        title={tmdbReady ? undefined : 'Add a TMDb API key first'}
+      >
+        {restore.isPending ? 'Restoring…' : 'Choose export file'}
+      </Button>
+      {!tmdbReady && <p className="mt-2 text-sm text-amber-300">Restoring needs a TMDb API key on this server.</p>}
+      {restore.error && (
+        <div className="mt-3">
+          <ErrorText>{restore.error.message}</ErrorText>
+        </div>
+      )}
+      {done && (
+        <p role="status" className="mt-3 text-sm text-emerald-300">
+          Restored {done.entries} {done.entries === 1 ? 'rating or watch' : 'ratings and watches'} and {done.feedback}{' '}
+          {done.feedback === 1 ? 'feedback choice' : 'feedback choices'}
+          {done.skipped > 0 ? `; ${done.skipped} TMDb no longer has were skipped` : ''}. Your feed is being rebuilt.
+        </p>
       )}
     </section>
   )
