@@ -1267,10 +1267,82 @@
           }
         }
       }
+    },
+    "/api/v1/me/export": {
+      "get": {
+        "summary": "Export Data",
+        "description": "Download everything you've told iWantToWatch as a JSON file.",
+        "operationId": "export_data_api_v1_me_export_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataExport"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/import": {
+      "post": {
+        "summary": "Restore Data",
+        "description": "Restore an iWantToWatch export into your account, merging with what's there.",
+        "operationId": "restore_data_api_v1_me_import_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_restore_data_api_v1_me_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "Body_restore_data_api_v1_me_import_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_restore_data_api_v1_me_import_post"
+      },
       "Body_upload_export_api_v1_imports_post": {
         "properties": {
           "file": {
@@ -1336,6 +1408,243 @@
           "poster_path"
         ],
         "title": "Candidate"
+      },
+      "DataExport": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "const": "iwanttowatch",
+            "title": "Format",
+            "default": "iwanttowatch"
+          },
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version",
+            "default": 1
+          },
+          "exported_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Exported At"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/ExportedProfile"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ExportedEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          },
+          "feedback": {
+            "items": {
+              "$ref": "#/components/schemas/ExportedFeedback"
+            },
+            "type": "array",
+            "title": "Feedback"
+          }
+        },
+        "type": "object",
+        "required": [
+          "exported_at",
+          "profile",
+          "entries",
+          "feedback"
+        ],
+        "title": "DataExport"
+      },
+      "ExportedEntry": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "imdb",
+              "letterboxd",
+              "app",
+              "jellyfin",
+              "trakt"
+            ],
+            "title": "Source"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "rated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rated At"
+          },
+          "watched": {
+            "type": "boolean",
+            "title": "Watched",
+            "default": false
+          },
+          "watched_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Watched At"
+          },
+          "favorite": {
+            "type": "boolean",
+            "title": "Favorite",
+            "default": false
+          },
+          "reaction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "disliked",
+                  "liked",
+                  "loved"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reaction"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Tags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "source"
+        ],
+        "title": "ExportedEntry"
+      },
+      "ExportedFeedback": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down",
+              "dismissed",
+              "snoozed"
+            ],
+            "title": "Kind"
+          },
+          "until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Until"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "kind",
+          "created_at"
+        ],
+        "title": "ExportedFeedback"
+      },
+      "ExportedProfile": {
+        "properties": {
+          "region": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$",
+            "title": "Region"
+          },
+          "languages": {
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z]{2,3}$"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Languages"
+          },
+          "subscriptions": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Subscriptions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "region",
+          "languages",
+          "subscriptions"
+        ],
+        "title": "ExportedProfile"
       },
       "FeedItem": {
         "properties": {
@@ -2433,6 +2742,29 @@
           "tmdb_id"
         ],
         "title": "Resolution"
+      },
+      "RestoreSummary": {
+        "properties": {
+          "entries": {
+            "type": "integer",
+            "title": "Entries"
+          },
+          "feedback": {
+            "type": "integer",
+            "title": "Feedback"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entries",
+          "feedback",
+          "skipped"
+        ],
+        "title": "RestoreSummary"
       },
       "ServerSettings": {
         "properties": {

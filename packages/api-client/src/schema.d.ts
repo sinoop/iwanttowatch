@@ -524,10 +524,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Data
+         * @description Download everything you've told iWantToWatch as a JSON file.
+         */
+        get: operations["export_data_api_v1_me_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Data
+         * @description Restore an iWantToWatch export into your account, merging with what's there.
+         */
+        post: operations["restore_data_api_v1_me_import_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** Body_restore_data_api_v1_me_import_post */
+        Body_restore_data_api_v1_me_import_post: {
+            /** File */
+            file: string;
+        };
         /** Body_upload_export_api_v1_imports_post */
         Body_upload_export_api_v1_imports_post: {
             /** File */
@@ -547,6 +592,99 @@ export interface components {
             year: number | null;
             /** Poster Path */
             poster_path: string | null;
+        };
+        /** DataExport */
+        DataExport: {
+            /**
+             * Format
+             * @default iwanttowatch
+             * @constant
+             */
+            format: "iwanttowatch";
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version: 1;
+            /**
+             * Exported At
+             * Format: date-time
+             */
+            exported_at: string;
+            profile: components["schemas"]["ExportedProfile"];
+            /** Entries */
+            entries: components["schemas"]["ExportedEntry"][];
+            /** Feedback */
+            feedback: components["schemas"]["ExportedFeedback"][];
+        };
+        /** ExportedEntry */
+        ExportedEntry: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /** Year */
+            year?: number | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "imdb" | "letterboxd" | "app" | "jellyfin" | "trakt";
+            /** Rating */
+            rating?: number | null;
+            /** Rated At */
+            rated_at?: string | null;
+            /**
+             * Watched
+             * @default false
+             */
+            watched: boolean;
+            /** Watched At */
+            watched_at?: string | null;
+            /**
+             * Favorite
+             * @default false
+             */
+            favorite: boolean;
+            /** Reaction */
+            reaction?: ("disliked" | "liked" | "loved") | null;
+            /** Tags */
+            tags?: string[];
+        };
+        /** ExportedFeedback */
+        ExportedFeedback: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "up" | "down" | "dismissed" | "snoozed";
+            /** Until */
+            until?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** ExportedProfile */
+        ExportedProfile: {
+            /** Region */
+            region: string;
+            /** Languages */
+            languages: string[];
+            /** Subscriptions */
+            subscriptions: number[];
         };
         /** FeedItem */
         FeedItem: {
@@ -889,6 +1027,15 @@ export interface components {
         Resolution: {
             /** Tmdb Id */
             tmdb_id: number | null;
+        };
+        /** RestoreSummary */
+        RestoreSummary: {
+            /** Entries */
+            entries: number;
+            /** Feedback */
+            feedback: number;
+            /** Skipped */
+            skipped: number;
         };
         /** ServerSettings */
         ServerSettings: {
@@ -2026,6 +2173,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TitleDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_data_api_v1_me_export_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataExport"];
+                };
+            };
+        };
+    };
+    restore_data_api_v1_me_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_restore_data_api_v1_me_import_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RestoreSummary"];
                 };
             };
             /** @description Validation Error */

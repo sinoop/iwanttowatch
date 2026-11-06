@@ -19,6 +19,8 @@ export type FeedItem = Schemas['FeedItem']
 export type FeedPage = Schemas['FeedPage']
 export type TitleDetail = Schemas['TitleDetail']
 export type FeedbackKind = Schemas['FeedbackUpdate']['kind']
+export type DataExport = Schemas['DataExport']
+export type RestoreSummary = Schemas['RestoreSummary']
 
 /**
  * Typed client for the iWantToWatch REST API.
