@@ -1,0 +1,12 @@
+{
+  "name": "cinematch",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@12.0.0",
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "build:web": "pnpm --filter web build",
+    "lint:web": "pnpm --filter web lint",
+    "gen:api": "cd server && uv run cinematch openapi > ../packages/api-client/openapi.json && cd .. && pnpm --filter @cinematch/api-client generate"
+  }
+}

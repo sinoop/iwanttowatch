@@ -1,0 +1,19 @@
+services:
+  cinematch:
+    build: .
+    image: cinematch:local
+    container_name: cinematch
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      TZ: ${TZ:-UTC}
+      # Optional: set a fixed secret instead of the one generated in /data on first start.
+      # CINEMATCH_SECRET_KEY: change-me
+    volumes:
+      # A named volume avoids permission problems. To use a host folder instead,
+      # create it first and `chown 1000:1000` it (the container runs as uid 1000).
+      - cinematch-data:/data
+
+volumes:
+  cinematch-data:
