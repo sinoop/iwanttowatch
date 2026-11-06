@@ -2,6 +2,7 @@ import type { Me } from '@iwanttowatch/api-client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { NavLink, Outlet } from 'react-router'
 import { api } from './api'
+import { JustWatchCredit } from './Streaming'
 import { Button, Logo } from './ui'
 
 const NAV = [
@@ -48,7 +49,8 @@ export default function Shell({ me }: { me: Me }) {
         <Outlet />
       </main>
       <footer className="mx-auto max-w-5xl px-4 pb-8 text-xs text-white/35 sm:px-6">
-        This product uses the TMDB API but is not endorsed or certified by TMDB.
+        This product uses the TMDB API but is not endorsed or certified by TMDB.{' '}
+        <JustWatchCredit />
       </footer>
     </div>
   )

@@ -874,6 +874,167 @@
           }
         }
       }
+    },
+    "/api/v1/streaming/regions": {
+      "get": {
+        "summary": "List Regions",
+        "operationId": "list_regions_api_v1_streaming_regions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StreamingRegion"
+                  },
+                  "type": "array",
+                  "title": "Response List Regions Api V1 Streaming Regions Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/streaming/providers": {
+      "get": {
+        "summary": "List Providers",
+        "description": "The movie streaming services in a region (the user's by default).",
+        "operationId": "list_providers_api_v1_streaming_providers_get",
+        "parameters": [
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[A-Z]{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Region"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Provider"
+                  },
+                  "title": "Response List Providers Api V1 Streaming Providers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/streaming": {
+      "put": {
+        "summary": "Set Streaming",
+        "operationId": "set_streaming_api_v1_me_streaming_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/availability": {
+      "get": {
+        "summary": "Read Availability",
+        "description": "Where the user can watch each title: their Jellyfin libraries or streaming services.",
+        "operationId": "read_availability_api_v1_availability_get",
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 1,
+              "maxItems": 60,
+              "title": "Ids"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TitleAvailability"
+                  },
+                  "title": "Response Read Availability Api V1 Availability Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1471,6 +1632,13 @@
             },
             "type": "array",
             "title": "Languages"
+          },
+          "subscriptions": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Subscriptions"
           }
         },
         "type": "object",
@@ -1480,9 +1648,45 @@
           "display_name",
           "is_admin",
           "region",
-          "languages"
+          "languages",
+          "subscriptions"
         ],
         "title": "Me"
+      },
+      "Offer": {
+        "properties": {
+          "provider_id": {
+            "type": "integer",
+            "title": "Provider Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "logo_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Path"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_id",
+          "name",
+          "logo_path",
+          "kind"
+        ],
+        "title": "Offer"
       },
       "PersonaOut": {
         "properties": {
@@ -1541,6 +1745,36 @@
           "refreshing"
         ],
         "title": "PersonaOut"
+      },
+      "Provider": {
+        "properties": {
+          "provider_id": {
+            "type": "integer",
+            "title": "Provider Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "logo_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider_id",
+          "name",
+          "logo_path"
+        ],
+        "title": "Provider"
       },
       "RatedTitle": {
         "properties": {
@@ -1801,6 +2035,47 @@
         ],
         "title": "SetupStatus"
       },
+      "StreamingRegion": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "StreamingRegion"
+      },
+      "StreamingUpdate": {
+        "properties": {
+          "region": {
+            "type": "string",
+            "pattern": "^[A-Z]{2}$",
+            "title": "Region"
+          },
+          "subscriptions": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Subscriptions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "region",
+          "subscriptions"
+        ],
+        "title": "StreamingUpdate"
+      },
       "TagOption": {
         "properties": {
           "id": {
@@ -1818,6 +2093,62 @@
           "label"
         ],
         "title": "TagOption"
+      },
+      "TitleAvailability": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "on_jellyfin": {
+            "type": "boolean",
+            "title": "On Jellyfin"
+          },
+          "offers": {
+            "items": {
+              "$ref": "#/components/schemas/Offer"
+            },
+            "type": "array",
+            "title": "Offers"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "stale": {
+            "type": "boolean",
+            "title": "Stale"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "on_jellyfin",
+          "offers",
+          "link",
+          "checked_at",
+          "stale"
+        ],
+        "title": "TitleAvailability"
       },
       "TitleReaction": {
         "properties": {

@@ -19,6 +19,8 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(default=False)
     region: Mapped[str] = mapped_column(String(2))
     languages: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # TMDb provider IDs of the streaming services the user pays for, e.g. 8 for Netflix.
+    subscriptions: Mapped[list[int]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -185,6 +187,21 @@ class ConnectorStatus(Base):
     # The last sync's error; cleared by the next successful sync.
     error: Mapped[str | None]
     webhook_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Availability(Base):
+    """Where a title can be watched in one region, from TMDb (data by JustWatch)."""
+
+    __tablename__ = "availability"
+
+    tmdb_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    region: Mapped[str] = mapped_column(String(2), primary_key=True)
+    # [{"provider_id": 8, "name": "Netflix", "logo_path": "/x.jpg", "kind": "flatrate"}];
+    # kind is "flatrate", "free", "ads", "rent", or "buy".
+    offers: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    # TMDb's watch page for the title in this region, which links on to each service.
+    link: Mapped[str | None]
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class ApiCache(Base):

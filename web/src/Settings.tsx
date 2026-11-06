@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { api, errorMessage, useServerSettings } from './api'
 import { JellyfinAccount, JellyfinServer } from './JellyfinSettings'
+import { StreamingSettings } from './Streaming'
 import { Button, ErrorText, Field } from './ui'
 
 export default function Settings({ me }: { me: Me }) {
@@ -76,6 +77,7 @@ export default function Settings({ me }: { me: Me }) {
       </section>
       {settings.data && me.is_admin && <JellyfinServer settings={settings.data} />}
       <JellyfinAccount />
+      {settings.data?.tmdb_configured && <StreamingSettings me={me} />}
       {settings.data && <LlmSection me={me} settings={settings.data} />}
     </>
   )

@@ -1,9 +1,10 @@
-import type { ImportJob, RatedTitle } from '@iwanttowatch/api-client'
+import type { ImportJob, RatedTitle, TitleAvailability } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { api, errorMessage, REACTIONS, useServerSettings } from './api'
+import { api, errorMessage, REACTIONS, useAvailability, useServerSettings } from './api'
 import RateDialog, { ReactionIcon } from './RateDialog'
+import { WatchBadges } from './Streaming'
 import { Button, ErrorText, Poster } from './ui'
 
 const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
@@ -276,9 +277,10 @@ function Ratings({ onRate }: { onRate: (tmdbId: number) => void }) {
     },
   })
   const pages = ratings.data?.pages ?? []
+  const items = pages.flatMap((page) => page.items)
+  const where = useAvailability(items.map((item) => item.tmdb_id))
   const first = pages[0]
   if (!first) return null
-  const items = pages.flatMap((page) => page.items)
 
   return (
     <section className="mt-10">
@@ -305,7 +307,7 @@ function Ratings({ onRate }: { onRate: (tmdbId: number) => void }) {
       ) : (
         <ul className="mt-5 grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-6">
           {items.map((item) => (
-            <RatingCard key={item.tmdb_id} item={item} onRate={onRate} />
+            <RatingCard key={item.tmdb_id} item={item} where={where.get(item.tmdb_id)} onRate={onRate} />
           ))}
         </ul>
       )}
@@ -388,7 +390,15 @@ function RateSearch({ onRate }: { onRate: (tmdbId: number) => void }) {
   )
 }
 
-function RatingCard({ item, onRate }: { item: RatedTitle; onRate: (tmdbId: number) => void }) {
+function RatingCard({
+  item,
+  where,
+  onRate,
+}: {
+  item: RatedTitle
+  where: TitleAvailability | undefined
+  onRate: (tmdbId: number) => void
+}) {
   const showOriginal = item.original_title && item.original_title !== item.title
   const reaction = REACTIONS.find((r) => r.value === item.reaction)
   return (
@@ -427,6 +437,7 @@ function RatingCard({ item, onRate }: { item: RatedTitle; onRate: (tmdbId: numbe
             .join(' · ')}
         </p>
       </button>
+      <WatchBadges availability={where} />
     </li>
   )
 }

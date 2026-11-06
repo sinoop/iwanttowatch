@@ -1,5 +1,5 @@
 import { createApiClient, type Reaction } from '@iwanttowatch/api-client'
-import { useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 
 export const api = createApiClient()
 
@@ -28,3 +28,19 @@ export const REACTIONS: { value: Reaction; label: string }[] = [
   { value: 'liked', label: 'Liked' },
   { value: 'loved', label: 'Loved' },
 ]
+
+const AVAILABILITY_CHUNK = 48
+
+/** Where the signed-in user can watch each title; refetched when their services change. */
+export function useAvailability(tmdbIds: number[]) {
+  const chunks: number[][] = []
+  for (let i = 0; i < tmdbIds.length; i += AVAILABILITY_CHUNK) chunks.push(tmdbIds.slice(i, i + AVAILABILITY_CHUNK))
+  return useQueries({
+    queries: chunks.map((ids) => ({
+      queryKey: ['availability', ids.join()],
+      queryFn: async () => (await api.GET('/api/v1/availability', { params: { query: { ids } } })).data ?? [],
+      staleTime: 10 * 60 * 1000,
+    })),
+    combine: (results) => new Map(results.flatMap((r) => r.data ?? []).map((a) => [a.tmdb_id, a])),
+  })
+}

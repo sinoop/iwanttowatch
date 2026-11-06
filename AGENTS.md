@@ -4,7 +4,7 @@ Self-hosted movie recommender: Python API server, React web app, shared generate
 
 ## Layout
 
-- `server/` — FastAPI app in `src/iwanttowatch`; engine and session in `db.py`; models in `models.py`; TMDb client in `tmdb.py`; metadata and title matching in `catalog.py`; IMDb/Letterboxd import and its background worker in `imports.py`; Jellyfin client, library sync, and its worker in `jellyfin.py`; Ollama/Gemini providers in `llm.py`; effective ratings, taste summary, and persona in `taste.py`; the fixed rating-tag vocabulary in `tags.py`; routes in `api/`; Alembic migrations in `migrations/versions/`. Tests in `server/tests`.
+- `server/` — FastAPI app in `src/iwanttowatch`; engine and session in `db.py`; models in `models.py`; TMDb client in `tmdb.py`; metadata and title matching in `catalog.py`; IMDb/Letterboxd import and its background worker in `imports.py`; Jellyfin client, library sync, and its worker in `jellyfin.py`; streaming offers per region (TMDb/JustWatch) in `availability.py`; Ollama/Gemini providers in `llm.py`; effective ratings, taste summary, and persona in `taste.py`; the fixed rating-tag vocabulary in `tags.py`; routes in `api/`; Alembic migrations in `migrations/versions/`. Tests in `server/tests`.
 - `web/` — React + Vite + Tailwind; talks to the API only through `@iwanttowatch/api-client`.
 - `packages/api-client/` — `openapi.json` and `src/schema.d.ts` are generated; never edit them by hand.
 

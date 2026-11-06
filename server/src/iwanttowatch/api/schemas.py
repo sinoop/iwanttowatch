@@ -14,6 +14,8 @@ class Me(BaseModel):
     is_admin: bool
     region: str
     languages: list[str]
+    # TMDb provider IDs of the streaming services the user subscribes to.
+    subscriptions: list[int]
 
 
 class SetupStatus(BaseModel):

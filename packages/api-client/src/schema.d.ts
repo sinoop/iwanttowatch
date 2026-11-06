@@ -370,6 +370,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/streaming/regions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Regions */
+        get: operations["list_regions_api_v1_streaming_regions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/streaming/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Providers
+         * @description The movie streaming services in a region (the user's by default).
+         */
+        get: operations["list_providers_api_v1_streaming_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/streaming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Streaming */
+        put: operations["set_streaming_api_v1_me_streaming_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Availability
+         * @description Where the user can watch each title: their Jellyfin libraries or streaming services.
+         */
+        get: operations["read_availability_api_v1_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -573,6 +647,19 @@ export interface components {
             region: string;
             /** Languages */
             languages: string[];
+            /** Subscriptions */
+            subscriptions: number[];
+        };
+        /** Offer */
+        Offer: {
+            /** Provider Id */
+            provider_id: number;
+            /** Name */
+            name: string;
+            /** Logo Path */
+            logo_path: string | null;
+            /** Kind */
+            kind: string;
         };
         /** PersonaOut */
         PersonaOut: {
@@ -590,6 +677,15 @@ export interface components {
             llm_configured: boolean;
             /** Refreshing */
             refreshing: boolean;
+        };
+        /** Provider */
+        Provider: {
+            /** Provider Id */
+            provider_id: number;
+            /** Name */
+            name: string;
+            /** Logo Path */
+            logo_path: string | null;
         };
         /** RatedTitle */
         RatedTitle: {
@@ -669,12 +765,41 @@ export interface components {
             /** Jellyfin Login */
             jellyfin_login: boolean;
         };
+        /** StreamingRegion */
+        StreamingRegion: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+        };
+        /** StreamingUpdate */
+        StreamingUpdate: {
+            /** Region */
+            region: string;
+            /** Subscriptions */
+            subscriptions: number[];
+        };
         /** TagOption */
         TagOption: {
             /** Id */
             id: string;
             /** Label */
             label: string;
+        };
+        /** TitleAvailability */
+        TitleAvailability: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** On Jellyfin */
+            on_jellyfin: boolean;
+            /** Offers */
+            offers: components["schemas"]["Offer"][];
+            /** Link */
+            link: string | null;
+            /** Checked At */
+            checked_at: string | null;
+            /** Stale */
+            stale: boolean;
         };
         /** TitleReaction */
         TitleReaction: {
@@ -1449,6 +1574,121 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_regions_api_v1_streaming_regions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StreamingRegion"][];
+                };
+            };
+        };
+    };
+    list_providers_api_v1_streaming_providers_get: {
+        parameters: {
+            query?: {
+                region?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Provider"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_streaming_api_v1_me_streaming_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StreamingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_availability_api_v1_availability_get: {
+        parameters: {
+            query: {
+                ids: number[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleAvailability"][];
+                };
             };
             /** @description Validation Error */
             422: {

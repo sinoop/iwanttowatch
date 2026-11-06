@@ -13,6 +13,8 @@ export type Persona = Schemas['PersonaOut']
 export type ServerSettings = Schemas['ServerSettings']
 export type TitleReaction = Schemas['TitleReaction']
 export type Reaction = NonNullable<TitleReaction['reaction']>
+export type TitleAvailability = Schemas['TitleAvailability']
+export type StreamingProvider = Schemas['Provider']
 
 /**
  * Typed client for the iWantToWatch REST API.

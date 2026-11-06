@@ -34,6 +34,23 @@ MOVIES: dict[int, dict[str, Any]] = {
 }  # fmt: skip
 
 
+# Streaming services, and where films stream by region (TMDb's data from JustWatch).
+NETFLIX = {"provider_id": 8, "provider_name": "Netflix", "logo_path": "/netflix.jpg"}
+PRIME = {"provider_id": 119, "provider_name": "Amazon Prime Video", "logo_path": "/prime.jpg"}
+HOTSTAR = {"provider_id": 2336, "provider_name": "JioHotstar", "logo_path": "/hotstar.jpg"}
+APPLE = {"provider_id": 2, "provider_name": "Apple TV", "logo_path": "/apple.jpg"}
+MX = {"provider_id": 515, "provider_name": "MX Player", "logo_path": "/mx.jpg"}
+CATALOGUE = {  # region → services, most prominent first
+    "IN": [HOTSTAR, PRIME, NETFLIX, MX, APPLE],
+    "US": [NETFLIX, PRIME, APPLE],
+}
+WATCH: dict[int, dict[str, dict[str, list[dict[str, Any]]]]] = {
+    301: {"IN": {"flatrate": [PRIME, HOTSTAR], "rent": [APPLE]}},
+    201: {"IN": {"flatrate": [NETFLIX]}},
+    101: {"US": {"flatrate": [NETFLIX]}, "IN": {"ads": [MX], "buy": [APPLE]}},
+}
+
+
 def _summary(tmdb_id: int) -> dict[str, Any]:
     m = MOVIES[tmdb_id]
     return {
@@ -82,6 +99,29 @@ def fake_tmdb(request: httpx.Request) -> httpx.Response:
             and (year is None or abs(int(m["date"][:4]) - int(year)) <= 1)
         ]
         return httpx.Response(200, json={"results": hits})
+    if path == "/watch/providers/regions":
+        regions = [{"iso_3166_1": "IN", "english_name": "India"},
+                   {"iso_3166_1": "US", "english_name": "United States of America"}]  # fmt: skip
+        return httpx.Response(200, json={"results": regions})
+    if path == "/watch/providers/movie":
+        region = params["watch_region"]
+        # TMDb returns services in no particular order, with a priority per region.
+        services = [
+            {**p, "display_priority": 99, "display_priorities": {region: n}}
+            for n, p in enumerate(CATALOGUE.get(region, []))
+        ]
+        return httpx.Response(200, json={"results": services[::-1]})
+    if path.startswith("/movie/") and path.endswith("/watch/providers"):
+        tmdb_id = int(path.split("/")[2])
+        if tmdb_id not in MOVIES:
+            return httpx.Response(404)
+        results = {
+            region: {"link": f"https://www.themoviedb.org/movie/{tmdb_id}/watch?locale={region}",
+                     **{kind: [{**p, "display_priority": 1} for p in providers]
+                        for kind, providers in offers.items()}}
+            for region, offers in WATCH.get(tmdb_id, {}).items()
+        }  # fmt: skip
+        return httpx.Response(200, json={"id": tmdb_id, "results": results})
     if path.startswith("/movie/"):
         tmdb_id = int(path.removeprefix("/movie/"))
         if tmdb_id in MOVIES:
