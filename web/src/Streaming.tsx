@@ -142,7 +142,7 @@ export function StreamingSettings({ me }: { me: Me }) {
   )
 }
 
-function ProviderLogo({ path, name, className = '' }: { path: string | null; name: string; className?: string }) {
+export function ProviderLogo({ path, name, className = '' }: { path: string | null; name: string; className?: string }) {
   const [failed, setFailed] = useState(false)
   return path && !failed ? (
     <img

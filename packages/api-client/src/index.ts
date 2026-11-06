@@ -15,6 +15,9 @@ export type TitleReaction = Schemas['TitleReaction']
 export type Reaction = NonNullable<TitleReaction['reaction']>
 export type TitleAvailability = Schemas['TitleAvailability']
 export type StreamingProvider = Schemas['Provider']
+export type FeedItem = Schemas['FeedItem']
+export type FeedPage = Schemas['FeedPage']
+export type TitleDetail = Schemas['TitleDetail']
 
 /**
  * Typed client for the iWantToWatch REST API.

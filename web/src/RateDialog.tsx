@@ -43,6 +43,8 @@ function RateForm({ tmdbId, onDone }: { tmdbId: number; onDone: () => void }) {
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['ratings'] })
     queryClient.invalidateQueries({ queryKey: ['persona'] })
+    // Rated films leave the feed.
+    queryClient.invalidateQueries({ queryKey: ['feed'] })
   }
   const save = useMutation({
     mutationFn: async (body: { reaction: Reaction; tags: string[] }) => {

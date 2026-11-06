@@ -44,3 +44,14 @@ export function useAvailability(tmdbIds: number[]) {
     combine: (results) => new Map(results.flatMap((r) => r.data ?? []).map((a) => [a.tmdb_id, a])),
   })
 }
+
+const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
+
+/** Year, language and running time. */
+export function facts(film: { year: number | null; original_language: string; runtime: number | null }) {
+  return [
+    film.year,
+    languageName.of(film.original_language),
+    film.runtime ? `${Math.floor(film.runtime / 60)}h ${film.runtime % 60}m` : null,
+  ].filter(Boolean) as (string | number)[]
+}
