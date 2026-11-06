@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from iwanttowatch import imdb
 from iwanttowatch.api.deps import AdminUser, CurrentUser, DbSession
 from iwanttowatch.jellyfin import API_KEY_SETTING as JELLYFIN_KEY_SETTING
 from iwanttowatch.jellyfin import (
@@ -26,7 +27,14 @@ from iwanttowatch.llm import (
     LlmError,
     make_provider,
 )
-from iwanttowatch.models import ConnectorStatus, LibraryItem, User, get_setting, set_setting
+from iwanttowatch.models import (
+    ConnectorStatus,
+    LibraryItem,
+    Title,
+    User,
+    get_setting,
+    set_setting,
+)
 from iwanttowatch.tmdb import API_KEY_SETTING, TmdbAuthError, TmdbClient, TmdbError
 
 router = APIRouter(prefix="/api/v1/settings")
@@ -56,10 +64,24 @@ class JellyfinSettings(BaseModel):
     webhook_path: str | None
 
 
+class ImdbSettings(BaseModel):
+    enabled: bool
+    # When IMDb's ratings file was last downloaded, and why the last download failed.
+    updated_at: datetime | None
+    error: str | None
+    # Films in the catalogue that have an IMDb rating.
+    rated_films: int
+
+
 class ServerSettings(BaseModel):
     tmdb_configured: bool
     llm: LlmSettings
     jellyfin: JellyfinSettings
+    imdb: ImdbSettings
+
+
+class ImdbUpdate(BaseModel):
+    enabled: bool
 
 
 class TmdbKey(BaseModel):
@@ -115,12 +137,23 @@ def _jellyfin_out(session: Session, is_admin: bool) -> JellyfinSettings:
     )
 
 
+def _imdb_out(session: Session) -> ImdbSettings:
+    state = session.get(ConnectorStatus, imdb.STATUS_KEY)
+    return ImdbSettings(
+        enabled=imdb.enabled(session),
+        updated_at=_utc(state.synced_at) if state else None,
+        error=state.error if state else None,
+        rated_films=session.scalar(select(func.count()).where(Title.imdb_votes.is_not(None))) or 0,
+    )
+
+
 def _settings_out(session: Session, is_admin: bool) -> ServerSettings:
     # Secrets are never returned, only whether they are set.
     provider = get_setting(session, PROVIDER_SETTING)
     return ServerSettings(
         tmdb_configured=get_setting(session, API_KEY_SETTING) is not None,
         jellyfin=_jellyfin_out(session, is_admin),
+        imdb=_imdb_out(session),
         llm=LlmSettings(
             provider="ollama"
             if provider == "ollama"
@@ -231,4 +264,25 @@ def set_llm(body: LlmUpdate, _admin: AdminUser, session: DbSession) -> ServerSet
     else:
         set_setting(session, GEMINI_KEY_SETTING, gemini_key)
     session.commit()
+    return _settings_out(session, True)
+
+
+@router.put("/imdb")
+def set_imdb(
+    body: ImdbUpdate, _admin: AdminUser, request: Request, session: DbSession
+) -> ServerSettings:
+    """Use IMDb's ratings for films' quality, under IMDb's non-commercial terms. Turning
+    them on rebuilds every feed, which downloads them; turning them off removes them."""
+    users = session.scalars(select(User.id)).all()
+    worker = request.app.state.feed_worker
+    if body.enabled:
+        set_setting(session, imdb.SETTING, "on")
+        session.commit()
+        for user_id in users:
+            worker.request(user_id)
+    else:
+        set_setting(session, imdb.SETTING, None)
+        imdb.forget_ratings(session, request.app.state.data_dir)
+        for user_id in users:
+            worker.rescore_soon(user_id)
     return _settings_out(session, True)

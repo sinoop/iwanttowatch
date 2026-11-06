@@ -78,6 +78,8 @@ export default function Settings({ me }: { me: Me }) {
       {settings.data && me.is_admin && <JellyfinServer settings={settings.data} />}
       <JellyfinAccount />
       {settings.data?.tmdb_configured && <StreamingSettings me={me} />}
+      <BirthYear me={me} />
+      {settings.data && <ImdbSection me={me} settings={settings.data} />}
       {settings.data && <LlmSection me={me} settings={settings.data} />}
       <YourData tmdbReady={settings.data?.tmdb_configured === true} />
     </>
@@ -142,7 +144,8 @@ function LlmSection({ me, settings }: { me: Me; settings: ServerSettings }) {
       </div>
       <p className="mt-2 text-sm text-white/60">
         Optional. An LLM writes the “if your taste were a person” sketch on each user’s My taste
-        page. Recommendations work without it.
+        page, and suggests films from their ratings and what they liked or disliked about them; its picks
+        are marked “AI pick” in the feed. Recommendations work without it.
       </p>
       {me.is_admin ? (
         <form onSubmit={submit} className="mt-4 space-y-4">
@@ -233,6 +236,134 @@ function LlmSection({ me, settings }: { me: Me; settings: ServerSettings }) {
 }
 
 /** Download everything the user has told iWantToWatch, or restore it from such a file. */
+function ImdbSection({ me, settings }: { me: Me; settings: ServerSettings }) {
+  const queryClient = useQueryClient()
+  const { imdb } = settings
+  const save = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const { data, error } = await api.PUT('/api/v1/settings/imdb', { body: { enabled } })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['settings'], data)
+      for (const key of ['feed', 'together']) queryClient.invalidateQueries({ queryKey: [key] })
+    },
+  })
+
+  return (
+    <section className="mt-6 max-w-xl rounded-xl border border-white/10 p-5">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="font-semibold">IMDb ratings</h2>
+        <span
+          className={`rounded-full px-2.5 py-0.5 text-xs ${
+            imdb.enabled ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/10 text-white/60'
+          }`}
+        >
+          {imdb.enabled ? 'On' : 'Off'}
+        </span>
+      </div>
+      <p className="mt-2 text-sm text-white/60">
+        Judge how good films are by IMDb’s ratings, which have far more votes than TMDb’s, and show them on cards. The
+        server downloads IMDb’s free ratings file once a day. IMDb allows this for personal, non-commercial use only.
+      </p>
+      {imdb.enabled && (
+        <p className="mt-2 text-sm text-white/60">
+          {imdb.updated_at
+            ? `${imdb.rated_films.toLocaleString()} films rated · downloaded ${new Date(imdb.updated_at).toLocaleString()}`
+            : 'Downloading with the next feed update…'}
+        </p>
+      )}
+      {imdb.error && <p className="mt-2 text-sm text-amber-300">{imdb.error}</p>}
+      {me.is_admin ? (
+        <div className="mt-4">
+          <Button
+            variant={imdb.enabled ? 'ghost' : 'primary'}
+            className={imdb.enabled ? 'border border-white/10' : ''}
+            onClick={() => save.mutate(!imdb.enabled)}
+            disabled={save.isPending}
+          >
+            {imdb.enabled ? 'Stop using IMDb ratings' : 'Use IMDb ratings'}
+          </Button>
+          {save.error && (
+            <div className="mt-3">
+              <ErrorText>{save.error.message}</ErrorText>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="mt-4 text-sm text-white/50">Only an admin can change this.</p>
+      )}
+    </section>
+  )
+}
+
+const THIS_YEAR = new Date().getFullYear()
+
+function BirthYear({ me }: { me: Me }) {
+  const queryClient = useQueryClient()
+  const [year, setYear] = useState(me.birth_year?.toString() ?? '')
+  const save = useMutation({
+    mutationFn: async (birth_year: number | null) => {
+      const { data, error } = await api.PUT('/api/v1/me/profile', { body: { birth_year } })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['me'], data)
+      setYear(data.birth_year?.toString() ?? '')
+      // The feed shows that it's re-ranking and refreshes itself.
+      for (const key of ['feed', 'together']) queryClient.invalidateQueries({ queryKey: [key] })
+    },
+  })
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    save.mutate(year ? Number(year) : null)
+  }
+
+  return (
+    <section className="mt-6 max-w-xl rounded-xl border border-white/10 p-5">
+      <h2 className="font-semibold">Birth year</h2>
+      <p className="mt-2 text-sm text-white/60">
+        Optional. Films from before you were born get a slightly lower match, more the older they are, unless you’ve
+        liked films that old. It stays on this server: it isn’t sent to the AI or included in shared taste links.
+      </p>
+      <form onSubmit={submit} className="mt-4 flex items-end gap-3">
+        <div className="w-36">
+          <Field
+            label="Year"
+            type="number"
+            inputMode="numeric"
+            min={1900}
+            max={THIS_YEAR}
+            placeholder="e.g. 1990"
+            value={year}
+            onChange={(e) => setYear(e.target.value)}
+          />
+        </div>
+        <Button type="submit" disabled={save.isPending || year === (me.birth_year?.toString() ?? '')}>
+          Save
+        </Button>
+        {me.birth_year != null && (
+          <Button variant="ghost" onClick={() => save.mutate(null)} disabled={save.isPending}>
+            Remove
+          </Button>
+        )}
+      </form>
+      {save.error && (
+        <div className="mt-3">
+          <ErrorText>{save.error.message}</ErrorText>
+        </div>
+      )}
+      {save.isSuccess && (
+        <p role="status" className="mt-3 text-sm text-emerald-300">
+          {save.data.birth_year ? 'Saved.' : 'Removed.'} Your feed will re-rank in a few seconds.
+        </p>
+      )}
+    </section>
+  )
+}
+
 function YourData({ tmdbReady }: { tmdbReady: boolean }) {
   const queryClient = useQueryClient()
   const input = useRef<HTMLInputElement>(null)

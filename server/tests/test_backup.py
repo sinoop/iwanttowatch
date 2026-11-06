@@ -13,6 +13,8 @@ def test_export_restores_into_another_server(
 ) -> None:
     client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
     client.put("/api/v1/me/streaming", json={"region": "US", "subscriptions": [8]})
+    assert client.put("/api/v1/me/profile", json={"birth_year": 2999}).status_code == 422
+    assert client.put("/api/v1/me/profile", json={"birth_year": 1990}).json()["birth_year"] == 1990
     client.put("/api/v1/titles/201/reaction", json={"reaction": "loved", "tags": ["great_story"]})
     client.put("/api/v1/titles/301/feedback", json={"kind": "seen"})
     client.put("/api/v1/titles/401/feedback", json={"kind": "dismissed"})
@@ -20,7 +22,12 @@ def test_export_restores_into_another_server(
     response = client.get("/api/v1/me/export")
     assert "attachment" in response.headers["content-disposition"]
     exported = response.json()
-    assert exported["profile"] == {"region": "US", "languages": [], "subscriptions": [8]}
+    assert exported["profile"] == {
+        "region": "US",
+        "languages": [],
+        "subscriptions": [8],
+        "birth_year": 1990,
+    }
     by_id = {e["tmdb_id"]: e for e in exported["entries"]}
     assert by_id[201]["reaction"] == "loved" and by_id[201]["tags"] == ["great_story"]
     assert by_id[301]["watched"] is True and by_id[301]["rating"] is None
@@ -41,6 +48,7 @@ def test_export_restores_into_another_server(
 
     restored = other.post("/api/v1/me/import", files={"file": ("me.json", response.content)})
     assert restored.json() == {"entries": 2, "feedback": 1, "skipped": 0}
-    assert other.get("/api/v1/me").json()["region"] == "US"
+    me = other.get("/api/v1/me").json()
+    assert me["region"] == "US" and me["birth_year"] == 1990
     again = other.get("/api/v1/me/export").json()
     assert again["entries"] == exported["entries"] and again["feedback"] == exported["feedback"]

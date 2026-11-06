@@ -2,6 +2,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from iwanttowatch.models import Title
+
 LanguageCode = Annotated[str, Field(pattern=r"^[a-z]{2,3}$")]
 
 
@@ -16,6 +18,15 @@ class Me(BaseModel):
     languages: list[str]
     # TMDb provider IDs of the streaming services the user subscribes to.
     subscriptions: list[int]
+    birth_year: int | None
+
+
+# Optional; films from before it count a little against the user's matches.
+BirthYear = Annotated[int, Field(ge=1900, le=2100)]
+
+
+class ProfileUpdate(BaseModel):
+    birth_year: BirthYear | None
 
 
 class SetupStatus(BaseModel):
@@ -37,3 +48,18 @@ class SetupRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class ImdbScore(BaseModel):
+    """IMDb's rating of a film, shown when an admin turned IMDb ratings on."""
+
+    # For linking to the film's IMDb page.
+    id: str
+    rating: float
+    votes: int
+
+
+def imdb_score(title: Title) -> ImdbScore | None:
+    if title.imdb_id is None or title.imdb_rating is None or not title.imdb_votes:
+        return None
+    return ImdbScore(id=title.imdb_id, rating=title.imdb_rating, votes=title.imdb_votes)

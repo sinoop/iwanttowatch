@@ -10,6 +10,7 @@ from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.library import LanguageCount
 from iwanttowatch.api.reactions import SOURCE as APP_SOURCE
 from iwanttowatch.api.reactions import load_title
+from iwanttowatch.api.schemas import ImdbScore, imdb_score
 from iwanttowatch.api.streaming import TitleAvailability, title_availability
 from iwanttowatch.availability import availability
 from iwanttowatch.db import utcnow
@@ -50,6 +51,7 @@ class FeedItem(BaseModel):
     availability: TitleAvailability
     # The user asked for more like this.
     thumbs_up: bool
+    imdb: ImdbScore | None
 
 
 class FeedPage(BaseModel):
@@ -152,6 +154,7 @@ def read_feed(
                 reasons=rec.reasons,
                 availability=where,
                 thumbs_up=title.tmdb_id in thumbs_up,
+                imdb=imdb_score(title),
             )
             for rec, title, where in matching[offset : offset + limit]
         ],
@@ -255,6 +258,7 @@ class TitleDetail(BaseModel):
     availability: TitleAvailability
     # Opens the film in the Jellyfin web app, when it's in the user's libraries.
     jellyfin_url: str | None
+    imdb: ImdbScore | None
 
 
 @router.get("/titles/{tmdb_id}")
@@ -288,4 +292,5 @@ def read_title(
         reasons=rec.reasons if rec else [],
         availability=title_availability(tmdb_id, offers, item_id is not None, user.subscriptions),
         jellyfin_url=f"{jellyfin}/web/#/details?id={item_id}" if jellyfin and item_id else None,
+        imdb=imdb_score(title),
     )

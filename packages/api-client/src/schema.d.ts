@@ -76,6 +76,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Profile */
+        put: operations["update_profile_api_v1_me_profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings": {
         parameters: {
             query?: never;
@@ -164,6 +181,27 @@ export interface paths {
          * @description Choose Ollama, Gemini, or no LLM. A short test prompt checks the choice first.
          */
         put: operations["set_llm_api_v1_settings_llm_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/imdb": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Imdb
+         * @description Use IMDb's ratings for films' quality, under IMDb's non-commercial terms. Turning
+         *     them on rebuilds every feed, which downloads them; turning them off removes them.
+         */
+        put: operations["set_imdb_api_v1_settings_imdb_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -804,6 +842,8 @@ export interface components {
             languages: string[];
             /** Subscriptions */
             subscriptions: number[];
+            /** Birth Year */
+            birth_year?: number | null;
         };
         /** FeedItem */
         FeedItem: {
@@ -832,6 +872,7 @@ export interface components {
             availability: components["schemas"]["TitleAvailability"];
             /** Thumbs Up */
             thumbs_up: boolean;
+            imdb: components["schemas"]["ImdbScore"] | null;
         };
         /** FeedPage */
         FeedPage: {
@@ -904,6 +945,7 @@ export interface components {
             /** Reasons */
             reasons: string[];
             availability: components["schemas"]["TitleAvailability"];
+            imdb: components["schemas"]["ImdbScore"] | null;
         };
         /** GroupPage */
         GroupPage: {
@@ -939,6 +981,34 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * ImdbScore
+         * @description IMDb's rating of a film, shown when an admin turned IMDb ratings on.
+         */
+        ImdbScore: {
+            /** Id */
+            id: string;
+            /** Rating */
+            rating: number;
+            /** Votes */
+            votes: number;
+        };
+        /** ImdbSettings */
+        ImdbSettings: {
+            /** Enabled */
+            enabled: boolean;
+            /** Updated At */
+            updated_at: string | null;
+            /** Error */
+            error: string | null;
+            /** Rated Films */
+            rated_films: number;
+        };
+        /** ImdbUpdate */
+        ImdbUpdate: {
+            /** Enabled */
+            enabled: boolean;
         };
         /** ImportCounts */
         ImportCounts: {
@@ -1116,6 +1186,8 @@ export interface components {
             languages: string[];
             /** Subscriptions */
             subscriptions: number[];
+            /** Birth Year */
+            birth_year: number | null;
         };
         /** MemberMatch */
         MemberMatch: {
@@ -1160,6 +1232,11 @@ export interface components {
             llm_configured: boolean;
             /** Refreshing */
             refreshing: boolean;
+        };
+        /** ProfileUpdate */
+        ProfileUpdate: {
+            /** Birth Year */
+            birth_year: number | null;
         };
         /** Provider */
         Provider: {
@@ -1236,6 +1313,7 @@ export interface components {
             tmdb_configured: boolean;
             llm: components["schemas"]["LlmSettings"];
             jellyfin: components["schemas"]["JellyfinSettings"];
+            imdb: components["schemas"]["ImdbSettings"];
         };
         /** SetupRequest */
         SetupRequest: {
@@ -1358,6 +1436,7 @@ export interface components {
             availability: components["schemas"]["TitleAvailability"];
             /** Jellyfin Url */
             jellyfin_url: string | null;
+            imdb: components["schemas"]["ImdbScore"] | null;
         };
         /** TitleReaction */
         TitleReaction: {
@@ -1539,6 +1618,39 @@ export interface operations {
             };
         };
     };
+    update_profile_api_v1_me_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_settings_api_v1_settings_get: {
         parameters: {
             query?: never;
@@ -1675,6 +1787,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LlmUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_imdb_api_v1_settings_imdb_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImdbUpdate"];
             };
         };
         responses: {

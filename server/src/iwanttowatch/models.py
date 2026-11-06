@@ -21,6 +21,8 @@ class User(Base):
     languages: Mapped[list[str]] = mapped_column(JSON, default=list)
     # TMDb provider IDs of the streaming services the user pays for, e.g. 8 for Netflix.
     subscriptions: Mapped[list[int]] = mapped_column(JSON, default=list)
+    # Optional; films from before it count a little against the user's matches.
+    birth_year: Mapped[int | None]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -75,6 +77,9 @@ class Title(Base):
     vote_average: Mapped[float | None]
     vote_count: Mapped[int | None]
     popularity: Mapped[float | None]
+    # IMDb's weighted rating and vote count, when an admin turned IMDb ratings on.
+    imdb_rating: Mapped[float | None]
+    imdb_votes: Mapped[int | None]
     poster_path: Mapped[str | None]
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -291,3 +296,16 @@ class ApiCache(Base):
     key: Mapped[str] = mapped_column(primary_key=True)
     body: Mapped[str] = mapped_column(Text)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class AiPick(Base):
+    """A film the configured LLM suggested for a user at their last feed build."""
+
+    __tablename__ = "ai_picks"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    tmdb_id: Mapped[int] = mapped_column(ForeignKey("titles.tmdb_id"), primary_key=True)
+    # The LLM's one-line reason, shown on the card.
+    why: Mapped[str] = mapped_column(Text)

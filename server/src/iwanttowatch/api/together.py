@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
+from iwanttowatch.api.schemas import ImdbScore, imdb_score
 from iwanttowatch.api.streaming import TitleAvailability, title_availability
 from iwanttowatch.db import utcnow
 from iwanttowatch.models import Availability, Guest, LibraryItem, TasteShare, Title, User
@@ -98,6 +99,7 @@ class GroupItem(BaseModel):
     matches: list[MemberMatch]
     reasons: list[str]
     availability: TitleAvailability
+    imdb: ImdbScore | None
 
 
 class GroupPage(BaseModel):
@@ -162,7 +164,7 @@ def together_picks(
         current.append(guest)
     session.commit()
 
-    members = [local_member(session, i, people[i].display_name) for i in users if i in people]
+    members = [local_member(session, people[i]) for i in users if i in people]
     members += [guest_member(g) for g in current]
     picks = group_picks(session, list(people), members)
     ids = [p.tmdb_id for p in picks]
@@ -208,6 +210,7 @@ def together_picks(
                 ],
                 reasons=pick.reasons,
                 availability=where,
+                imdb=imdb_score(title),
             )
         )
     return GroupPage(total=len(items), items=items[:limit])

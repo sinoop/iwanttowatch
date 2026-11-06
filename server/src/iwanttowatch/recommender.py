@@ -10,17 +10,19 @@ score a candidate:
   rated films, which explains itself ("like X, which you rated highly");
 - ridge regression over the features, which learns preferences such as a director
   or a disliked theme;
-- a quality prior: TMDb's vote average judged within the film's own language, so a
-  well-loved regional film with few votes isn't treated as obscure.
+- a quality prior: the film's IMDb rating (or TMDb's, without one) judged within its
+  own language, so a well-loved regional film with few votes isn't treated as obscure.
 
 Cross-validation on the user's ratings picks how to blend the three and calibrates
 the blend, so a match of 80% means "likely in the top 20% of what you've rated".
+When the user gives their birth year, films from before it lose a little match,
+unless the user has liked films that old.
 """
 
 import math
 import random
 from collections import Counter, defaultdict
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from statistics import median
 
@@ -49,6 +51,15 @@ BASELINE_WEIGHT = 5.0
 # How many films of a language must be in the pool before its vote norms count as
 # much as those of all films together.
 LANGUAGE_NORM_FILMS = 5
+# Films from before the user was born appeal to fewer people: they lose up to
+# ERA_PENALTY of match, growing over ERA_PENALTY_YEARS before the birth year. Each
+# such film the user liked shrinks it; ERA_LIKED_HALF of them halve it.
+ERA_PENALTY = 0.06
+ERA_PENALTY_YEARS = 30
+ERA_LIKED_HALF = 3
+# Added to films the configured LLM suggested: it reads what the user said they liked
+# or disliked about films, which the features here can't see.
+AI_PICK_BONUS = 0.04
 FOLDS = 5
 MIN_RATINGS_FOR_CV = 15
 # (neighbours, ridge, quality) weights tried by cross-validation.
@@ -141,13 +152,21 @@ class Vectors:
         self.matrix = matrix / np.where(norms > 0, norms, 1)
 
 
-def _vote_norms(voted: Sequence[Title]) -> tuple[float, float]:
-    """The mean vote average and median vote count of some films."""
-    if not voted:
+def _votes(title: Title) -> tuple[float, int] | None:
+    """A film's average vote and vote count: IMDb's when known, as far more people vote
+    there, otherwise TMDb's."""
+    if title.imdb_votes and title.imdb_rating is not None:
+        return title.imdb_rating, title.imdb_votes
+    if title.vote_count and title.vote_average is not None:
+        return title.vote_average, title.vote_count
+    return None
+
+
+def _vote_norms(votes: Sequence[tuple[float, int]]) -> tuple[float, float]:
+    """The mean average vote and median vote count of some films."""
+    if not votes:
         return 6.0, 1.0
-    return sum(t.vote_average or 0 for t in voted) / len(voted), median(
-        t.vote_count or 0 for t in voted
-    )
+    return sum(a for a, _ in votes) / len(votes), median(n for _, n in votes)
 
 
 def _quality(titles: Sequence[Title]) -> Floats:
@@ -155,12 +174,11 @@ def _quality(titles: Sequence[Title]) -> Floats:
     by_language: dict[str, list[Title]] = defaultdict(list)
     for t in titles:
         by_language[t.original_language].append(t)
-    overall_mean, overall_votes = _vote_norms(
-        [t for t in titles if t.vote_count and t.vote_average is not None]
-    )
+    known = {t.tmdb_id: v for t in titles if (v := _votes(t)) is not None}
+    overall_mean, overall_votes = _vote_norms(list(known.values()))
     averages: dict[int, float] = {}
     for group in by_language.values():
-        voted = [t for t in group if t.vote_count and t.vote_average is not None]
+        voted = [known[t.tmdb_id] for t in group if t.tmdb_id in known]
         # A language's own norms take over as more of its films are in the pool;
         # a film alone in its language would otherwise be averaged with itself.
         own = len(voted) / (len(voted) + LANGUAGE_NORM_FILMS)
@@ -169,8 +187,8 @@ def _quality(titles: Sequence[Title]) -> Floats:
         # Vote counts span orders of magnitude between languages, so blend their logs.
         prior_votes = math.exp(own * math.log(language_votes) + (1 - own) * math.log(overall_votes))
         for t in group:
-            votes = t.vote_count or 0
-            averages[t.tmdb_id] = (votes * (t.vote_average or 0) + prior_votes * mean_vote) / (
+            average, votes = known.get(t.tmdb_id, (0.0, 0))
+            averages[t.tmdb_id] = (votes * average + prior_votes * mean_vote) / (
                 votes + prior_votes or 1
             )
     values = np.array([averages[t.tmdb_id] for t in titles])
@@ -250,7 +268,11 @@ def _choose_blend(
 
 
 def score(
-    titles: dict[int, Title], labels: Sequence[Label], candidates: Sequence[int]
+    titles: dict[int, Title],
+    labels: Sequence[Label],
+    candidates: Sequence[int],
+    birth_year: int | None = None,
+    ai_picks: Collection[int] = (),
 ) -> list[Scored]:
     """Score candidates for a user, most promising first, diversified at the top."""
     labels = [label for label in labels if label.tmdb_id in titles]
@@ -261,16 +283,47 @@ def score(
     vectors = Vectors(pool)
     quality = _quality(pool)
     candidate_quality = quality[[vectors.rows[i] for i in candidates]]
+    adjust = AI_PICK_BONUS * np.array([i in ai_picks for i in candidates]) - _era_penalty(
+        titles, labels, candidates, birth_year
+    )
     if not labels:
-        return [Scored(i, float(q)) for i, q in zip(candidates, candidate_quality, strict=True)]
+        return [
+            Scored(i, float(np.clip(q + a, 0.01, 0.99)))
+            for i, q, a in zip(candidates, candidate_quality, adjust, strict=True)
+        ]
 
     blend, (intercept, slope) = _choose_blend(vectors, labels, quality)
     p = _predict(vectors, labels, candidates)
     blended = np.column_stack([p.neighbours, p.ridge, candidate_quality]) @ np.array(blend)
-    scores = np.clip(intercept + slope * blended, 0.01, 0.99)
+    scores = np.clip(intercept + slope * blended + adjust, 0.01, 0.99)
     reasons = _reasons(vectors, labels, titles, candidates, p)
     order = _diversify(vectors, candidates, scores)
     return [Scored(candidates[i], float(scores[i]), reasons[i]) for i in order]
+
+
+def _era_penalty(
+    titles: dict[int, Title],
+    labels: Sequence[Label],
+    candidates: Sequence[int],
+    birth_year: int | None,
+) -> Floats:
+    """How much match each candidate loses for being from before the user was born:
+    more the older it is, and less the more such films the user has liked."""
+    if birth_year is None:
+        return np.zeros(len(candidates))
+    liked_older = sum(
+        1
+        for label in labels
+        if label.explicit
+        and label.value >= 0.6
+        and (year := titles[label.tmdb_id].year) is not None
+        and year < birth_year
+    )
+    scale = ERA_PENALTY * ERA_LIKED_HALF / (ERA_LIKED_HALF + liked_older)
+    years_before = np.array(
+        [max(0, birth_year - (titles[i].year or birth_year)) for i in candidates], dtype=np.float64
+    )
+    return scale * np.minimum(1.0, years_before / ERA_PENALTY_YEARS)
 
 
 def _reasons(

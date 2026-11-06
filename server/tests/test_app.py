@@ -49,17 +49,22 @@ def test_first_run_setup_creates_admin_once_and_sessions_work(client: TestClient
     assert client.get("/api/v1/me").json()["username"] == "sinoop"
 
 
-def test_web_app_fallback_does_not_swallow_api_routes(tmp_path: Path) -> None:
+def test_web_app_is_served_cacheable_without_swallowing_api_routes(tmp_path: Path) -> None:
     static = tmp_path / "web"
     (static / "assets").mkdir(parents=True)
     (static / "index.html").write_text("<div id=root></div>")
-    (static / "assets" / "app.js").write_text("console.log(1)")
+    (static / "assets" / "app.js").write_text("console.log(1);" * 200)
     (tmp_path / "secret.txt").write_text("outside the web root")
     settings = Settings(data_dir=tmp_path / "data", secret_key="test", static_dir=static)
     client = TestClient(create_app(settings))
 
-    assert client.get("/assets/app.js").text == "console.log(1)"
-    assert client.get("/discover/123").text == "<div id=root></div>"
+    script = client.get("/assets/app.js")
+    assert script.text == "console.log(1);" * 200
+    # Hashed assets are cached for good and sent compressed; the page is always rechecked.
+    assert "immutable" in script.headers["cache-control"]
+    assert script.headers["content-encoding"] == "gzip"
+    page = client.get("/discover/123")
+    assert page.text == "<div id=root></div>" and page.headers["cache-control"] == "no-cache"
     assert client.get("/%2E%2E/secret.txt").text == "<div id=root></div>"
     assert client.get("/api/v1/does-not-exist").status_code == 404
     assert client.get("/api/v1/setup").json() == {"complete": False, "jellyfin_login": False}

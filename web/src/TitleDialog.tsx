@@ -67,7 +67,18 @@ function Details({ tmdbId, onClose, onRate }: { tmdbId: number; onClose: () => v
         <div className="min-w-0">
           <h2 className="text-xl font-semibold">{film.title}</h2>
           {film.original_title !== film.title && <p className="text-sm text-white/55">{film.original_title}</p>}
-          <p className="mt-1 text-sm text-white/55">{facts(film).join(' · ')}</p>
+          <p className="mt-1 text-sm text-white/55">{facts({ ...film, imdb: null }).join(' · ')}</p>
+          {film.imdb && (
+            <a
+              href={`https://www.imdb.com/title/${film.imdb.id}/`}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 block w-fit text-sm text-white/70 underline-offset-2 hover:underline"
+            >
+              IMDb {film.imdb.rating.toFixed(1)}{' '}
+              <span className="text-white/45">({film.imdb.votes.toLocaleString()} votes)</span>
+            </a>
+          )}
           {film.match !== null && <MatchBadge match={film.match} className="mt-3" />}
           {film.tagline && <p className="mt-3 text-sm text-white/70 italic">{film.tagline}</p>}
         </div>

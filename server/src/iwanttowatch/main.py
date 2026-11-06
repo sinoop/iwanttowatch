@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import text
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from iwanttowatch.api import (
@@ -24,6 +25,7 @@ from iwanttowatch.imports import ImportWorker
 from iwanttowatch.jellyfin import JellyfinWorker
 
 SESSION_MAX_AGE = 30 * 24 * 3600
+IMMUTABLE = "public, max-age=31536000, immutable"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -35,7 +37,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="iWantToWatch", version="0.1.0")
     app.state.engine = engine
     app.state.tmdb_base_url = settings.tmdb_base_url
-    app.state.feed_worker = FeedWorker(engine, settings.tmdb_base_url)
+    app.state.data_dir = settings.data_dir
+    app.state.feed_worker = FeedWorker(engine, settings.tmdb_base_url, settings.data_dir)
     app.state.feed_worker.start()
     # A finished import changes the user's taste, so their feed is rebuilt.
     app.state.import_worker = ImportWorker(
@@ -44,6 +47,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.import_worker.start()
     app.state.jellyfin_worker = JellyfinWorker(engine, settings.tmdb_base_url)
     app.state.jellyfin_worker.start()
+    # Text compresses well: the web app's script is about a third of its size gzipped.
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.resolve_secret_key(),
@@ -78,5 +83,8 @@ def _serve_web_app(app: FastAPI, static_dir: Path) -> None:
             raise HTTPException(404)
         file = (static_dir / path).resolve()
         if path and file.is_file() and file.is_relative_to(static_dir):
+            # Built assets have a content hash in their name, so they never change.
+            if path.startswith("assets/"):
+                return FileResponse(file, headers={"Cache-Control": IMMUTABLE})
             return FileResponse(file)
-        return FileResponse(index)
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})

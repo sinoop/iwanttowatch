@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from iwanttowatch.catalog import ensure_titles
 from iwanttowatch.db import utcnow
 from iwanttowatch.feed import hidden, seen, user_labels
-from iwanttowatch.models import Guest, Recommendation, TasteShare, Title
+from iwanttowatch.models import Guest, Recommendation, TasteShare, Title, User
 from iwanttowatch.recommender import Label, score
 from iwanttowatch.tmdb import TmdbClient
 
@@ -47,6 +47,7 @@ class Member:
     seen: set[int]
     # Turned down or not interested; local members only.
     hidden: set[int] = field(default_factory=set)
+    birth_year: int | None = None
 
 
 @dataclass
@@ -117,13 +118,14 @@ def store_share(session: Session, tmdb: TmdbClient, guest: Guest, data: dict[str
     guest.fetched_at, guest.error = utcnow(), None
 
 
-def local_member(session: Session, user_id: int, name: str) -> Member:
+def local_member(session: Session, user: User) -> Member:
     return Member(
-        key=f"user:{user_id}",
-        name=name,
-        labels=user_labels(session, user_id),
-        seen=seen(session, user_id),
-        hidden=hidden(session, user_id),
+        key=f"user:{user.id}",
+        name=user.display_name,
+        labels=user_labels(session, user.id),
+        seen=seen(session, user.id),
+        hidden=hidden(session, user.id),
+        birth_year=user.birth_year,
     )
 
 
@@ -157,7 +159,9 @@ def group_picks(session: Session, user_ids: list[int], members: list[Member]) ->
     wanted = pool | {x.tmdb_id for m in members for x in m.labels}
     titles = {t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(wanted)))}
     candidates = sorted(i for i in pool if i in titles)
-    scored = [{s.tmdb_id: s for s in score(titles, m.labels, candidates)} for m in members]
+    scored = [
+        {s.tmdb_id: s for s in score(titles, m.labels, candidates, m.birth_year)} for m in members
+    ]
 
     picks = []
     for tmdb_id in candidates:

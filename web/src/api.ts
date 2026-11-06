@@ -47,11 +47,17 @@ export function useAvailability(tmdbIds: number[]) {
 
 const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
 
-/** Year, language and running time. */
-export function facts(film: { year: number | null; original_language: string; runtime: number | null }) {
+/** Year, language, running time, and IMDb rating when known. */
+export function facts(film: {
+  year: number | null
+  original_language: string
+  runtime: number | null
+  imdb?: { rating: number } | null
+}) {
   return [
     film.year,
     languageName.of(film.original_language),
     film.runtime ? `${Math.floor(film.runtime / 60)}h ${film.runtime % 60}m` : null,
+    film.imdb ? `IMDb ${film.imdb.rating.toFixed(1)}` : null,
   ].filter(Boolean) as (string | number)[]
 }

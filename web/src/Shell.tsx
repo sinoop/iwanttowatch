@@ -1,7 +1,7 @@
 import type { Me } from '@iwanttowatch/api-client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { NavLink, Outlet } from 'react-router'
-import { api } from './api'
+import { api, useServerSettings } from './api'
 import { JustWatchCredit } from './Streaming'
 import { Button, Logo } from './ui'
 
@@ -14,6 +14,7 @@ const NAV = [
 
 export default function Shell({ me }: { me: Me }) {
   const queryClient = useQueryClient()
+  const settings = useServerSettings()
   const logout = useMutation({
     mutationFn: () => api.POST('/api/v1/auth/logout'),
     onSuccess: () => queryClient.setQueryData(['me'], null),
@@ -52,6 +53,16 @@ export default function Shell({ me }: { me: Me }) {
       <footer className="mx-auto max-w-5xl px-4 pb-8 text-xs text-white/35 sm:px-6">
         This product uses the TMDB API but is not endorsed or certified by TMDB.{' '}
         <JustWatchCredit />
+        {settings.data?.imdb.enabled && (
+          <>
+            {' '}
+            Ratings: information courtesy of{' '}
+            <a href="https://www.imdb.com" target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+              IMDb
+            </a>
+            . Used with permission.
+          </>
+        )}
       </footer>
     </div>
   )

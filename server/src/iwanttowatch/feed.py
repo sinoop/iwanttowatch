@@ -17,15 +17,19 @@ import threading
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, timedelta
+from pathlib import Path
 from typing import Any, Literal
 
 from sqlalchemy import Engine, delete, func, or_, select
 from sqlalchemy.orm import Session
 
+from iwanttowatch import imdb
 from iwanttowatch.availability import availability
-from iwanttowatch.catalog import ensure_titles
+from iwanttowatch.catalog import ensure_titles, find_by_title
 from iwanttowatch.db import utcnow
+from iwanttowatch.llm import LlmError, provider_from_settings
 from iwanttowatch.models import (
+    AiPick,
     Feedback,
     FeedBuild,
     LibraryItem,
@@ -35,7 +39,7 @@ from iwanttowatch.models import (
     UserTitle,
 )
 from iwanttowatch.recommender import Label, Scored, percentiles, score
-from iwanttowatch.taste import effective_ratings
+from iwanttowatch.taste import effective_ratings, suggest_films
 from iwanttowatch.tmdb import TmdbClient, TmdbError, TmdbNotFound, client_from_settings
 
 log = logging.getLogger(__name__)
@@ -190,7 +194,38 @@ def candidates(session: Session, tmdb: TmdbClient, user: User, labels: list[Labe
     return list(ordered)[:MAX_CANDIDATES]
 
 
-def build_feed(engine: Engine, tmdb_base_url: str, user_id: int) -> None:
+def ai_picks(session: Session, tmdb: TmdbClient, user_id: int) -> dict[int, str]:
+    """Ask the configured LLM for films, matched to TMDb, with its reason for each.
+
+    Without an LLM there are none. When it fails, the last build's picks are kept.
+    """
+    stored = select(AiPick).where(AiPick.user_id == user_id)
+    llm = provider_from_settings(session)
+    if llm is None:
+        session.execute(delete(AiPick).where(AiPick.user_id == user_id))
+        return {}
+    try:
+        suggestions = suggest_films(session, user_id, llm)
+    except LlmError:
+        log.warning("Couldn't get film suggestions for user %s", user_id, exc_info=True)
+        return {p.tmdb_id: p.why for p in session.scalars(stored)}
+
+    def match(title: str, year: int | None) -> int | None:
+        try:
+            return find_by_title(tmdb, title, year)[0]
+        except TmdbNotFound:
+            return None
+
+    with ThreadPoolExecutor(PARALLEL_REQUESTS) as pool:
+        ids = list(pool.map(match, [s.title for s in suggestions], [s.year for s in suggestions]))
+    picks = {i: s.why for i, s in zip(ids, suggestions, strict=True) if i is not None}
+    ensure_titles(session, tmdb, list(picks))
+    session.execute(delete(AiPick).where(AiPick.user_id == user_id))
+    session.add_all(AiPick(user_id=user_id, tmdb_id=i, why=why) for i, why in picks.items())
+    return picks
+
+
+def build_feed(engine: Engine, tmdb_base_url: str, data_dir: Path, user_id: int) -> None:
     with Session(engine) as session:
         user = session.get(User, user_id)
         if user is None:
@@ -212,21 +247,29 @@ def build_feed(engine: Engine, tmdb_base_url: str, user_id: int) -> None:
             step("Finding films")
             labels = user_labels(session, user_id)
             ids = candidates(session, tmdb, user, labels)
+            if provider_from_settings(session) is not None:
+                step("Asking the AI for ideas")
+            picks = ai_picks(session, tmdb, user_id)
+            exclude = seen(session, user_id)
+            ids = list(dict.fromkeys([*(i for i in picks if i not in exclude), *ids]))
             step(f"Reading details of {len(ids)} films")
             titles = ensure_titles(session, tmdb, [*(label.tmdb_id for label in labels), *ids])
             session.commit()
             ids = [i for i in ids if i in titles]
+            if imdb.enabled(session):
+                step("Reading IMDb ratings")
+                imdb.update_ratings(session, data_dir)
             step("Checking where they stream")
             availability(session, tmdb, ids, user.region)
             step("Matching them to your taste")
-            scored = score(titles, labels, ids)
+            scored = score(titles, labels, ids, user.birth_year, picks)
         except TmdbError as error:
             session.rollback()
             state.status, state.step = "failed", None
             state.error = f"{error}. Try again in a few minutes."
             session.commit()
             return
-        _store(session, user_id, scored)
+        _store(session, user_id, scored, picks)
         state.status, state.step, state.error, state.built_at = "ready", None, None, utcnow()
         session.commit()
 
@@ -239,6 +282,9 @@ def rescore_feed(engine: Engine, user_id: int) -> None:
         )
         if not ids:
             return
+        user = session.get(User, user_id)
+        if user is None:
+            return
         labels = user_labels(session, user_id)
         exclude = seen(session, user_id)
         ids = [i for i in ids if i not in exclude]
@@ -246,15 +292,26 @@ def rescore_feed(engine: Engine, user_id: int) -> None:
         titles = {
             t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(wanted)))
         }
-        _store(session, user_id, score(titles, labels, ids))
+        picks = {
+            p.tmdb_id: p.why
+            for p in session.scalars(select(AiPick).where(AiPick.user_id == user_id))
+        }
+        _store(session, user_id, score(titles, labels, ids, user.birth_year, picks), picks)
         session.commit()
 
 
-def _store(session: Session, user_id: int, scored: Sequence[Scored]) -> None:
+def _store(session: Session, user_id: int, scored: Sequence[Scored], picks: dict[int, str]) -> None:
     session.execute(delete(Recommendation).where(Recommendation.user_id == user_id))
     session.add_all(
         Recommendation(
-            user_id=user_id, tmdb_id=s.tmdb_id, score=s.score, rank=rank, reasons=s.reasons
+            user_id=user_id,
+            tmdb_id=s.tmdb_id,
+            score=s.score,
+            rank=rank,
+            # The LLM's reason first: it speaks to what the user said about films.
+            reasons=[f"AI pick: {picks[s.tmdb_id]}", *s.reasons][:2]
+            if picks.get(s.tmdb_id)
+            else s.reasons,
         )
         for rank, s in enumerate(scored)
     )
@@ -264,9 +321,10 @@ class FeedWorker:
     """Builds and rescores feeds one at a time on a background thread, and rebuilds
     each user's feed once it is a day old."""
 
-    def __init__(self, engine: Engine, tmdb_base_url: str) -> None:
+    def __init__(self, engine: Engine, tmdb_base_url: str, data_dir: Path) -> None:
         self._engine = engine
         self._tmdb_base_url = tmdb_base_url
+        self._data_dir = data_dir
         self._queue: queue.Queue[tuple[Job, int]] = queue.Queue()
         self._lock = threading.Lock()
         # Users waiting for a rescore, and the timer that will queue it.
@@ -337,7 +395,7 @@ class FeedWorker:
                 continue
             try:
                 if job == "build":
-                    build_feed(self._engine, self._tmdb_base_url, user_id)
+                    build_feed(self._engine, self._tmdb_base_url, self._data_dir, user_id)
                 else:
                     self._rescore(user_id)
             except Exception:

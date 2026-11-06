@@ -1,7 +1,7 @@
 """Exporting everything a user has told iWantToWatch, and restoring it from that file.
 
-The file is JSON. It holds the user's region, languages, and streaming services, every
-rating, watch, and favourite per source, and their feedback on suggestions. Films are
+The file is JSON. It holds the user's region, languages, streaming services, and birth
+year, every rating, watch, and favourite per source, and their feedback on suggestions. Films are
 identified by TMDb ID; titles and years are included only so people can read the file.
 Restoring merges it into the account: the file wins for each film and source it has.
 """
@@ -16,7 +16,7 @@ from sqlalchemy import select
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.imports import MAX_UPLOAD_BYTES
 from iwanttowatch.api.reactions import Reaction
-from iwanttowatch.api.schemas import LanguageCode
+from iwanttowatch.api.schemas import BirthYear, LanguageCode
 from iwanttowatch.catalog import ensure_titles
 from iwanttowatch.db import utcnow
 from iwanttowatch.models import Feedback, Title, UserTitle
@@ -32,6 +32,7 @@ class ExportedProfile(BaseModel):
     region: str = Field(pattern=r"^[A-Z]{2}$")
     languages: list[LanguageCode] = Field(max_length=20)
     subscriptions: list[int]
+    birth_year: BirthYear | None = None
 
 
 class ExportedEntry(BaseModel):
@@ -98,7 +99,10 @@ def export_data(user: CurrentUser, session: DbSession, response: Response) -> Da
     data = DataExport(
         exported_at=utcnow(),
         profile=ExportedProfile(
-            region=user.region, languages=user.languages, subscriptions=user.subscriptions
+            region=user.region,
+            languages=user.languages,
+            subscriptions=user.subscriptions,
+            birth_year=user.birth_year,
         ),
         entries=[
             ExportedEntry(
@@ -177,6 +181,9 @@ def restore_data(
     user.region = data.profile.region
     user.languages = data.profile.languages
     user.subscriptions = data.profile.subscriptions
+    # Older exports have no birth year; keep the one set here.
+    if data.profile.birth_year is not None:
+        user.birth_year = data.profile.birth_year
     session.commit()
     request.app.state.feed_worker.request(user.id)
     skipped = len(data.entries) - len(entries) + len(data.feedback) - len(feedback)

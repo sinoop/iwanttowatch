@@ -8,7 +8,7 @@ Self-hosted movie recommendations that learn your taste from your own history â€
 
 - **Library integration:** reads watch history, favourites, and the local library from Jellyfin, with automatic scrobbling via webhooks.
 - **Taste import:** IMDb `ratings.csv`, Letterboxd export, and optional Trakt sync.
-- **Taste scoring:** a Criticker-style match percentage computed from your own ratings, not generic popularity.
+- **Taste scoring:** a Criticker-style match percentage computed from your own ratings, not generic popularity; an optional birth year gently lowers films from before you were born, unless you've liked films that old.
 - **Available to watch:** filters to titles on your Jellyfin server or your subscriptions (Netflix, Prime Video, JioHotstar, â€¦) in your region.
 - **Regional cinema first-class:** multilingual metadata and models, so Malayalam, Tamil, Korean, and other films aren't drowned out by Hollywood.
 - **Netflix-style rating:** Didn't like / Liked / Loved, plus up to three tags for what you liked most (or what didn't work), which feed the recommender and the AI persona.

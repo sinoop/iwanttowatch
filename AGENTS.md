@@ -23,3 +23,4 @@ Self-hosted movie recommender: Python API server, React web app, shared generate
 - Keep the runtime to one container and SQLite; no extra services unless optional.
 - Keep `openapi-typescript` on TypeScript 5 in `packages/api-client`: TypeScript 7 has no compiler JS API.
 - Source files are AGPL-3.0-or-later; don't add dependencies with incompatible licences.
+- `docs/plan.md` is the implementation plan: update its milestones in the same commit as the work they describe.

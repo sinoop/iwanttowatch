@@ -127,6 +127,44 @@
         }
       }
     },
+    "/api/v1/me/profile": {
+      "put": {
+        "summary": "Update Profile",
+        "operationId": "update_profile_api_v1_me_profile_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings": {
       "get": {
         "summary": "Read Settings",
@@ -265,6 +303,45 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/LlmUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/imdb": {
+      "put": {
+        "summary": "Set Imdb",
+        "description": "Use IMDb's ratings for films' quality, under IMDb's non-commercial terms. Turning\nthem on rebuilds every feed, which downloads them; turning them off removes them.",
+        "operationId": "set_imdb_api_v1_settings_imdb_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImdbUpdate"
               }
             }
           },
@@ -1873,6 +1950,19 @@
             },
             "type": "array",
             "title": "Subscriptions"
+          },
+          "birth_year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 1900.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Year"
           }
         },
         "type": "object",
@@ -1965,6 +2055,16 @@
           "thumbs_up": {
             "type": "boolean",
             "title": "Thumbs Up"
+          },
+          "imdb": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImdbScore"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1981,7 +2081,8 @@
           "match",
           "reasons",
           "availability",
-          "thumbs_up"
+          "thumbs_up",
+          "imdb"
         ],
         "title": "FeedItem"
       },
@@ -2219,6 +2320,16 @@
           },
           "availability": {
             "$ref": "#/components/schemas/TitleAvailability"
+          },
+          "imdb": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImdbScore"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -2235,7 +2346,8 @@
           "match",
           "matches",
           "reasons",
-          "availability"
+          "availability",
+          "imdb"
         ],
         "title": "GroupItem"
       },
@@ -2335,6 +2447,86 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ImdbScore": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "rating": {
+            "type": "number",
+            "title": "Rating"
+          },
+          "votes": {
+            "type": "integer",
+            "title": "Votes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "rating",
+          "votes"
+        ],
+        "title": "ImdbScore",
+        "description": "IMDb's rating of a film, shown when an admin turned IMDb ratings on."
+      },
+      "ImdbSettings": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "rated_films": {
+            "type": "integer",
+            "title": "Rated Films"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "updated_at",
+          "error",
+          "rated_films"
+        ],
+        "title": "ImdbSettings"
+      },
+      "ImdbUpdate": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "ImdbUpdate"
       },
       "ImportCounts": {
         "properties": {
@@ -2857,6 +3049,17 @@
             },
             "type": "array",
             "title": "Subscriptions"
+          },
+          "birth_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Year"
           }
         },
         "type": "object",
@@ -2867,7 +3070,8 @@
           "is_admin",
           "region",
           "languages",
-          "subscriptions"
+          "subscriptions",
+          "birth_year"
         ],
         "title": "Me"
       },
@@ -3004,6 +3208,28 @@
           "refreshing"
         ],
         "title": "PersonaOut"
+      },
+      "ProfileUpdate": {
+        "properties": {
+          "birth_year": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2100.0,
+                "minimum": 1900.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Year"
+          }
+        },
+        "type": "object",
+        "required": [
+          "birth_year"
+        ],
+        "title": "ProfileUpdate"
       },
       "Provider": {
         "properties": {
@@ -3244,13 +3470,17 @@
           },
           "jellyfin": {
             "$ref": "#/components/schemas/JellyfinSettings"
+          },
+          "imdb": {
+            "$ref": "#/components/schemas/ImdbSettings"
           }
         },
         "type": "object",
         "required": [
           "tmdb_configured",
           "llm",
-          "jellyfin"
+          "jellyfin",
+          "imdb"
         ],
         "title": "ServerSettings"
       },
@@ -3633,6 +3863,16 @@
               }
             ],
             "title": "Jellyfin Url"
+          },
+          "imdb": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImdbScore"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -3653,7 +3893,8 @@
           "match",
           "reasons",
           "availability",
-          "jellyfin_url"
+          "jellyfin_url",
+          "imdb"
         ],
         "title": "TitleDetail"
       },

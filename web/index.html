@@ -5,6 +5,9 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>iWantToWatch</title>
+    <!-- Every page starts with these; fetching them alongside the script saves a round trip. -->
+    <link rel="preload" href="/api/v1/setup" as="fetch" crossorigin="use-credentials" />
+    <link rel="preload" href="/api/v1/me" as="fetch" crossorigin="use-credentials" />
   </head>
   <body>
     <div id="root"></div>

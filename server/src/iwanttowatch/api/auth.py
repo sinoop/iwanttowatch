@@ -1,10 +1,12 @@
+from datetime import date
+
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import exists, select
 
 from iwanttowatch.api.deps import CurrentUser, DbSession
-from iwanttowatch.api.schemas import LoginRequest, Me, SetupRequest, SetupStatus
+from iwanttowatch.api.schemas import LoginRequest, Me, ProfileUpdate, SetupRequest, SetupStatus
 from iwanttowatch.jellyfin import JellyfinError, client_from_settings
 from iwanttowatch.models import User
 
@@ -102,4 +104,16 @@ def logout(request: Request) -> Response:
 
 @router.get("/me")
 def me(user: CurrentUser) -> Me:
+    return Me.model_validate(user)
+
+
+@router.put("/me/profile")
+def update_profile(
+    body: ProfileUpdate, user: CurrentUser, session: DbSession, request: Request
+) -> Me:
+    if body.birth_year is not None and body.birth_year > date.today().year:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "That year hasn't happened yet")
+    user.birth_year = body.birth_year
+    session.commit()
+    request.app.state.feed_worker.rescore_soon(user.id)
     return Me.model_validate(user)

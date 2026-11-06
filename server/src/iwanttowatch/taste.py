@@ -1,7 +1,10 @@
-"""What a user's ratings say about them, including the LLM-written persona."""
+"""What a user's ratings say about them, including the LLM-written persona and the
+LLM's film suggestions."""
 
+import json
 import logging
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from statistics import mean
 from typing import Any
 
@@ -27,6 +30,29 @@ they would enjoy. Draw on the languages, genres, eras, and filmmakers they love 
 avoid, and mention at most two film titles or names, taken only from the summary:
 never invent names that are not in it. Be warm and a little witty, never mean.
 Plain text only: no lists, no markdown, no quotation marks around the answer."""
+
+MAX_SUGGESTIONS = 25
+# Seen films listed in the prompt so the LLM doesn't suggest them; the rest are
+# filtered out after matching anyway.
+MAX_SEEN_IN_PROMPT = 200
+MAX_WHY_LENGTH = 140
+
+SUGGEST_SYSTEM = f"""You are a well-read film critic recommending films to one person.
+You get a summary of their movie ratings, including what they loved or disliked about
+films in their own words, and a list of films they have already seen. Suggest
+{MAX_SUGGESTIONS} feature films they have not seen and are likely to love. Follow what
+they enjoy and avoid what puts them off. Include films in the languages they watch,
+and mix well-known films with lesser-known gems. Only suggest real, released films.
+Answer with only a JSON array, no markdown, giving each film's English or original
+title, release year, and one short sentence on why it suits them, in this form:
+[{{"title": "...", "year": 2019, "why": "..."}}]"""
+
+
+@dataclass(frozen=True)
+class Suggestion:
+    title: str
+    year: int | None
+    why: str
 
 
 def effective_ratings(user_id: int) -> Subquery:
@@ -204,3 +230,40 @@ def refresh_persona_quietly(session: Session, user_id: int) -> None:
         log.warning("Couldn't refresh the persona for user %s", user_id, exc_info=True)
     finally:
         _refreshing.discard(user_id)
+
+
+def suggest_films(session: Session, user_id: int, llm: LlmProvider) -> list[Suggestion]:
+    """Films the LLM thinks the user will love; empty when they have too few ratings."""
+    if rating_count(session, user_id) < MIN_RATINGS_FOR_PERSONA:
+        return []
+    seen = session.execute(
+        select(Title.title, Title.year)
+        .join(UserTitle, UserTitle.tmdb_id == Title.tmdb_id)
+        .where(UserTitle.user_id == user_id)
+        .distinct()
+        .limit(MAX_SEEN_IN_PROMPT)
+    ).all()
+    prompt = (
+        taste_summary(session, user_id)
+        + "\nAlready seen: "
+        + "; ".join(f"{title} ({year})" if year else title for title, year in seen)
+    )
+    text = llm.generate(SUGGEST_SYSTEM, prompt)
+    try:
+        items = json.loads(text[text.index("[") : text.rindex("]") + 1])
+    except ValueError as error:
+        raise LlmError("The LLM's suggestions weren't a JSON list") from error
+    suggestions = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict) or not isinstance(item.get("title"), str):
+            continue
+        year = item.get("year")
+        why = item.get("why")
+        suggestions.append(
+            Suggestion(
+                title=item["title"].strip(),
+                year=year if isinstance(year, int) else None,
+                why=why.strip()[:MAX_WHY_LENGTH] if isinstance(why, str) else "",
+            )
+        )
+    return suggestions[:MAX_SUGGESTIONS]

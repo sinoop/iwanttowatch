@@ -1,12 +1,18 @@
+import gzip
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import httpx
 import pytest
+import respx
 import test_imports
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from test_imports import KEY
+from test_persona import FILMS, GEMINI, add_ratings, gemini_reply
 
+from iwanttowatch import imdb
 from iwanttowatch.models import Feedback, LibraryItem
 
 base_details = test_imports._details
@@ -54,6 +60,76 @@ def test_feed_suggests_unseen_films_the_user_can_play(client: TestClient) -> Non
     detail = client.get("/api/v1/titles/302").json()
     assert detail["match"] == by_id[302]["match"]
     assert detail["directors"] == ["A Director"] and detail["jellyfin_url"] is None
+
+
+def test_imdb_ratings_reach_the_feed_once_an_admin_turns_them_on(
+    client: TestClient, mock: respx.MockRouter
+) -> None:
+    ratings = "tconst\taverageRating\tnumVotes\ntt8413338\t8.5\t22506\ntt0000001\t7.0\t10\n"
+    download = mock.get(imdb.RATINGS_URL).respond(content=gzip.compress(ratings.encode()))
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    client.put("/api/v1/me/streaming", json={"region": "IN", "subscriptions": [8]})
+    idle(client)
+    assert all(i["imdb"] is None for i in feed(client, available_only=False)["items"])
+    assert not download.called
+
+    on = client.put("/api/v1/settings/imdb", json={"enabled": True}).json()["imdb"]
+    assert on["enabled"] is True
+    idle(client)
+    by_id = {i["tmdb_id"]: i for i in feed(client, available_only=False)["items"]}
+    assert by_id[201]["imdb"] == {"id": "tt8413338", "rating": 8.5, "votes": 22506}
+    assert client.get("/api/v1/titles/201").json()["imdb"]["rating"] == 8.5
+    status = client.get("/api/v1/settings").json()["imdb"]
+    assert status["rated_films"] == 1 and status["updated_at"] and status["error"] is None
+    # The next build the same day reuses the downloaded file.
+    client.post("/api/v1/feed/refresh")
+    idle(client)
+    assert download.call_count == 1
+
+    client.put("/api/v1/settings/imdb", json={"enabled": False})
+    idle(client)
+    assert all(i["imdb"] is None for i in feed(client, available_only=False)["items"])
+    assert client.get("/api/v1/settings").json()["imdb"]["rated_films"] == 0
+
+
+def test_ai_picks_join_the_feed_with_the_ais_reason(
+    client: TestClient, mock: respx.MockRouter
+) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    add_ratings(client, FILMS)
+    client.put("/api/v1/titles/201/reaction", json={"reaction": "loved", "tags": ["great_story"]})
+    prompts: list[str] = []
+
+    def gemini(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        if "recommending films" not in body["systemInstruction"]["parts"][0]["text"]:
+            return gemini_reply("OK")
+        prompts.append(body["contents"][0]["parts"][0]["text"])
+        picks = [
+            {"title": "Premam", "year": 2015, "why": "A warm Malayalam romance."},
+            {"title": "Kumbalangi Nights", "year": 2019, "why": "Already seen."},
+            {"title": "No Such Film", "year": 1900, "why": "Invented."},
+        ]
+        return gemini_reply("```json\n" + json.dumps(picks) + "\n```")
+
+    mock.post(GEMINI).mock(side_effect=gemini)
+    client.put("/api/v1/settings/llm", json={"provider": "gemini", "gemini_api_key": "k" * 30})
+    client.put("/api/v1/me/streaming", json={"region": "IN", "subscriptions": [8]})
+    idle(client)
+
+    # The prompt carries what the user said about films, and nothing about who they are.
+    assert "great story" in prompts[-1] and "Kumbalangi Nights (2019)" in prompts[-1]
+    assert "sinoop" not in prompts[-1].lower()
+    by_id = {i["tmdb_id"]: i for i in feed(client, available_only=False)["items"]}
+    assert by_id[401]["reasons"][0] == "AI pick: A warm Malayalam romance."
+    assert 201 not in by_id  # seen, whatever the AI says
+
+    # Feedback rescores the feed without asking the AI again, keeping its reason.
+    client.put("/api/v1/titles/401/feedback", json={"kind": "up"})
+    idle(client)
+    assert len(prompts) == 1
+    by_id = {i["tmdb_id"]: i for i in feed(client, available_only=False)["items"]}
+    assert by_id[401]["reasons"][0] == "AI pick: A warm Malayalam romance."
 
 
 def test_feed_waits_for_a_tmdb_key(client: TestClient) -> None:
