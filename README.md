@@ -21,7 +21,7 @@ Web app first; Android and iOS apps will use the same server API.
 ## Quick start (Docker)
 
 ```sh
-git clone https://ampcode.com/@sinoopjoy/cine-match iwanttowatch
+git clone https://github.com/sinoop/iwanttowatch.git
 cd iwanttowatch
 docker compose up -d
 ```
