@@ -13,6 +13,8 @@ Self-hosted movie recommendations that learn your taste from your own history ‚Ä
 - **Regional cinema first-class:** multilingual metadata and models, so Malayalam, Tamil, Korean, and other films aren't drowned out by Hollywood.
 - **Netflix-style rating:** Didn't like / Liked / Loved, plus up to three tags for what you liked most (or what didn't work), which feed the recommender and the AI persona.
 - **Feedback loop:** rate, thumbs up/down, or dismiss suggestions to refine the model.
+- **Watch together:** picks for a group, such as the whole household or friends who come over; each film is scored for everyone, and nobody is likely to dislike the top picks. Friends on other iWantToWatch servers share a revocable taste profile that holds only films and how much they liked them.
+- **Child profiles:** parent-managed profiles with an age limit by certificate (such as U/A 7+ or PG), favouring family-positive films; an optional AI note on each film's themes and values.
 - **Your taste as a person:** an optional AI-written sketch of the imaginary person your ratings describe, using a local Ollama model or Google Gemini.
 - **Private and lightweight:** one container, SQLite, no mandatory paid services; runs alongside Jellyfin on a home server or NAS.
 
@@ -46,7 +48,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup.
 2. Jellyfin connection and automatic scrobbling
 3. **Streaming availability per region** ‚Üê *current*
 4. Recommendation engine and discovery feed
-5. Feedback loop
+5. Feedback loop, then:
+   - Watch together: group and household picks
+   - Child profiles with age limits
 6. Trakt, Watchmode, optional LLM (local Ollama or Google Gemini)
 7. First release (v0.1), then mobile apps
 
