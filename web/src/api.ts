@@ -1,4 +1,4 @@
-import { createApiClient } from '@iwanttowatch/api-client'
+import { createApiClient, type Reaction } from '@iwanttowatch/api-client'
 import { useQuery } from '@tanstack/react-query'
 
 export const api = createApiClient()
@@ -17,3 +17,9 @@ export function useServerSettings() {
     queryFn: async () => (await api.GET('/api/v1/settings')).data ?? null,
   })
 }
+
+export const REACTIONS: { value: Reaction; label: string }[] = [
+  { value: 'disliked', label: 'Didn’t like' },
+  { value: 'liked', label: 'Liked' },
+  { value: 'loved', label: 'Loved' },
+]

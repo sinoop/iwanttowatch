@@ -44,6 +44,8 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.ruff.lint.per-file-ignores]
 # Test fixtures embed real export rows verbatim.
 "tests/*" = ["E501"]
+# The tag vocabulary is a table, one tag per line.
+"src/iwanttowatch/tags.py" = ["E501"]
 
 [tool.mypy]
 strict = true

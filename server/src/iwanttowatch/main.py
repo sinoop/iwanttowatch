@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
-from iwanttowatch.api import auth, imports, library
+from iwanttowatch.api import auth, imports, library, reactions
 from iwanttowatch.api import settings as settings_api
 from iwanttowatch.config import Settings
 from iwanttowatch.db import create_db_engine, upgrade_database
@@ -32,7 +32,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_age=SESSION_MAX_AGE,
         same_site="lax",
     )
-    for module in (auth, settings_api, imports, library):
+    for module in (auth, settings_api, imports, library, reactions):
         app.include_router(module.router)
 
     @app.get("/healthz", include_in_schema=False)

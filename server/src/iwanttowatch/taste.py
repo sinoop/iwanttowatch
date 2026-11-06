@@ -11,10 +11,12 @@ from sqlalchemy.orm import Session
 from iwanttowatch.db import utcnow
 from iwanttowatch.llm import PROVIDER_SETTING, LlmError, LlmProvider, provider_from_settings
 from iwanttowatch.models import Persona, Title, UserTitle, get_setting
+from iwanttowatch.tags import BY_ID
 
 log = logging.getLogger(__name__)
 
 MIN_RATINGS_FOR_PERSONA = 5
+REACTION_LABELS = {"disliked": "didn't like", "liked": "liked", "loved": "loved"}
 
 PERSONA_SYSTEM = """You write playful, specific character sketches.
 You get a summary of someone's movie ratings. Imagine the person whose taste this is
@@ -45,6 +47,29 @@ def effective_ratings(user_id: int) -> Subquery:
     return select(ranked).where(ranked.c.rank == 1).subquery()
 
 
+# Where each reaction sits in the user's own rating distribution (Criticker-style), and
+# the score used until there are enough numeric ratings to read that distribution from.
+REACTION_PERCENTILES = {"disliked": 0.15, "liked": 0.65, "loved": 0.90}
+REACTION_FALLBACK = {"disliked": 3.0, "liked": 7.0, "loved": 9.5}
+MIN_RATINGS_FOR_DISTRIBUTION = 10
+
+
+def reaction_rating(session: Session, user_id: int, reaction: str) -> float:
+    """The 0–10 score a reaction stands for, given how this user rates on 1–10 scales."""
+    numeric = sorted(
+        rating
+        for rating in session.scalars(
+            select(UserTitle.rating).where(
+                UserTitle.user_id == user_id, UserTitle.reaction.is_(None)
+            )
+        )
+        if rating is not None
+    )
+    if len(numeric) < MIN_RATINGS_FOR_DISTRIBUTION:
+        return REACTION_FALLBACK[reaction]
+    return float(numeric[round(REACTION_PERCENTILES[reaction] * (len(numeric) - 1))])
+
+
 def rating_count(session: Session, user_id: int) -> int:
     return session.scalar(select(func.count()).select_from(effective_ratings(user_id))) or 0
 
@@ -57,9 +82,9 @@ def taste_summary(session: Session, user_id: int) -> str:
     """
     effective = effective_ratings(user_id)
     rows = session.execute(
-        select(effective.c.rating, effective.c.rated_at, Title).join(
-            Title, Title.tmdb_id == effective.c.tmdb_id
-        )
+        select(
+            effective.c.rating, effective.c.rated_at, effective.c.reaction, effective.c.tags, Title
+        ).join(Title, Title.tmdb_id == effective.c.tmdb_id)
     ).all()
     favorites = set(
         session.scalars(
@@ -97,7 +122,10 @@ def taste_summary(session: Session, user_id: int) -> str:
         t: Title = r.Title
         original = f" / {t.original_title}" if t.original_title != t.title else ""
         liked = ", liked" if t.tmdb_id in favorites else ""
-        return f"{t.title}{original} ({t.year}, {t.original_language}): {r.rating:g}/10{liked}"
+        score = REACTION_LABELS[r.reaction] if r.reaction else f"{r.rating:g}/10"
+        why = [BY_ID[tag].label.lower() for tag in r.tags or [] if tag in BY_ID]
+        reasons = f" ({', '.join(why)})" if why else ""
+        return f"{t.title}{original} ({t.year}, {t.original_language}): {score}{reasons}{liked}"
 
     total = len(rows)
     lines = [
@@ -117,8 +145,16 @@ def taste_summary(session: Session, user_id: int) -> str:
             "Favourite directors: " + ", ".join(f"{n} ({c} films)" for n, _, c in top_directors)
         )
     if top_actors := by_average(actors, minimum=3)[:3]:
-        lines.append("Favourite actors: " + ", ".join(f"{n} ({c} films)" for n, _, c in top_actors))
-    lines.append("Highest rated: " + "; ".join(film(r) for r in ranked[:12] if r.rating >= average))
+        names = ", ".join(f"{n} ({c} films)" for n, _, c in top_actors)
+        lines.append(f"Favourite actors: {names}")
+    tag_counts = Counter(tag for r in rows for tag in r.tags or [] if tag in BY_ID)
+    for positive, heading in ((True, "What they enjoy most"), (False, "What puts them off")):
+        counted = [(t, n) for t, n in tag_counts.most_common() if BY_ID[t].positive == positive]
+        if counted:
+            items = ", ".join(f"{BY_ID[t].label.lower()} ({n} films)" for t, n in counted[:5])
+            lines.append(f"{heading}, in their own words: {items}")
+    top = "; ".join(film(r) for r in ranked[:12] if r.rating >= average)
+    lines.append(f"Highest rated: {top}")
     lowest = [r for r in ranked[-5:] if r.rating <= average - 1.5]
     if lowest:
         lines.append("Lowest rated: " + "; ".join(film(r) for r in reversed(lowest)))

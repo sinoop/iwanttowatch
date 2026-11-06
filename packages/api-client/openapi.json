@@ -580,6 +580,122 @@
           }
         }
       }
+    },
+    "/api/v1/titles/{tmdb_id}/reaction": {
+      "get": {
+        "summary": "Read Reaction",
+        "operationId": "read_reaction_api_v1_titles__tmdb_id__reaction_get",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TitleReaction"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set Reaction",
+        "operationId": "set_reaction_api_v1_titles__tmdb_id__reaction_put",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TitleReaction"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear Reaction",
+        "operationId": "clear_reaction_api_v1_titles__tmdb_id__reaction_delete",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1135,6 +1251,24 @@
           "favorite": {
             "type": "boolean",
             "title": "Favorite"
+          },
+          "reaction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reaction"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
           }
         },
         "type": "object",
@@ -1148,7 +1282,9 @@
           "rating",
           "rated_at",
           "source",
-          "favorite"
+          "favorite",
+          "reaction",
+          "tags"
         ],
         "title": "RatedTitle"
       },
@@ -1180,6 +1316,32 @@
           "languages"
         ],
         "title": "RatingsPage"
+      },
+      "ReactionUpdate": {
+        "properties": {
+          "reaction": {
+            "type": "string",
+            "enum": [
+              "disliked",
+              "liked",
+              "loved"
+            ],
+            "title": "Reaction"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 3,
+            "title": "Tags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reaction"
+        ],
+        "title": "ReactionUpdate"
       },
       "Resolution": {
         "properties": {
@@ -1275,6 +1437,112 @@
           "complete"
         ],
         "title": "SetupStatus"
+      },
+      "TagOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "TagOption"
+      },
+      "TitleReaction": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "original_title": {
+            "type": "string",
+            "title": "Original Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "poster_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Path"
+          },
+          "reaction": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "disliked",
+                  "liked",
+                  "loved"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reaction"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "liked_tags": {
+            "items": {
+              "$ref": "#/components/schemas/TagOption"
+            },
+            "type": "array",
+            "title": "Liked Tags"
+          },
+          "disliked_tags": {
+            "items": {
+              "$ref": "#/components/schemas/TagOption"
+            },
+            "type": "array",
+            "title": "Disliked Tags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "original_title",
+          "year",
+          "poster_path",
+          "reaction",
+          "tags",
+          "liked_tags",
+          "disliked_tags"
+        ],
+        "title": "TitleReaction"
       },
       "TmdbKey": {
         "properties": {

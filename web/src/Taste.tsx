@@ -1,14 +1,16 @@
 import type { ImportJob, RatedTitle } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router'
-import { api, errorMessage, useServerSettings } from './api'
+import { api, errorMessage, REACTIONS, useServerSettings } from './api'
+import RateDialog, { ReactionIcon } from './RateDialog'
 import { Button, ErrorText, Poster } from './ui'
 
 const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
 const PAGE = 48
 
 export default function Taste() {
+  const [rating, setRating] = useState<number | null>(null)
   return (
     <>
       <h1 className="text-2xl font-semibold">My taste</h1>
@@ -18,7 +20,8 @@ export default function Taste() {
       </p>
       <PersonaCard />
       <Imports />
-      <Ratings />
+      <Ratings onRate={setRating} />
+      <RateDialog tmdbId={rating} onClose={() => setRating(null)} />
     </>
   )
 }
@@ -260,7 +263,7 @@ function ImportRow({ job }: { job: ImportJob }) {
   )
 }
 
-function Ratings() {
+function Ratings({ onRate }: { onRate: (tmdbId: number) => void }) {
   const ratings = useInfiniteQuery({
     queryKey: ['ratings'],
     initialPageParam: 0,
@@ -294,12 +297,15 @@ function Ratings() {
           </ul>
         )}
       </div>
+      <RateSearch onRate={onRate} />
       {items.length === 0 ? (
-        <p className="mt-4 text-sm text-white/50">No ratings yet. Import a file above to start.</p>
+        <p className="mt-4 text-sm text-white/50">
+          No ratings yet. Import a file above, or search for a film you’ve seen.
+        </p>
       ) : (
         <ul className="mt-5 grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-6">
           {items.map((item) => (
-            <RatingCard key={item.tmdb_id} item={item} />
+            <RatingCard key={item.tmdb_id} item={item} onRate={onRate} />
           ))}
         </ul>
       )}
@@ -314,25 +320,113 @@ function Ratings() {
   )
 }
 
-function RatingCard({ item }: { item: RatedTitle }) {
+function RateSearch({ onRate }: { onRate: (tmdbId: number) => void }) {
+  const settings = useServerSettings()
+  const [query, setQuery] = useState('')
+  const search = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await api.GET('/api/v1/catalog/search', { params: { query: { query } } })
+      if (error) throw new Error(errorMessage(error))
+      return data.slice(0, 8)
+    },
+  })
+  if (!settings.data?.tmdb_configured) return null
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    if (query.trim()) search.mutate()
+  }
+
+  return (
+    <div className="mt-5">
+      <form onSubmit={submit} className="flex max-w-md gap-2" role="search">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Rate a film you’ve seen…"
+          aria-label="Search for a film to rate"
+          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none placeholder:text-white/35 focus:border-accent focus:ring-2 focus:ring-accent/30"
+        />
+        <Button type="submit" variant="ghost" disabled={search.isPending}>
+          Search
+        </Button>
+      </form>
+      {search.error && (
+        <div className="mt-2 max-w-md">
+          <ErrorText>{search.error.message}</ErrorText>
+        </div>
+      )}
+      {search.data && (
+        <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+          <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+            <span className="text-white/60">
+              {search.data.length ? 'Pick the film to rate' : 'No films found.'}
+            </span>
+            <Button variant="ghost" className="px-2 py-1" onClick={() => search.reset()}>
+              Clear
+            </Button>
+          </div>
+          <ul className="flex gap-3 overflow-x-auto pb-1" aria-label="Search results">
+            {search.data.map((c) => (
+              <li key={c.tmdb_id} className="w-24 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => onRate(c.tmdb_id)}
+                  className="group w-full rounded-lg text-left focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
+                >
+                  <Poster path={c.poster_path} title={c.title} className="group-hover:ring-2 group-hover:ring-accent" />
+                  <p className="mt-1 truncate text-xs font-medium">{c.title}</p>
+                  <p className="truncate text-xs text-white/45">
+                    {[c.year, languageName.of(c.original_language)].filter(Boolean).join(' · ')}
+                  </p>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RatingCard({ item, onRate }: { item: RatedTitle; onRate: (tmdbId: number) => void }) {
   const showOriginal = item.original_title && item.original_title !== item.title
+  const reaction = REACTIONS.find((r) => r.value === item.reaction)
   return (
     <li className="min-w-0">
-      <div className="relative">
-        <Poster path={item.poster_path} title={item.title} />
-        <span className="absolute top-1.5 right-1.5 rounded-md bg-black/75 px-1.5 py-0.5 text-xs font-semibold text-accent-strong">
-          {item.favorite && <span aria-label="Liked">♥ </span>}
-          {Number.isInteger(item.rating) ? item.rating : item.rating.toFixed(1)}
-        </span>
-      </div>
-      <p className="mt-2 truncate text-sm font-medium" title={item.title}>
-        {item.title}
-      </p>
-      <p className="truncate text-xs text-white/45" title={showOriginal ? item.original_title : undefined}>
-        {[item.year, showOriginal ? item.original_title : languageName.of(item.original_language)]
-          .filter(Boolean)
-          .join(' · ')}
-      </p>
+      <button
+        type="button"
+        onClick={() => onRate(item.tmdb_id)}
+        aria-label={`Rate ${item.title}`}
+        className="group block w-full rounded-lg text-left focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
+      >
+        <div className="relative">
+          <Poster path={item.poster_path} title={item.title} className="group-hover:ring-2 group-hover:ring-accent/70" />
+          <span
+            className="absolute top-1.5 right-1.5 flex items-center gap-1 rounded-md bg-black/80 px-1.5 py-0.5 text-xs font-semibold text-accent-strong [--thumb-bg:#000]"
+            title={reaction?.label}
+          >
+            {item.favorite && <span aria-label="Liked on Letterboxd">♥</span>}
+            {reaction ? (
+              <>
+                <ReactionIcon reaction={reaction.value} className="h-3.5" />
+                <span className="sr-only">{reaction.label}</span>
+              </>
+            ) : Number.isInteger(item.rating) ? (
+              item.rating
+            ) : (
+              item.rating.toFixed(1)
+            )}
+          </span>
+        </div>
+        <p className="mt-2 truncate text-sm font-medium" title={item.title}>
+          {item.title}
+        </p>
+        <p className="truncate text-xs text-white/45" title={showOriginal ? item.original_title : undefined}>
+          {[item.year, showOriginal ? item.original_title : languageName.of(item.original_language)]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+      </button>
     </li>
   )
 }

@@ -90,7 +90,7 @@ class UserTitle(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     tmdb_id: Mapped[int] = mapped_column(ForeignKey("titles.tmdb_id"), index=True)
-    # "imdb", "letterboxd"; later "jellyfin", "trakt", "app".
+    # "imdb", "letterboxd", "app" (rated in iWantToWatch); later "jellyfin", "trakt".
     source: Mapped[str] = mapped_column(String(16))
     # Normalised to 0–10.
     rating: Mapped[float | None]
@@ -98,6 +98,10 @@ class UserTitle(Base):
     watched: Mapped[bool] = mapped_column(default=False)
     watched_at: Mapped[date | None]
     favorite: Mapped[bool] = mapped_column(default=False)
+    # In-app ratings only: "disliked", "liked", or "loved", and up to three tag IDs
+    # from iwanttowatch.tags saying what the user liked most or what didn't work.
+    reaction: Mapped[str | None] = mapped_column(String(16))
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

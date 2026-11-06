@@ -11,6 +11,8 @@ export type RatedTitle = Schemas['RatedTitle']
 export type RatingsPage = Schemas['RatingsPage']
 export type Persona = Schemas['PersonaOut']
 export type ServerSettings = Schemas['ServerSettings']
+export type TitleReaction = Schemas['TitleReaction']
+export type Reaction = NonNullable<TitleReaction['reaction']>
 
 /**
  * Typed client for the iWantToWatch REST API.

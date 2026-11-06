@@ -31,6 +31,9 @@ class RatedTitle(BaseModel):
     rated_at: date | None
     source: str
     favorite: bool
+    # Set when the effective rating was given in iWantToWatch.
+    reaction: str | None
+    tags: list[str]
 
 
 class LanguageCount(BaseModel):
@@ -87,6 +90,8 @@ def list_ratings(
                 rated_at=row.rated_at,
                 source=row.source,
                 favorite=row.Title.tmdb_id in favorites,
+                reaction=row.reaction,
+                tags=row.tags or [],
             )
             for row in rows
         ],

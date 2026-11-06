@@ -2,7 +2,7 @@
 
 Self-hosted movie recommendations that learn your taste from your own history — Jellyfin, IMDb, Letterboxd, and Trakt — and only suggest films you haven't seen and can actually watch, on your Jellyfin server or your streaming subscriptions.
 
-> **Status:** early development (Phase 1: catalog and taste import). You can create an account, connect TMDb, import your IMDb and Letterboxd ratings, and get an AI-written taste persona; recommendations are not implemented yet.
+> **Status:** early development (Phase 1: catalog and taste import). You can create an account, connect TMDb, import your IMDb and Letterboxd ratings, rate films in the app, and get an AI-written taste persona; recommendations are not implemented yet.
 
 ## Planned features
 
@@ -11,6 +11,7 @@ Self-hosted movie recommendations that learn your taste from your own history �
 - **Taste scoring:** a Criticker-style match percentage computed from your own ratings, not generic popularity.
 - **Available to watch:** filters to titles on your Jellyfin server or your subscriptions (Netflix, Prime Video, JioHotstar, …) in your region.
 - **Regional cinema first-class:** multilingual metadata and models, so Malayalam, Tamil, Korean, and other films aren't drowned out by Hollywood.
+- **Netflix-style rating:** Didn't like / Liked / Loved, plus up to three tags for what you liked most (or what didn't work), which feed the recommender and the AI persona.
 - **Feedback loop:** rate, thumbs up/down, or dismiss suggestions to refine the model.
 - **Your taste as a person:** an optional AI-written sketch of the imaginary person your ratings describe, using a local Ollama model or Google Gemini.
 - **Private and lightweight:** one container, SQLite, no mandatory paid services; runs alongside Jellyfin on a home server or NAS.
