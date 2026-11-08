@@ -1,0 +1,23 @@
+services:
+  iwanttowatch:
+    # The published image, for amd64 and arm64 (Raspberry Pi); `docker compose pull`
+    # updates it. `docker compose up --build` builds from this checkout instead.
+    image: ghcr.io/sinoop/iwanttowatch:latest
+    build: .
+    container_name: iwanttowatch
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      TZ: ${TZ:-UTC}
+      # Optional: set a fixed secret instead of the one generated in /data on first start.
+      # IWANTTOWATCH_SECRET_KEY: change-me
+      # Optional: keep the daily database backups somewhere else, such as a mounted share.
+      # IWANTTOWATCH_BACKUP_DIR: /backups
+    volumes:
+      # A named volume avoids permission problems. To use a host folder instead,
+      # create it first and `chown 1000:1000` it (the container runs as uid 1000).
+      - iwanttowatch-data:/data
+
+volumes:
+  iwanttowatch-data:

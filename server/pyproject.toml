@@ -1,0 +1,57 @@
+[project]
+name = "iwanttowatch"
+version = "0.1.0"
+description = "Self-hosted movie recommendations from your Jellyfin, IMDb, Letterboxd, and Trakt history"
+license = "AGPL-3.0-or-later"
+authors = [
+    { name = "Sinoop Joy", email = "joysinoop@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.20.1",
+    "argon2-cffi>=25.1.0",
+    "fastapi>=0.162.0",
+    "httpx>=0.28.1",
+    "itsdangerous>=2.2.0",
+    "numpy>=2.5.4",
+    "pydantic-settings>=2.16.2",
+    "python-multipart>=0.0.33",
+    "sqlalchemy>=2.1.8",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+iwanttowatch = "iwanttowatch.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.16.0",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "respx>=0.23.1",
+    "ruff>=0.17.4",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test fixtures embed real export rows verbatim.
+"tests/*" = ["E501"]
+# The tag and mood vocabularies are tables, one entry per line.
+"src/iwanttowatch/tags.py" = ["E501"]
+"src/iwanttowatch/moods.py" = ["E501"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

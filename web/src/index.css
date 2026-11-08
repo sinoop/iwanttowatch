@@ -1,0 +1,19 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --color-accent: #f5a524;
+  --color-accent-strong: #ffb84d;
+}
+
+:root {
+  color-scheme: dark;
+  background: #0b0d12;
+  color: #e7e9ee;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}

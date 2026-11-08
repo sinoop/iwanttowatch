@@ -1,0 +1,398 @@
+"""What a user's ratings say about them, including the LLM-written persona and the
+LLM's review of their recommendations."""
+
+import json
+import logging
+from collections import Counter, defaultdict
+from collections.abc import Collection, Sequence
+from dataclasses import dataclass
+from statistics import mean
+from typing import Any
+
+from sqlalchemy import Subquery, func, select
+from sqlalchemy.orm import Session
+
+from iwanttowatch.db import utcnow
+from iwanttowatch.llm import LlmError, LlmProvider, llm_order, provider_from_settings
+from iwanttowatch.models import Explanation, Persona, Title, UserTitle
+from iwanttowatch.moods import MAX_MOODS, MOODS, parse_moods
+from iwanttowatch.tags import BY_ID
+
+log = logging.getLogger(__name__)
+
+MIN_RATINGS_FOR_PERSONA = 5
+REACTION_LABELS = {"disliked": "didn't like", "liked": "liked", "loved": "loved"}
+
+PERSONA_SYSTEM = """You sum up someone's taste in films for them, from a summary of their
+movie ratings. Write two or three short sentences, at most 60 words, speaking to them as
+"you": what they love, what they tend to avoid, and what a film needs to win them over.
+Be concrete: name languages, genres, eras, and qualities they respond to, and mention at
+most two film titles or names, taken only from the summary. Use plain, everyday words:
+no metaphors, no jokes, no invented habits or scenes. Plain text only: no lists, no
+markdown, no quotation marks around the answer."""
+
+# Films the LLM may add beyond the recommender's list.
+MAX_ADDITIONS = 5
+# Seen films listed in the prompt so the LLM doesn't add them; the rest are filtered
+# out after matching anyway.
+MAX_SEEN_IN_PROMPT = 200
+MAX_WHY_LENGTH = 140
+
+REVIEW_SYSTEM = f"""You are a well-read film critic helping one person choose what to watch.
+You get a summary of their movie ratings, including what they loved or disliked about
+films in their own words, a numbered list of films they have not seen, and films they
+have already seen. For every numbered film, predict the rating out of 10 they would
+give it on their own scale (their average is in the summary; use the whole scale, low
+for films they would dislike), with one short sentence on why, and up to {MAX_MOODS}
+moods that describe how the film feels to watch, only from: {", ".join(m.label for m in MOODS)}
+(an empty list when none fits; judge the film itself, not its genre alone). Then add up to
+{MAX_ADDITIONS} real, released feature films that are not in the list or already seen and
+that they are likely to rate higher than most of the list, each with a predicted rating
+and why. Answer with only JSON, no markdown, in this form:
+{{"ratings": [{{"n": 1, "rating": 7.5, "why": "...", "moods": ["Heartfelt"]}}],
+ "new": [{{"title": "...", "year": 2019, "rating": 8.5, "why": "..."}}]}}"""
+
+
+# Room for two long sentences; a longer answer is cut after its last full sentence.
+MAX_EXPLANATION_LENGTH = 600
+
+WHY_SYSTEM = """You tell one person, in one or two short sentences (under 60 words), how
+well a film fits their taste, judging from a summary of their movie ratings. Be honest:
+if parts of it may not suit them, say so. Mention at most two film titles or names,
+taken only from the summary or the film's details: never invent names. Speak to them
+as "you". Plain text only: no lists, no markdown, no quotation marks around the answer."""
+
+
+@dataclass(frozen=True)
+class FilmReview:
+    # The rating out of 10 the LLM expects the user to give.
+    rating: float
+    why: str
+    # Moods it picked from iwanttowatch.moods, or None when it didn't answer.
+    moods: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class Suggestion:
+    title: str
+    year: int | None
+    rating: float
+    why: str
+
+
+@dataclass(frozen=True)
+class Review:
+    # TMDb ID → the LLM's prediction, for the films it was shown.
+    ratings: dict[int, FilmReview]
+    # Films it added, still to be matched to TMDb.
+    additions: list[Suggestion]
+
+
+def effective_ratings(user_id: int) -> Subquery:
+    """One row per rated title: when sources disagree, the most recent rating wins."""
+    ranked = (
+        select(
+            UserTitle,
+            func.row_number()
+            .over(
+                partition_by=UserTitle.tmdb_id,
+                order_by=(UserTitle.rated_at.desc().nulls_last(), UserTitle.id.desc()),
+            )
+            .label("rank"),
+        )
+        .where(UserTitle.user_id == user_id, UserTitle.rating.is_not(None))
+        .subquery()
+    )
+    return select(ranked).where(ranked.c.rank == 1).subquery()
+
+
+# Where each reaction sits in the user's own rating distribution (Criticker-style), and
+# the score used until there are enough numeric ratings to read that distribution from.
+REACTION_PERCENTILES = {"disliked": 0.15, "liked": 0.65, "loved": 0.90}
+# The fallback scores sit near a typical rater's 5th, 65th and 90th percentiles.
+REACTION_FALLBACK = {"disliked": 3.0, "liked": 8.0, "loved": 9.5}
+MIN_RATINGS_FOR_DISTRIBUTION = 10
+
+
+def reaction_rating(session: Session, user_id: int, reaction: str) -> float:
+    """The 0–10 score a reaction stands for, given how this user rates on 1–10 scales."""
+    numeric = sorted(
+        rating
+        for rating in session.scalars(
+            select(UserTitle.rating).where(
+                UserTitle.user_id == user_id, UserTitle.reaction.is_(None)
+            )
+        )
+        if rating is not None
+    )
+    if len(numeric) < MIN_RATINGS_FOR_DISTRIBUTION:
+        return REACTION_FALLBACK[reaction]
+    return float(numeric[round(REACTION_PERCENTILES[reaction] * (len(numeric) - 1))])
+
+
+def rating_count(session: Session, user_id: int) -> int:
+    return session.scalar(select(func.count()).select_from(effective_ratings(user_id))) or 0
+
+
+# The most recent notes the user wrote when rating, quoted for the LLM.
+NOTES_IN_SUMMARY = 10
+
+
+def taste_summary(session: Session, user_id: int, exclude: Collection[int] = ()) -> str:
+    """A compact, factual description of a user's ratings for the LLM prompt, leaving
+    out the `exclude` films.
+
+    It holds titles, genres, languages, decades, and people, but nothing that
+    identifies the user.
+    """
+    effective = effective_ratings(user_id)
+    rows = session.execute(
+        select(
+            effective.c.rating, effective.c.rated_at, effective.c.reaction, effective.c.tags, Title
+        )
+        .join(Title, Title.tmdb_id == effective.c.tmdb_id)
+        .where(effective.c.tmdb_id.not_in(exclude))
+    ).all()
+    favorites = set(
+        session.scalars(
+            select(UserTitle.tmdb_id).where(UserTitle.user_id == user_id, UserTitle.favorite)
+        )
+    )
+    ratings = [r.rating for r in rows]
+    average = mean(ratings)
+
+    def by_average(groups: dict[str, list[float]], minimum: int) -> list[tuple[str, float, int]]:
+        scored = [(k, mean(v), len(v)) for k, v in groups.items() if len(v) >= minimum]
+        return sorted(scored, key=lambda item: item[1], reverse=True)
+
+    genres: dict[str, list[float]] = defaultdict(list)
+    directors: dict[str, list[float]] = defaultdict(list)
+    actors: dict[str, list[float]] = defaultdict(list)
+    languages: Counter[str] = Counter()
+    decades: Counter[int] = Counter()
+    for r in rows:
+        t: Title = r.Title
+        languages[t.original_language] += 1
+        if t.year:
+            decades[t.year // 10 * 10] += 1
+        for genre in t.genres:
+            genres[genre].append(r.rating)
+        for person in t.directors:
+            directors[person["name"]].append(r.rating)
+        for person in t.cast[:5]:
+            actors[person["name"]].append(r.rating)
+
+    # Averages need enough films to mean something: a genre needs 10% of the ratings.
+    genre_scores = by_average(genres, minimum=min(max(3, len(rows) // 10), len(rows)))
+    most_rated = sorted(genres.items(), key=lambda item: len(item[1]), reverse=True)
+    ranked = sorted(rows, key=lambda r: (r.rating, r.rated_at or utcnow().date()), reverse=True)
+
+    def film(r: Any) -> str:
+        t: Title = r.Title
+        original = f" / {t.original_title}" if t.original_title != t.title else ""
+        liked = ", liked" if t.tmdb_id in favorites else ""
+        score = REACTION_LABELS[r.reaction] if r.reaction else f"{r.rating:g}/10"
+        why = [BY_ID[tag].label.lower() for tag in r.tags or [] if tag in BY_ID]
+        reasons = f" ({', '.join(why)})" if why else ""
+        return f"{t.title}{original} ({t.year}, {t.original_language}): {score}{reasons}{liked}"
+
+    total = len(rows)
+    lines = [
+        f"Rated films: {total}; average rating {average:.1f}/10.",
+        "Original languages: "
+        + ", ".join(f"{lang} {count * 100 // total}%" for lang, count in languages.most_common(5)),
+        "Decades: " + ", ".join(f"{d}s ({n})" for d, n in decades.most_common(4)),
+        "Most rated genres: " + ", ".join(f"{g} ({len(v)} films)" for g, v in most_rated[:4]),
+        "Favourite genres (average rating): "
+        + ", ".join(f"{g} {s:.1f} ({n} films)" for g, s, n in genre_scores[:4]),
+    ]
+    if len(genre_scores) > 4:
+        lines.append(
+            "Least liked genres: "
+            + ", ".join(f"{g} {s:.1f} ({n} films)" for g, s, n in genre_scores[-2:])
+        )
+    if top_directors := by_average(directors, minimum=2)[:3]:
+        lines.append(
+            "Favourite directors: " + ", ".join(f"{n} ({c} films)" for n, _, c in top_directors)
+        )
+    if top_actors := by_average(actors, minimum=3)[:3]:
+        names = ", ".join(f"{n} ({c} films)" for n, _, c in top_actors)
+        lines.append(f"Favourite actors: {names}")
+    tag_counts = Counter(tag for r in rows for tag in r.tags or [] if tag in BY_ID)
+    for positive, heading in ((True, "What they enjoy most"), (False, "What puts them off")):
+        counted = [(t, n) for t, n in tag_counts.most_common() if BY_ID[t].positive == positive]
+        if counted:
+            items = ", ".join(f"{BY_ID[t].label.lower()} ({n} films)" for t, n in counted[:5])
+            lines.append(f"{heading}, in their own words: {items}")
+    top = "; ".join(film(r) for r in ranked[:12] if r.rating >= average)
+    lines.append(f"Highest rated: {top}")
+    lowest = [r for r in ranked[-5:] if r.rating <= average - 1.5]
+    if lowest:
+        lines.append("Lowest rated: " + "; ".join(film(r) for r in reversed(lowest)))
+    noted = session.execute(
+        select(UserTitle.reaction, UserTitle.note, Title.title, Title.year)
+        .join(Title, Title.tmdb_id == UserTitle.tmdb_id)
+        .where(
+            UserTitle.user_id == user_id,
+            UserTitle.note.is_not(None),
+            UserTitle.tmdb_id.not_in(exclude),
+        )
+        .order_by(UserTitle.rated_at.desc(), UserTitle.id.desc())
+        .limit(NOTES_IN_SUMMARY)
+    ).all()
+    if noted:
+        notes = "; ".join(
+            f"{n.title} ({n.year}, {REACTION_LABELS.get(n.reaction or '', 'rated')}): "
+            f'"{" ".join((n.note or "").split())}"'
+            for n in noted
+        )
+        lines.append(f"Their notes on recent films: {notes}")
+    return "\n".join(lines)
+
+
+def generate_persona(session: Session, user_id: int, llm: LlmProvider) -> Persona | None:
+    """Write and store a new persona; None when the user has too few ratings."""
+    count = rating_count(session, user_id)
+    if count < MIN_RATINGS_FOR_PERSONA:
+        return None
+    text = llm.generate(PERSONA_SYSTEM, taste_summary(session, user_id))
+    text = text.strip().strip('"“”').strip()
+    if not text:
+        raise LlmError("The LLM returned an empty answer")
+    persona = session.get(Persona, user_id) or Persona(user_id=user_id)
+    persona.text, persona.rating_count, persona.generated_at = text, count, utcnow()
+    session.merge(persona)
+    session.commit()
+    return persona
+
+
+# Users whose persona a background job is about to rewrite, so the UI knows to wait.
+_refreshing: set[int] = set()
+
+
+def is_refreshing(user_id: int) -> bool:
+    return user_id in _refreshing
+
+
+def mark_persona_stale(session: Session, user_id: int) -> bool:
+    """Flag the persona as being rewritten; False when no LLM is configured."""
+    if not llm_order(session):
+        return False
+    _refreshing.add(user_id)
+    return True
+
+
+def refresh_persona_quietly(session: Session, user_id: int) -> None:
+    """Rewrite the persona after new ratings arrive; failures are logged, not raised."""
+    try:
+        llm = provider_from_settings(session, "persona", user_id)
+        if llm is not None:
+            generate_persona(session, user_id, llm)
+    except LlmError:
+        log.warning("Couldn't refresh the persona for user %s", user_id, exc_info=True)
+    finally:
+        _refreshing.discard(user_id)
+
+
+def review_films(
+    session: Session,
+    user_id: int,
+    llm: LlmProvider,
+    films: Sequence[Title],
+    exclude: Collection[int] = (),
+) -> Review | None:
+    """The LLM's predicted rating for each film, plus up to MAX_ADDITIONS films of its
+    own; None when the user has too few ratings. `exclude` hides rated films from it."""
+    if rating_count(session, user_id) - len(exclude) < MIN_RATINGS_FOR_PERSONA:
+        return None
+    seen = session.execute(
+        select(Title.title, Title.year)
+        .join(UserTitle, UserTitle.tmdb_id == Title.tmdb_id)
+        .where(UserTitle.user_id == user_id, UserTitle.tmdb_id.not_in(exclude))
+        .distinct()
+        .limit(MAX_SEEN_IN_PROMPT)
+    ).all()
+
+    def line(n: int, t: Title) -> str:
+        original = f" / {t.original_title}" if t.original_title != t.title else ""
+        about = [str(t.year or "?"), t.original_language, *t.genres[:3]]
+        if t.directors:
+            about.append("dir. " + t.directors[0]["name"])
+        return f"{n}. {t.title}{original} ({', '.join(about)})"
+
+    prompt = "\n".join(
+        [
+            taste_summary(session, user_id, exclude),
+            "Films to rate:",
+            *(line(n, t) for n, t in enumerate(films, 1)),
+            "Already seen: "
+            + "; ".join(f"{title} ({year})" if year else title for title, year in seen),
+        ]
+    )
+    text = llm.generate(REVIEW_SYSTEM, prompt, json_reply=True)
+    try:
+        answer = json.loads(text[text.index("{") : text.rindex("}") + 1])
+    except ValueError as error:
+        raise LlmError("The LLM's answer wasn't JSON") from error
+    if not isinstance(answer, dict):
+        raise LlmError("The LLM's answer wasn't a JSON object")
+
+    def rating(value: Any) -> float | None:
+        ok = isinstance(value, int | float) and not isinstance(value, bool)
+        return min(max(float(value), 0.0), 10.0) if ok else None
+
+    def why(value: Any) -> str:
+        return value.strip()[:MAX_WHY_LENGTH] if isinstance(value, str) else ""
+
+    ratings: dict[int, FilmReview] = {}
+    for item in answer.get("ratings") or []:
+        if not isinstance(item, dict):
+            continue
+        n, predicted = item.get("n"), rating(item.get("rating"))
+        if isinstance(n, int) and 1 <= n <= len(films) and predicted is not None:
+            ratings[films[n - 1].tmdb_id] = FilmReview(
+                predicted, why(item.get("why")), parse_moods(item.get("moods"))
+            )
+    additions = []
+    for item in answer.get("new") or []:
+        if not isinstance(item, dict) or not isinstance(item.get("title"), str):
+            continue
+        predicted, year = rating(item.get("rating")), item.get("year")
+        if predicted is not None:
+            additions.append(
+                Suggestion(
+                    title=item["title"].strip(),
+                    year=year if isinstance(year, int) else None,
+                    rating=predicted,
+                    why=why(item.get("why")),
+                )
+            )
+    return Review(ratings, additions[:MAX_ADDITIONS])
+
+
+def explain_match(session: Session, user_id: int, title: Title, llm: LlmProvider) -> str:
+    """The LLM's answer to "Why this?" for a film, written once per user and film."""
+    cached = session.get(Explanation, (user_id, title.tmdb_id))
+    if cached is not None:
+        return cached.text
+    about = [str(title.year or "?"), title.original_language, *title.genres]
+    lines = [
+        taste_summary(session, user_id),
+        f"Film: {title.title} ({', '.join(about)})",
+    ]
+    if title.directors:
+        lines.append("Directed by " + ", ".join(p["name"] for p in title.directors[:2]))
+    if title.cast:
+        lines.append("Starring " + ", ".join(p["name"] for p in title.cast[:4]))
+    if title.overview:
+        lines.append(f"Overview: {title.overview}")
+    text = llm.generate(WHY_SYSTEM, "\n".join(lines)).strip().strip('"“”').strip()
+    if not text:
+        raise LlmError("The LLM returned an empty answer")
+    if len(text) > MAX_EXPLANATION_LENGTH:
+        cut = text[:MAX_EXPLANATION_LENGTH]
+        end = max(cut.rfind(mark) for mark in (". ", "! ", "? "))
+        text = cut[: end + 1] if end > 0 else cut.rsplit(" ", 1)[0] + "…"
+    session.add(Explanation(user_id=user_id, tmdb_id=title.tmdb_id, text=text))
+    session.commit()
+    return text

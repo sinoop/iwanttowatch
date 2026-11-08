@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Prepares an Amp orb: the Python server's virtualenv and the web app's node_modules.
+# Idempotent; on a warm snapshot both installs only confirm the lockfiles still match.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+step() {
+  local name=$1
+  shift
+  echo "==> $name"
+  local start=$SECONDS
+  "$@"
+  echo "    done in $((SECONDS - start))s"
+}
+
+# The base orb ships uv, Node.js and pnpm; install them only if an image lacks them.
+if ! command -v uv >/dev/null; then
+  step "Installing uv" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh'
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+if ! command -v pnpm >/dev/null; then
+  step "Enabling pnpm via corepack" corepack enable
+fi
+
+# Python version from server/.python-version, then the locked dependencies.
+step "Installing Python" sh -c 'cd server && uv python install'
+step "Syncing server dependencies" sh -c 'cd server && uv sync --frozen'
+step "Installing web dependencies" pnpm install --frozen-lockfile

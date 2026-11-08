@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Installable as an app: the manifest for Android and desktop, the icon for iOS. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#0b0d12" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>iWantToWatch</title>
+    <!-- Every page starts with these; fetching them alongside the script saves a round trip. -->
+    <link rel="preload" href="/api/v1/setup" as="fetch" crossorigin="use-credentials" />
+    <link rel="preload" href="/api/v1/me" as="fetch" crossorigin="use-credentials" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
