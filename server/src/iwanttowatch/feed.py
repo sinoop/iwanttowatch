@@ -504,48 +504,52 @@ def rescore_feed(engine: Engine, user_id: int) -> None:
         user = session.get(User, user_id)
         if user is None:
             return
-        family = family_tagged_films(session) if user.parent_id is not None else set()
-        ids = list(
-            dict.fromkeys(
-                [
-                    *session.scalars(
-                        select(Recommendation.tmdb_id).where(Recommendation.user_id == user_id)
-                    ),
-                    *sorted(family),
-                    *shortlisted(session, user_id),
-                ]
-            )
-        )
+        ids = feed_films(session, user)
         if not ids:
             return
-        labels = user_labels(session, user_id)
-        exclude = seen(session, user_id)
-        ids = [i for i in ids if i not in exclude]
-        wanted = {*ids, *(label.tmdb_id for label in labels)}
-        titles = {
-            t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(wanted)))
-        }
-        ids = [
-            i
-            for i in ids
-            if i in titles and allowed_for(titles[i], user.region, user.allowed_certificates)
-        ]
-        picks = stored_picks(session, user_id)
-        _store(
-            session,
-            user_id,
-            score(
-                titles,
-                labels,
-                ids,
-                user.birth_year,
-                ai_percentiles(session, user_id, picks),
-                child=user.parent_id is not None,
-                family_picks=family,
-            ),
-            picks,
-        )
+        _store(session, user_id, score_films(session, user, ids), stored_picks(session, user_id))
         session.commit()
+
+
+def feed_films(session: Session, user: User) -> list[int]:
+    """The films a rescore scores: the feed's, a child's family picks, and the shortlist."""
+    family = family_tagged_films(session) if user.parent_id is not None else set()
+    return list(
+        dict.fromkeys(
+            [
+                *session.scalars(
+                    select(Recommendation.tmdb_id).where(Recommendation.user_id == user.id)
+                ),
+                *sorted(family),
+                *shortlisted(session, user.id),
+            ]
+        )
+    )
+
+
+def score_films(session: Session, user: User, ids: list[int]) -> list[Scored]:
+    """Score films the user hasn't seen, and is allowed to, as a rescore does. Scores
+    depend on the films scored together, so score feed_films to match the feed."""
+    family = family_tagged_films(session) if user.parent_id is not None else set()
+    labels = user_labels(session, user.id)
+    exclude = seen(session, user.id)
+    ids = [i for i in ids if i not in exclude]
+    wanted = {*ids, *(label.tmdb_id for label in labels)}
+    titles = {t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(wanted)))}
+    ids = [
+        i
+        for i in ids
+        if i in titles and allowed_for(titles[i], user.region, user.allowed_certificates)
+    ]
+    return score(
+        titles,
+        labels,
+        ids,
+        user.birth_year,
+        ai_percentiles(session, user.id, stored_picks(session, user.id)),
+        child=user.parent_id is not None,
+        family_picks=family,
+    )
 
 
 def _store(
@@ -558,13 +562,18 @@ def _store(
             tmdb_id=s.tmdb_id,
             score=s.score,
             rank=rank,
-            # The LLM's reason first: it speaks to what the user said about films.
-            reasons=[_ai_reason(pick), *s.reasons][:2]
-            if (pick := picks.get(s.tmdb_id)) and pick.why
-            else s.reasons,
+            reasons=feed_reasons(s, picks),
         )
         for rank, s in enumerate(scored)
     )
+
+
+def feed_reasons(scored: Scored, picks: dict[int, AiPick]) -> list[str]:
+    """Why a film suits the user: the LLM's reason first, as it speaks to what the user
+    said about films."""
+    if (pick := picks.get(scored.tmdb_id)) and pick.why:
+        return [_ai_reason(pick), *scored.reasons][:2]
+    return scored.reasons
 
 
 def _ai_reason(pick: AiPick) -> str:

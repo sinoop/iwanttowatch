@@ -1,4 +1,5 @@
 import sqlite3
+import tomllib
 from datetime import timedelta
 from pathlib import Path
 
@@ -51,6 +52,9 @@ def test_first_run_setup_creates_admin_once_and_sessions_work(client: TestClient
     right = {"username": "riya", "password": "correct horse"}
     assert client.post("/api/v1/auth/login", json=right).status_code == 200
     assert client.get("/api/v1/me").json()["username"] == "riya"
+    # The web app shows the release from pyproject.toml.
+    pyproject = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())
+    assert client.get("/api/v1/settings").json()["version"] == pyproject["project"]["version"]
 
 
 def test_invite_link_sets_up_one_member_account(

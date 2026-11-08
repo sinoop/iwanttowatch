@@ -2213,8 +2213,17 @@ export interface components {
             /** On Ballot */
             on_ballot: boolean;
         };
+        /** SeenStatus */
+        SeenStatus: {
+            /** Rating */
+            rating: number | null;
+            /** Reaction */
+            reaction: string | null;
+        };
         /** ServerSettings */
         ServerSettings: {
+            /** Version */
+            version: string;
             /** Tmdb Configured */
             tmdb_configured: boolean;
             /** Mcp Enabled */
@@ -2377,6 +2386,7 @@ export interface components {
             match: number | null;
             /** Reasons */
             reasons: string[];
+            seen?: components["schemas"]["SeenStatus"] | null;
             availability: components["schemas"]["TitleAvailability"];
             /** Jellyfin Url */
             jellyfin_url: string | null;

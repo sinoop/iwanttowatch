@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from iwanttowatch import imdb
+from iwanttowatch import __version__, imdb
 from iwanttowatch.api import mcp
 from iwanttowatch.api.deps import AdminUser, CurrentUser, DbSession
 from iwanttowatch.db import utcnow
@@ -79,6 +79,8 @@ class ImdbSettings(BaseModel):
 
 
 class ServerSettings(BaseModel):
+    # The running release, from the package metadata (pyproject.toml).
+    version: str
     tmdb_configured: bool
     # Whether an admin created a key for the read-only debugging MCP server at /mcp.
     mcp_enabled: bool
@@ -184,6 +186,7 @@ def _imdb_out(session: Session) -> ImdbSettings:
 def _settings_out(session: Session, is_admin: bool) -> ServerSettings:
     # Secrets are never returned, only whether they are set.
     return ServerSettings(
+        version=__version__,
         tmdb_configured=get_setting(session, API_KEY_SETTING) is not None,
         mcp_enabled=get_setting(session, mcp.KEY_SETTING) is not None,
         jellyfin=_jellyfin_out(session, is_admin),

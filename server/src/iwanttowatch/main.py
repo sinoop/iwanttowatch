@@ -6,6 +6,7 @@ from sqlalchemy import text
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+from iwanttowatch import __version__
 from iwanttowatch.api import (
     auth,
     backup,
@@ -44,7 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         back_up(engine, backup_dir, before_upgrade=True)
     upgrade_database(engine)
 
-    app = FastAPI(title="iWantToWatch", version="0.1.0")
+    app = FastAPI(title="iWantToWatch", version=__version__)
     app.state.engine = engine
     app.state.tmdb_base_url = settings.tmdb_base_url
     app.state.data_dir = settings.data_dir

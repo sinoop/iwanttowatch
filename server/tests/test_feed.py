@@ -425,3 +425,38 @@ def test_the_shortlist_keeps_films_with_their_match_until_they_are_watched(
     assert client.delete("/api/v1/titles/402/shortlist").status_code == 204
     saved = feed(client, shortlist=True, available_only=False)
     assert saved["items"] == [] and saved["shortlist_count"] == 0
+
+
+def test_any_film_gets_a_match_like_the_feeds_and_seen_films_show_the_rating(
+    client: TestClient,
+) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    add_ratings(client, FILMS)
+    client.put("/api/v1/titles/101/reaction", json={"reaction": "loved"})
+    feed(client)
+    idle(client)
+    engine = client.app.state.engine  # type: ignore[attr-defined]
+    feed_module.rescore_feed(engine, 1)
+    before = {i["tmdb_id"]: i for i in feed(client, available_only=False)["items"]}
+    assert {201, 301, 302, 401} <= set(before)
+
+    # A film outside the feed, such as one found by searching, is scored with the
+    # feed's films, so it gets the match and reasons it would have there.
+    with Session(engine) as session:
+        session.execute(delete(Recommendation).where(Recommendation.tmdb_id == 302))
+        session.commit()
+    detail = client.get("/api/v1/titles/302").json()
+    assert detail["match"] == before[302]["match"]
+    assert detail["reasons"] == before[302]["reasons"]
+    assert detail["seen"] is None
+    # Looking at it doesn't add it to the feed.
+    assert 302 not in {i["tmdb_id"] for i in feed(client, available_only=False)["items"]}
+
+    # Seen films show the user's rating instead of a match.
+    loved = client.get("/api/v1/titles/101").json()
+    assert loved["match"] is None and loved["seen"]["reaction"] == "loved"
+    imported = client.get("/api/v1/titles/9000").json()  # Kumbalangi Nights, rated 10
+    assert imported["match"] is None
+    assert imported["seen"] == {"rating": 10.0, "reaction": None}
+    client.put("/api/v1/titles/401/feedback", json={"kind": "seen"})
+    assert client.get("/api/v1/titles/401").json()["seen"] == {"rating": None, "reaction": None}

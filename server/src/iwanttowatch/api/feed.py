@@ -25,10 +25,14 @@ from iwanttowatch.feed import (
     ASK_FILMS,
     ASK_PICKS,
     SNOOZE,
+    feed_films,
+    feed_reasons,
     films_for_request,
     hidden,
+    score_films,
     seen,
     shortlisted,
+    stored_picks,
 )
 from iwanttowatch.jellyfin import URL_SETTING as JELLYFIN_URL_SETTING
 from iwanttowatch.llm import LlmError, provider_from_settings
@@ -46,7 +50,7 @@ from iwanttowatch.models import (
     get_setting,
 )
 from iwanttowatch.moods import moods_for
-from iwanttowatch.taste import explain_match
+from iwanttowatch.taste import effective_ratings, explain_match
 
 router = APIRouter(prefix="/api/v1")
 
@@ -371,6 +375,13 @@ def remove_from_shortlist(tmdb_id: int, user: CurrentUser, session: DbSession) -
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+class SeenStatus(BaseModel):
+    # The user's rating out of 10, and their reaction when they rated it here; both are
+    # None for a film watched without a rating.
+    rating: float | None
+    reaction: str | None
+
+
 class TitleDetail(BaseModel):
     tmdb_id: int
     title: str
@@ -387,9 +398,11 @@ class TitleDetail(BaseModel):
     moods: list[str]
     directors: list[str]
     cast: list[str]
-    # Set when the film is in the user's feed.
+    # How well the film suits the user, scored like the feed's films; None once seen.
     match: int | None
     reasons: list[str]
+    # Set when the user has watched or rated the film.
+    seen: SeenStatus | None = None
     availability: TitleAvailability
     # Opens the film in the Jellyfin web app, when it's in the user's libraries.
     jellyfin_url: str | None
@@ -411,6 +424,26 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
         )
     )
     jellyfin = get_setting(session, JELLYFIN_URL_SETTING)
+    effective = effective_ratings(user.id)
+    rated = session.execute(
+        select(effective.c.rating, effective.c.reaction).where(effective.c.tmdb_id == title.tmdb_id)
+    ).first()
+    watched = rated is not None or title.tmdb_id in seen(session, user.id)
+    match, reasons = (round(rec.score * 100), rec.reasons) if rec else (None, [])
+    if rec is None and not watched:
+        # Not in the feed, such as a film the user searched for: score it with the
+        # feed's films, so its match means the same, without adding it to the feed.
+        scored = next(
+            (
+                s
+                for s in score_films(session, user, [*feed_films(session, user), title.tmdb_id])
+                if s.tmdb_id == title.tmdb_id
+            ),
+            None,
+        )
+        if scored is not None:
+            match = round(scored.score * 100)
+            reasons = feed_reasons(scored, stored_picks(session, user.id))
     return TitleDetail(
         tmdb_id=title.tmdb_id,
         title=title.title,
@@ -426,8 +459,13 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
         moods=moods_for(title),
         directors=[p["name"] for p in title.directors],
         cast=[p["name"] for p in title.cast[:8]],
-        match=round(rec.score * 100) if rec else None,
-        reasons=rec.reasons if rec else [],
+        match=match,
+        reasons=reasons,
+        seen=SeenStatus(rating=rated.rating, reaction=rated.reaction)
+        if rated
+        else SeenStatus(rating=None, reaction=None)
+        if watched
+        else None,
         availability=title_availability(
             title.tmdb_id, offers, item_id is not None, user.subscriptions
         ),

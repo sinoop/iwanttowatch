@@ -344,6 +344,8 @@ Proposed 2026-11-08 from the ideas review: decide faster between films you'd wat
 - [x] Per-user data export and restore (JSON with profile, ratings and watches per source, and feedback), in Settings → Your data (pulled forward, 2026-11-06)
 - [x] Installable web app: a manifest with standard and maskable icons, plus an Apple touch icon, so Chrome, Edge, and Safari offer "Install" or "Add to Home Screen" and it opens full-screen. No service worker: current browsers install without one, and it can't serve a stale app after an upgrade. Installing needs HTTPS, as from a reverse proxy, except on iOS (2026-11-08)
 - [x] Server backups: SQLite's backup API copies the whole database every day and before each upgrade's migrations, into `backups/` in the data folder or `IWANTTOWATCH_BACKUP_DIR`, keeping the newest 7. Admins see them in Settings → Server backups, back up on demand, and download a copy; restoring is manual (2026-11-08)
+- [x] Film search: a search button in the header finds any film and opens its details with a match scored on request against the feed's own films, so it means the same as on Discover, without adding the film to the feed. Films the user has seen show their rating instead (2026-11-08)
+- [x] The running version in the footer, from `pyproject.toml`, linking to the releases (2026-11-08)
 - [ ] UI translations, docs
 
 ### Phase 7 — v0.1 release

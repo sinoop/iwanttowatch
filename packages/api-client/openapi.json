@@ -5905,8 +5905,44 @@
         ],
         "title": "SearchResult"
       },
+      "SeenStatus": {
+        "properties": {
+          "rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "reaction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reaction"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rating",
+          "reaction"
+        ],
+        "title": "SeenStatus"
+      },
       "ServerSettings": {
         "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
           "tmdb_configured": {
             "type": "boolean",
             "title": "Tmdb Configured"
@@ -5927,6 +5963,7 @@
         },
         "type": "object",
         "required": [
+          "version",
           "tmdb_configured",
           "mcp_enabled",
           "llm",
@@ -6436,6 +6473,16 @@
             },
             "type": "array",
             "title": "Reasons"
+          },
+          "seen": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeenStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "availability": {
             "$ref": "#/components/schemas/TitleAvailability"

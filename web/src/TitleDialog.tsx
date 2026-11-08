@@ -1,7 +1,7 @@
 import type { TitleDetail } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
-import { api, errorMessage, facts, useServerSettings, useShortlist } from './api'
+import { api, errorMessage, facts, REACTIONS, useServerSettings, useShortlist } from './api'
 import { JustWatchCredit, ProviderLogo } from './Streaming'
 import { Button, ErrorText, Poster } from './ui'
 
@@ -81,13 +81,14 @@ function Details({ tmdbId, onClose, onRate }: { tmdbId: number; onClose: () => v
             </a>
           )}
           {film.match !== null && <MatchBadge match={film.match} className="mt-3" />}
+          {film.seen && <p className="mt-3 text-sm font-medium text-accent-strong">{seenText(film.seen)}</p>}
           {film.tagline && <p className="mt-3 text-sm text-white/70 italic">{film.tagline}</p>}
         </div>
       </div>
 
       {film.reasons.length > 0 && (
         <section className="mt-5">
-          <h3 className="text-sm font-medium text-white/80">Why it’s suggested</h3>
+          <h3 className="text-sm font-medium text-white/80">Why it suits you</h3>
           <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-white/65">
             {film.reasons.map((r) => (
               <li key={r}>{r}</li>
@@ -139,13 +140,20 @@ function Details({ tmdbId, onClose, onRate }: { tmdbId: number; onClose: () => v
             {film.shortlisted ? 'On your shortlist' : 'Add to shortlist'}
           </Button>
           <Button variant="ghost" onClick={onRate}>
-            I’ve seen it — rate it
+            {film.seen?.rating != null ? 'Change your rating' : film.seen ? 'Rate it' : 'I’ve seen it — rate it'}
           </Button>
         </div>
         <Button onClick={onClose}>Close</Button>
       </div>
     </div>
   )
+}
+
+function seenText(seen: NonNullable<TitleDetail['seen']>): string {
+  const reaction = REACTIONS.find((r) => r.value === seen.reaction)
+  if (reaction) return `You’ve seen it · ${reaction.label}`
+  if (seen.rating !== null) return `You’ve seen it · rated ${Number.isInteger(seen.rating) ? seen.rating : seen.rating.toFixed(1)}/10`
+  return 'You’ve seen it'
 }
 
 /** The AI's take on how the film fits the user, asked for films the AI hasn't reviewed. */

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { NavLink, Outlet } from 'react-router'
 import { api, errorMessage, useServerSettings } from './api'
+import HeaderSearch from './Search'
 import { JustWatchCredit } from './Streaming'
 import { Button, Logo } from './ui'
 
@@ -67,6 +68,7 @@ export default function Shell({ me }: { me: Me }) {
           ))}
         </nav>
         <div className="ml-auto flex flex-wrap items-center gap-2 text-sm sm:gap-3">
+          <HeaderSearch maxCertificate={me.max_certificate ?? null} />
           <span className="flex items-center gap-1.5 text-white/75">
             {me.display_name}
             {me.max_certificate && (
@@ -97,6 +99,18 @@ export default function Shell({ me }: { me: Me }) {
         <Outlet />
       </main>
       <footer className="mx-auto max-w-5xl px-4 pb-8 text-xs text-white/35 sm:px-6">
+        {settings.data && (
+          <p className="mb-2">
+            <a
+              href="https://github.com/sinoop/iwanttowatch/releases"
+              target="_blank"
+              rel="noreferrer"
+              className="underline-offset-2 hover:underline"
+            >
+              iWantToWatch v{settings.data.version}
+            </a>
+          </p>
+        )}
         This product uses the TMDB API but is not endorsed or certified by TMDB.{' '}
         <JustWatchCredit />
         {settings.data?.imdb.enabled && (

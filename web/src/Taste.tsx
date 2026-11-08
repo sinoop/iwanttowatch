@@ -1,9 +1,10 @@
 import type { ImportJob, Me, RatedTitle, TitleAvailability } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { api, errorMessage, REACTIONS, useAvailability, useServerSettings } from './api'
 import RateDialog, { ReactionIcon } from './RateDialog'
+import { FilmSearch } from './Search'
 import { WatchBadges } from './Streaming'
 import { Button, ErrorText, Poster } from './ui'
 
@@ -317,7 +318,15 @@ function Ratings({
           </ul>
         )}
       </div>
-      <RateSearch onRate={onRate} maxCertificate={maxCertificate} />
+      <div className="mt-5">
+        <FilmSearch
+          placeholder="Rate a film you’ve seen…"
+          label="Search for a film to rate"
+          prompt="Pick the film to rate"
+          maxCertificate={maxCertificate}
+          onPick={onRate}
+        />
+      </div>
       {items.length === 0 ? (
         <p className="mt-4 text-sm text-white/50">
           No ratings yet. Import a file above, or search for a film you’ve seen.
@@ -337,85 +346,6 @@ function Ratings({
         </div>
       )}
     </section>
-  )
-}
-
-function RateSearch({
-  onRate,
-  maxCertificate,
-}: {
-  onRate: (tmdbId: number) => void
-  // Child profiles only find films within this certificate.
-  maxCertificate: string | null
-}) {
-  const settings = useServerSettings()
-  const [query, setQuery] = useState('')
-  const search = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await api.GET('/api/v1/catalog/search', { params: { query: { query } } })
-      if (error) throw new Error(errorMessage(error))
-      return data.slice(0, 8)
-    },
-  })
-  if (!settings.data?.tmdb_configured) return null
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (query.trim()) search.mutate()
-  }
-
-  return (
-    <div className="mt-5">
-      <form onSubmit={submit} className="flex max-w-md gap-2" role="search">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Rate a film you’ve seen…"
-          aria-label="Search for a film to rate"
-          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none placeholder:text-white/35 focus:border-accent focus:ring-2 focus:ring-accent/30"
-        />
-        <Button type="submit" variant="ghost" disabled={search.isPending}>
-          Search
-        </Button>
-      </form>
-      {search.error && (
-        <div className="mt-2 max-w-md">
-          <ErrorText>{search.error.message}</ErrorText>
-        </div>
-      )}
-      {search.data && (
-        <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
-          <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-            <span className="text-white/60">
-              {search.data.length
-                ? 'Pick the film to rate'
-                : maxCertificate
-                  ? `No films found rated ${maxCertificate} or below. Films above this profile’s age limit don’t show up.`
-                  : 'No films found.'}
-            </span>
-            <Button variant="ghost" className="px-2 py-1" onClick={() => search.reset()}>
-              Clear
-            </Button>
-          </div>
-          <ul className="flex gap-3 overflow-x-auto pb-1" aria-label="Search results">
-            {search.data.map((c) => (
-              <li key={c.tmdb_id} className="w-24 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => onRate(c.tmdb_id)}
-                  className="group w-full rounded-lg text-left focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
-                >
-                  <Poster path={c.poster_path} title={c.title} className="group-hover:ring-2 group-hover:ring-accent" />
-                  <p className="mt-1 truncate text-xs font-medium">{c.title}</p>
-                  <p className="truncate text-xs text-white/45">
-                    {[c.year, languageName.of(c.original_language)].filter(Boolean).join(' · ')}
-                  </p>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
   )
 }
 
