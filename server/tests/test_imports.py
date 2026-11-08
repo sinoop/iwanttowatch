@@ -1,5 +1,6 @@
 import io
 import sqlite3
+import threading
 import time
 import zipfile
 from collections.abc import Iterator
@@ -353,19 +354,21 @@ def test_fetching_many_titles_leaves_the_database_writable(tmp_path: Path) -> No
     # waiting for SQLite's write lock.
     app = create_app(Settings(data_dir=tmp_path, secret_key="t", static_dir=None))
     blocked: list[str] = []
+    probing = threading.Lock()  # so the probes don't see each other's lock
 
     class SlowTmdb:
         def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
             if path != "/movie/1":
                 time.sleep(0.2)  # long enough for film 1 to be stored first
-                db = sqlite3.connect(tmp_path / "iwanttowatch.db", timeout=0)
-                try:
-                    db.execute("BEGIN IMMEDIATE")
-                    db.rollback()
-                except sqlite3.OperationalError:
-                    blocked.append(path)
-                finally:
-                    db.close()
+                with probing:
+                    db = sqlite3.connect(tmp_path / "iwanttowatch.db", timeout=0)
+                    try:
+                        db.execute("BEGIN IMMEDIATE")
+                        db.rollback()
+                    except sqlite3.OperationalError:
+                        blocked.append(path)
+                    finally:
+                        db.close()
             return {**_details(201), "id": int(path.rsplit("/", 1)[1])}
 
     with Session(app.state.engine) as session:
