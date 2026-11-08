@@ -1,6 +1,18 @@
 # Contributing to iWantToWatch
 
-Thanks for helping! iWantToWatch is early in development; the roadmap is in the [README](README.md#roadmap).
+Thanks for helping! The roadmap is in the [README](README.md#roadmap), and the detailed plan in [docs/plan.md](docs/plan.md).
+
+## How changes land
+
+Everyone works in this repository, in parallel, on branches; `main` only changes through pull requests.
+
+1. **Start from an issue** for anything bigger than a small fix, so two people don't build the same thing and the approach is agreed before the code.
+2. **Make a branch from the latest `main`.** With write access, push it to this repository; otherwise fork it and push to your fork. Name it after the change, such as `trakt-import` or `fix-webhook-token`.
+3. **Keep each pull request to one change.** Smaller pull requests are reviewed sooner and conflict less with others' work. When `main` moves on, update your branch from it.
+4. **Open a pull request** early as a draft if you want feedback. Its title becomes the commit message on `main`, so describe what changes for the people using iWantToWatch.
+5. **Merge once the checks pass and a maintainer approves.** Pull requests are squashed into one commit and the branch is deleted.
+
+`main` is always releasable: every merge publishes the `latest` Docker image. Maintainers release by tagging `main` as `vX.Y.Z`, which publishes the matching image, and by adding the release notes to [CHANGELOG.md](CHANGELOG.md).
 
 ## Development setup
 
@@ -19,7 +31,7 @@ pnpm dev:web
 
 ## Checks
 
-Run these before opening a pull request; CI runs the same ones.
+Run these before opening a pull request; CI runs the same ones on every pull request.
 
 ```sh
 cd server
@@ -41,7 +53,11 @@ cd server
 uv run alembic revision --autogenerate -m "describe the change"
 ```
 
-Review the generated file; the server applies migrations on startup.
+Review the generated file; the server applies migrations on startup. If someone else's migration lands on `main` first, regenerate yours on top of it so there is one chain of migrations.
+
+## Updating the plan
+
+`docs/plan.md` lists each phase's milestones. Tick off or add the milestone your change delivers in the same pull request.
 
 ## Licence
 
