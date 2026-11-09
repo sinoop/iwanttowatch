@@ -132,3 +132,16 @@ def watchable(offers: list[dict[str, Any]], subscriptions: list[int]) -> list[di
         ):
             playable.setdefault(offer["provider_id"], offer)
     return list(playable.values())
+
+
+def other_offers(offers: list[dict[str, Any]], subscriptions: list[int]) -> list[dict[str, Any]]:
+    """The offers a user can't play now: services they don't pay for, renting, and buying.
+
+    One entry per service and kind, in TMDb's order of prominence."""
+    playable = {(o["provider_id"], o["kind"]) for o in watchable(offers, subscriptions)}
+    others: dict[tuple[int, str], dict[str, Any]] = {}
+    for offer in offers:
+        key = (offer["provider_id"], offer["kind"])
+        if key not in playable:
+            others.setdefault(key, offer)
+    return list(others.values())
