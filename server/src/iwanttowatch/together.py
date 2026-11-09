@@ -143,7 +143,7 @@ def local_member(session: Session, user: User) -> Member:
         birth_year=user.birth_year,
         region=user.region,
         allowed_certificates=user.allowed_certificates,
-        family_picks=family_tagged_films(session) if user.parent_id is not None else set(),
+        family_picks=family_tagged_films(session) if user.is_child else set(),
     )
 
 

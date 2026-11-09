@@ -1,12 +1,12 @@
-import type { GroupItem, GuestProfile, Me, TogetherOptions, VoteSessionOut } from '@iwanttowatch/api-client'
+import type { ChildProfile, GroupItem, GuestProfile, Me, TogetherOptions, VoteSessionOut } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { renderSVG } from 'uqr'
-import { api, errorMessage, facts, watchOnQuery, type WatchOn } from './api'
+import { api, errorMessage, facts, useChildren, watchOnQuery, type WatchOn } from './api'
 import RateDialog from './RateDialog'
 import { PlatformFilter, WatchBadges } from './Streaming'
-import TitleDialog, { BookmarkIcon, Chips, MatchBadge } from './TitleDialog'
+import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Field, Poster } from './ui'
 
 const chip = (selected: boolean) =>
@@ -17,6 +17,7 @@ const chip = (selected: boolean) =>
   }`
 
 export default function Together({ me }: { me: Me }) {
+  const children = useChildren(!me.is_child)
   const options = useQuery({
     queryKey: ['together', 'options'],
     queryFn: async () => {
@@ -80,62 +81,46 @@ export default function Together({ me }: { me: Me }) {
         on your Jellyfin server or your streaming services.
       </p>
 
-      <section className="mt-6" aria-label="Who's watching">
-        <h2 className="text-sm font-medium text-white/80">Who’s watching</h2>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          {household.length > 1 && (
-            <button
-              type="button"
-              aria-pressed={wholeHousehold}
-              onClick={() => {
-                const next = new Set(selected)
-                for (const key of everyoneHome) {
-                  if (wholeHousehold) next.delete(key)
-                  else next.add(key)
-                }
-                setChosen(next)
-              }}
-              className={chip(wholeHousehold)}
+      <div className="mt-6 flex flex-wrap items-center gap-2.5">
+        <WatchersDropdown
+          meId={me.id}
+          household={household}
+          guests={guests}
+          selected={selected}
+          wholeHousehold={wholeHousehold}
+          onToggle={toggle}
+          onToggleHousehold={() => {
+            const next = new Set(selected)
+            for (const key of everyoneHome) {
+              if (wholeHousehold) next.delete(key)
+              else next.add(key)
+            }
+            setChosen(next)
+          }}
+        />
+        {!me.is_child && <AddFriend onAdded={(g) => setChosen(new Set([...selected, `guest:${g.id}`]))} />}
+        {picks.data && (
+          <>
+            <PlatformFilter platforms={picks.data.platforms} value={watchOn} onChange={setWatchOn} />
+            <select
+              value={shortlistOnly ? 'only' : 'all'}
+              onChange={(e) => setShortlistOnly(e.target.value === 'only')}
+              aria-label="Group shortlist"
+              title="Films anyone at home saved for watching together"
+              className={`rounded-lg border px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30 ${
+                shortlistOnly
+                  ? 'border-accent/60 bg-accent/10 text-accent-strong'
+                  : 'border-white/10 bg-black/30 text-white/80 hover:border-white/25 hover:text-white'
+              }`}
             >
-              Household
-            </button>
-          )}
-          {household.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              aria-pressed={selected.has(`user:${p.id}`)}
-              onClick={() => toggle(`user:${p.id}`)}
-              className={chip(selected.has(`user:${p.id}`))}
-            >
-              {p.id === me.id ? `${p.name} (you)` : p.name}
-              {p.max_certificate && <span className="text-xs opacity-60">{p.max_certificate}</span>}
-            </button>
-          ))}
-          {guests.map((g) => (
-            <GuestChip key={g.id} guest={g} selected={selected.has(`guest:${g.id}`)} onToggle={() => toggle(`guest:${g.id}`)} />
-          ))}
-          {me.parent_id === null && <AddFriend onAdded={(g) => setChosen(new Set([...selected, `guest:${g.id}`]))} />}
-        </div>
-      </section>
+              <option value="all">All group picks</option>
+              <option value="only">Group shortlist ({picks.data.shortlist_count})</option>
+            </select>
+          </>
+        )}
+      </div>
 
-      {picks.data && (
-        <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3">
-          <button
-            type="button"
-            aria-pressed={shortlistOnly}
-            onClick={() => setShortlistOnly(!shortlistOnly)}
-            title="Films anyone at home saved for watching together"
-            className={chip(shortlistOnly)}
-          >
-            <BookmarkIcon filled={shortlistOnly} className="size-3.5" />
-            Group shortlist ({picks.data.shortlist_count})
-          </button>
-          <PlatformFilter platforms={picks.data.platforms} value={watchOn} onChange={setWatchOn} />
-        </div>
-      )}
-
-      {me.parent_id === null && <GuestVote users={users} />}
+      {!me.is_child && <GuestVote users={users} />}
 
       {(options.error || picks.error || shortlist.error) && (
         <div className="mt-6">
@@ -171,6 +156,7 @@ export default function Together({ me }: { me: Me }) {
             <GroupCard
               key={item.tmdb_id}
               item={item}
+              childProfiles={me.is_child ? [] : (children.data ?? [])}
               onOpen={() => setOpen(item.tmdb_id)}
               onShortlist={() => shortlist.mutate({ tmdbId: item.tmdb_id, save: item.shortlisted_by === null })}
               busy={shortlist.isPending && shortlist.variables.tmdbId === item.tmdb_id}
@@ -179,7 +165,7 @@ export default function Together({ me }: { me: Me }) {
         </ul>
       )}
 
-      {options.data && me.parent_id === null && <ShareTaste share={options.data.share} />}
+      {options.data && !me.is_child && <ShareTaste share={options.data.share} />}
 
       <TitleDialog
         tmdbId={open}
@@ -328,11 +314,13 @@ function Empty({ children }: { children: ReactNode }) {
 
 function GroupCard({
   item,
+  childProfiles,
   onOpen,
   onShortlist,
   busy,
 }: {
   item: GroupItem
+  childProfiles: ChildProfile[]
   onOpen: () => void
   onShortlist: () => void
   busy: boolean
@@ -363,6 +351,13 @@ function GroupCard({
         >
           <BookmarkIcon filled={saved} />
         </button>
+        <AssignToChildButton
+          compact
+          tmdbId={item.tmdb_id}
+          title={item.title}
+          assigned={item.assigned_children ?? []}
+          childProfiles={childProfiles}
+        />
         {saved && <span className="truncate text-xs text-white/50">Added by {item.shortlisted_by}</span>}
       </div>
       <h2 className="mt-1 text-sm leading-snug font-medium">{item.title}</h2>
@@ -386,17 +381,155 @@ function GroupCard({
   )
 }
 
-function GuestChip({ guest, selected, onToggle }: { guest: GuestProfile; selected: boolean; onToggle: () => void }) {
+function WatchersDropdown({
+  meId,
+  household,
+  guests,
+  selected,
+  wholeHousehold,
+  onToggle,
+  onToggleHousehold,
+}: {
+  meId: number
+  household: TogetherOptions['household']
+  guests: GuestProfile[]
+  selected: Set<string>
+  wholeHousehold: boolean
+  onToggle: (key: string) => void
+  onToggleHousehold: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  const activeWatchers = [
+    ...household.filter((p) => selected.has(`user:${p.id}`)).map((p) => ({ key: `user:${p.id}`, name: p.name })),
+    ...guests.filter((g) => selected.has(`guest:${g.id}`)).map((g) => ({ key: `guest:${g.id}`, name: g.name })),
+  ]
+  const label =
+    activeWatchers.length === 0
+      ? 'No one selected'
+      : wholeHousehold && activeWatchers.length === household.length
+        ? 'Household'
+        : activeWatchers.length <= 2
+          ? activeWatchers.map((w) => w.name).join(', ')
+          : `${activeWatchers.length} watching`
+
+  return (
+    <div ref={menuRef} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Who’s watching: ${label}`}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white/85 transition-colors hover:border-white/25 hover:text-white focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
+      >
+        {activeWatchers.length > 0 && (
+          <span className="flex items-center -space-x-1.5" aria-hidden>
+            {activeWatchers.slice(0, 4).map((w) => (
+              <span
+                key={w.key}
+                title={w.name}
+                className="flex size-5 items-center justify-center rounded-full bg-accent/25 text-[10px] font-bold text-accent-strong ring-2 ring-[#0c0e13]"
+              >
+                {w.name.slice(0, 1).toUpperCase()}
+              </span>
+            ))}
+            {activeWatchers.length > 4 && (
+              <span className="flex size-5 items-center justify-center rounded-full bg-white/15 text-[10px] font-medium text-white/85 ring-2 ring-[#0c0e13]">
+                +{activeWatchers.length - 4}
+              </span>
+            )}
+          </span>
+        )}
+        <span>{label}</span>
+        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="size-4 text-white/50">
+          <path
+            fillRule="evenodd"
+            d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label="Who's watching"
+          className="absolute left-0 z-20 mt-1.5 w-64 rounded-xl border border-white/10 bg-[#151922] p-1.5 shadow-2xl shadow-black/70"
+        >
+          {household.length > 1 && (
+            <>
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={wholeHousehold}
+                onClick={onToggleHousehold}
+                className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+                  wholeHousehold ? 'bg-accent/15 text-accent-strong' : 'text-white/75 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <span>Household</span>
+                {wholeHousehold && <span aria-hidden>✓</span>}
+              </button>
+              <div className="my-1 border-t border-white/10" />
+            </>
+          )}
+          {household.map((p) => {
+            const on = selected.has(`user:${p.id}`)
+            return (
+              <button
+                key={p.id}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={on}
+                onClick={() => onToggle(`user:${p.id}`)}
+                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+                  on ? 'bg-accent/15 text-accent-strong' : 'text-white/75 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <span className="min-w-0 flex-1 truncate">{p.id === meId ? `${p.name} (you)` : p.name}</span>
+                {p.max_certificate && <span className="text-xs opacity-60">{p.max_certificate}</span>}
+                {on && <span aria-hidden>✓</span>}
+              </button>
+            )
+          })}
+          {guests.length > 0 && <div className="my-1 border-t border-white/10" />}
+          {guests.map((g) => (
+            <GuestRow key={g.id} guest={g} selected={selected.has(`guest:${g.id}`)} onToggle={() => onToggle(`guest:${g.id}`)} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GuestRow({ guest, selected, onToggle }: { guest: GuestProfile; selected: boolean; onToggle: () => void }) {
   const queryClient = useQueryClient()
   const remove = useMutation({
     mutationFn: () => api.DELETE('/api/v1/guests/{guest_id}', { params: { path: { guest_id: guest.id } } }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['together'] }),
   })
   return (
-    <span className="inline-flex items-center">
+    <div className="flex items-center gap-1">
       <button
         type="button"
-        aria-pressed={selected}
+        role="menuitemcheckbox"
+        aria-checked={selected}
         onClick={onToggle}
         title={
           guest.error
@@ -405,21 +538,24 @@ function GuestChip({ guest, selected, onToggle }: { guest: GuestProfile; selecte
               ? `Friend, ${guest.ratings} ratings from a taste card added ${new Date(guest.fetched_at).toLocaleDateString()}; ask for a new card to update it`
               : `Friend, ${guest.ratings} ratings shared`
         }
-        className={`${chip(selected)} rounded-r-none border-r-0`}
+        className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+          selected ? 'bg-accent/15 text-accent-strong' : 'text-white/75 hover:bg-white/5 hover:text-white'
+        }`}
       >
-        {guest.name}
+        <span className="min-w-0 flex-1 truncate">{guest.name}</span>
         <span className="text-xs opacity-60">{guest.from_card ? 'card' : 'friend'}</span>
+        {selected && <span aria-hidden>✓</span>}
       </button>
       <button
         type="button"
         aria-label={`Remove ${guest.name}`}
         onClick={() => remove.mutate()}
         disabled={remove.isPending}
-        className={`${chip(selected)} rounded-l-none px-2`}
+        className="rounded-lg px-2 py-1 text-xs text-white/50 hover:bg-white/10 hover:text-white"
       >
         ×
       </button>
-    </span>
+    </div>
   )
 }
 

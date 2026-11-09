@@ -26,10 +26,9 @@ def get_current_user(request: Request, session: DbSession) -> User:
     child_id = request.session.get("child_id")
     if child_id is not None:
         child = session.get(User, child_id)
-        if child is None or child.parent_id != parent.id:
-            # The child profile was deleted elsewhere; never fall back to the parent.
-            request.session.clear()
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not signed in")
+        if child is None or not child.is_child:
+            request.session.pop("child_id", None)
+            return parent
         return child
     return parent
 
@@ -38,7 +37,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
 def get_adult_user(user: CurrentUser) -> User:
-    if user.parent_id is not None:
+    if user.is_child:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed on a child profile")
     return user
 

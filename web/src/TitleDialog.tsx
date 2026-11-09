@@ -1,7 +1,7 @@
-import type { TitleDetail } from '@iwanttowatch/api-client'
+import type { ChildProfile, Me, TitleDetail } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef } from 'react'
-import { api, errorMessage, facts, REACTIONS, useServerSettings, useShortlist } from './api'
+import { useEffect, useRef, useState } from 'react'
+import { api, errorMessage, facts, REACTIONS, useAssignToChild, useChildren, useServerSettings, useShortlist } from './api'
 import { JustWatchCredit, ProviderLogo } from './Streaming'
 import { Button, ErrorText, Poster } from './ui'
 
@@ -37,6 +37,9 @@ export default function TitleDialog({
 }
 
 function Details({ tmdbId, onClose, onRate }: { tmdbId: number; onClose: () => void; onRate: () => void }) {
+  const queryClient = useQueryClient()
+  const me = queryClient.getQueryData<Me>(['me'])
+  const children = useChildren(!me?.is_child)
   const shortlist = useShortlist()
   const title = useQuery({
     queryKey: ['title', tmdbId],
@@ -139,6 +142,14 @@ function Details({ tmdbId, onClose, onRate }: { tmdbId: number; onClose: () => v
             <BookmarkIcon filled={film.shortlisted} className="mr-1.5 inline size-4 align-[-3px]" />
             {film.shortlisted ? 'On your shortlist' : 'Add to shortlist'}
           </Button>
+          {!me?.is_child && (children.data?.length ?? 0) > 0 && (
+            <AssignToChildButton
+              tmdbId={tmdbId}
+              title={film.title}
+              assigned={film.assigned_children ?? []}
+              childProfiles={children.data ?? []}
+            />
+          )}
           <Button variant="ghost" onClick={onRate}>
             {film.seen?.rating != null ? 'Change your rating' : film.seen ? 'Rate it' : 'I’ve seen it — rate it'}
           </Button>
@@ -353,5 +364,137 @@ export function BookmarkIcon({ filled, className = 'size-4' }: { filled: boolean
         strokeLinejoin="round"
       />
     </svg>
+  )
+}
+
+/** Dropdown button to assign or unassign a film to household child accounts. */
+export function AssignToChildButton({
+  tmdbId,
+  title,
+  assigned,
+  childProfiles,
+  compact = false,
+}: {
+  tmdbId: number
+  title: string
+  assigned: number[]
+  childProfiles: ChildProfile[]
+  compact?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const assign = useAssignToChild()
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  if (childProfiles.length === 0) return null
+  const assignedChildren = childProfiles.filter((c) => assigned.includes(c.id))
+  const hasAssigned = assignedChildren.length > 0
+  const label = hasAssigned
+    ? `Assigned to ${assignedChildren.map((c) => c.name).join(', ')}`
+    : `Assign ${title} to a child profile`
+
+  return (
+    <div ref={menuRef} className="relative inline-flex">
+      {compact ? (
+        <button
+          type="button"
+          title={label}
+          aria-label={label}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className={`flex h-8 min-w-8 items-center justify-center gap-1 rounded-full px-1.5 transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none ${
+            hasAssigned ? 'bg-accent/15 text-accent-strong' : 'text-white/45 hover:bg-white/10 hover:text-white'
+          }`}
+        >
+          <svg viewBox="0 0 24 24" className="size-4 shrink-0" aria-hidden="true">
+            <path
+              d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M22 11h-6"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          {hasAssigned && (
+            <span className="flex items-center -space-x-1" aria-hidden>
+              {assignedChildren.slice(0, 3).map((c) => (
+                <span
+                  key={c.id}
+                  className="flex size-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold text-black ring-1 ring-[#0c0e13]"
+                >
+                  {c.name.slice(0, 1).toUpperCase()}
+                </span>
+              ))}
+            </span>
+          )}
+        </button>
+      ) : (
+        <Button
+          variant="ghost"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className={hasAssigned ? 'text-accent-strong!' : undefined}
+        >
+          <svg viewBox="0 0 24 24" className="mr-1.5 inline size-4 align-[-3px]" aria-hidden="true">
+            <path
+              d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M22 11h-6"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+          {hasAssigned ? `For ${assignedChildren.map((c) => c.name).join(', ')}` : 'Assign to child'}
+        </Button>
+      )}
+      {open && (
+        <div
+          role="menu"
+          aria-label={`Assign ${title} to child profile`}
+          className="absolute bottom-full left-0 z-20 mb-1.5 w-48 rounded-xl border border-white/10 bg-[#151922] p-1.5 shadow-2xl shadow-black/70"
+        >
+          <p className="px-2 py-1 text-[11px] font-medium tracking-wide text-white/40 uppercase">Child shortlist</p>
+          {childProfiles.map((child) => {
+            const on = assigned.includes(child.id)
+            return (
+              <button
+                key={child.id}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={on}
+                disabled={assign.isPending}
+                onClick={() => assign.mutate({ childId: child.id, tmdbId, save: !on })}
+                className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+                  on ? 'bg-accent/15 text-accent-strong' : 'text-white/75 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <span className="min-w-0 flex-1 truncate">{child.name}</span>
+                {child.max_certificate && <span className="text-xs opacity-50">{child.max_certificate}</span>}
+                {on && <span aria-hidden>✓</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }

@@ -18,7 +18,7 @@ const SOURCE_NAMES: Record<string, string> = {
 
 export default function Taste({ me }: { me: Me }) {
   const [rating, setRating] = useState<number | null>(null)
-  const isChild = me.parent_id !== null
+  const isChild = me.is_child
   return (
     <>
       <h1 className="text-2xl font-semibold">My taste</h1>
@@ -29,7 +29,7 @@ export default function Taste({ me }: { me: Me }) {
       </p>
       <PersonaCard />
       {!isChild && <Imports />}
-      <Ratings onRate={setRating} maxCertificate={me.max_certificate ?? null} />
+      <Ratings onRate={setRating} />
       <RateDialog tmdbId={rating} onClose={() => setRating(null)} />
     </>
   )
@@ -277,13 +277,7 @@ function ImportRow({ job }: { job: ImportJob }) {
   )
 }
 
-function Ratings({
-  onRate,
-  maxCertificate,
-}: {
-  onRate: (tmdbId: number) => void
-  maxCertificate: string | null
-}) {
+function Ratings({ onRate }: { onRate: (tmdbId: number) => void }) {
   const ratings = useInfiniteQuery({
     queryKey: ['ratings'],
     initialPageParam: 0,
@@ -323,7 +317,6 @@ function Ratings({
           placeholder="Rate a film you’ve seen…"
           label="Search for a film to rate"
           prompt="Pick the film to rate"
-          maxCertificate={maxCertificate}
           onPick={onRate}
         />
       </div>

@@ -870,7 +870,7 @@ export interface paths {
         post?: never;
         /**
          * Remove From Group Shortlist
-         * @description Adults can take any film off; a child only the ones they added.
+         * @description Take a film off the household's group shortlist.
          */
         delete: operations["remove_from_group_shortlist_api_v1_together_shortlist__tmdb_id__delete"];
         options?: never;
@@ -998,26 +998,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/certificates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Certificates
-         * @description Certificates a parent can set as a child's age limit in the country.
-         */
-        get: operations["list_certificates_api_v1_certificates_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/children": {
         parameters: {
             query?: never;
@@ -1027,13 +1007,13 @@ export interface paths {
         };
         /**
          * List Children
-         * @description The child profiles managed by the signed-in parent.
+         * @description The household's child profiles, available to any signed-in adult.
          */
         get: operations["list_children_api_v1_children_get"];
         put?: never;
         /**
          * Create Child
-         * @description Create a child profile under your account with a maximum film certificate.
+         * @description Create a household child profile; its age limit comes from its birth year.
          */
         post: operations["create_child_api_v1_children_post"];
         delete?: never;
@@ -1060,27 +1040,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/me/parent-pin": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read Parent Pin */
-        get: operations["read_parent_pin_api_v1_me_parent_pin_get"];
-        /**
-         * Set Parent Pin
-         * @description Set the PIN that's needed to leave a child profile.
-         */
-        put: operations["set_parent_pin_api_v1_me_parent_pin_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/children/{child_id}/switch": {
         parameters: {
             query?: never;
@@ -1092,7 +1051,7 @@ export interface paths {
         put?: never;
         /**
          * Switch To Child
-         * @description Use iWantToWatch as one of your child profiles; leaving it needs your parent PIN.
+         * @description Switch to any household child profile.
          */
         post: operations["switch_to_child_api_v1_children__child_id__switch_post"];
         delete?: never;
@@ -1112,10 +1071,31 @@ export interface paths {
         put?: never;
         /**
          * Exit Child
-         * @description Switch back from a child profile to your parent account with your parent PIN.
+         * @description Switch back from a child profile to your adult account.
          */
         post: operations["exit_child_api_v1_children_exit_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/children/{child_id}/shortlist/{tmdb_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Assign To Child
+         * @description Assign a film to a child profile's shortlist so it shows up in their picks.
+         */
+        put: operations["assign_to_child_api_v1_children__child_id__shortlist__tmdb_id__put"];
+        post?: never;
+        /** Unassign From Child */
+        delete: operations["unassign_from_child_api_v1_children__child_id__shortlist__tmdb_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1434,19 +1414,12 @@ export interface components {
             /** Poster Path */
             poster_path: string | null;
         };
-        /** CertificateOption */
-        CertificateOption: {
-            /** Code */
-            code: string;
-            /** Meaning */
-            meaning: string;
-        };
         /** ChildCreate */
         ChildCreate: {
             /** Name */
             name: string;
-            /** Max Certificate */
-            max_certificate: string;
+            /** Birth Year */
+            birth_year: number;
         };
         /** ChildOut */
         ChildOut: {
@@ -1454,6 +1427,8 @@ export interface components {
             id: number;
             /** Name */
             name: string;
+            /** Birth Year */
+            birth_year: number;
             /** Max Certificate */
             max_certificate: string;
         };
@@ -1461,8 +1436,8 @@ export interface components {
         ChildUpdate: {
             /** Name */
             name: string;
-            /** Max Certificate */
-            max_certificate: string;
+            /** Birth Year */
+            birth_year: number;
         };
         /** DataExport */
         DataExport: {
@@ -1612,6 +1587,8 @@ export interface components {
             thumbs_up: boolean;
             /** Shortlisted */
             shortlisted: boolean;
+            /** Assigned Children */
+            assigned_children?: number[];
             imdb: components["schemas"]["ImdbScore"] | null;
         };
         /** FeedPage */
@@ -1694,6 +1671,8 @@ export interface components {
             imdb: components["schemas"]["ImdbScore"] | null;
             /** Shortlisted By */
             shortlisted_by: string | null;
+            /** Assigned Children */
+            assigned_children?: number[];
         };
         /** GroupPage */
         GroupPage: {
@@ -2030,8 +2009,11 @@ export interface components {
             subscriptions: number[];
             /** Birth Year */
             birth_year: number | null;
-            /** Parent Id */
-            parent_id?: number | null;
+            /**
+             * Is Child
+             * @default false
+             */
+            is_child: boolean;
             /** Max Certificate */
             max_certificate?: string | null;
         };
@@ -2089,21 +2071,6 @@ export interface components {
             llm_configured: boolean;
             /** Refreshing */
             refreshing: boolean;
-        };
-        /** PinCheck */
-        PinCheck: {
-            /** Pin */
-            pin: string;
-        };
-        /** PinStatus */
-        PinStatus: {
-            /** Pin Set */
-            pin_set: boolean;
-        };
-        /** PinUpdate */
-        PinUpdate: {
-            /** Pin */
-            pin: string;
         };
         /** PlatformCount */
         PlatformCount: {
@@ -2398,6 +2365,8 @@ export interface components {
              * @default false
              */
             shortlisted: boolean;
+            /** Assigned Children */
+            assigned_children?: number[];
             /** Explanation */
             explanation?: string | null;
         };
@@ -3547,6 +3516,9 @@ export interface operations {
                 language?: string | null;
                 genre?: string | null;
                 shortlist?: boolean;
+                hide_shortlisted?: boolean;
+                age_limit?: boolean;
+                sort?: "match" | "rating" | "newest" | "oldest" | "shortest";
                 only?: number[];
                 offset?: number;
                 limit?: number;
@@ -3585,6 +3557,8 @@ export interface operations {
                 language?: string | null;
                 genre?: string | null;
                 shortlist?: boolean;
+                hide_shortlisted?: boolean;
+                age_limit?: boolean;
             };
             header?: never;
             path?: never;
@@ -4271,37 +4245,6 @@ export interface operations {
             };
         };
     };
-    list_certificates_api_v1_certificates_get: {
-        parameters: {
-            query?: {
-                region?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CertificateOption"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_children_api_v1_children_get: {
         parameters: {
             query?: never;
@@ -4419,59 +4362,6 @@ export interface operations {
             };
         };
     };
-    read_parent_pin_api_v1_me_parent_pin_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PinStatus"];
-                };
-            };
-        };
-    };
-    set_parent_pin_api_v1_me_parent_pin_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PinUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PinStatus"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     switch_to_child_api_v1_children__child_id__switch_post: {
         parameters: {
             query?: never;
@@ -4510,11 +4400,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PinCheck"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -4524,6 +4410,57 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Me"];
                 };
+            };
+        };
+    };
+    assign_to_child_api_v1_children__child_id__shortlist__tmdb_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                child_id: number;
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unassign_from_child_api_v1_children__child_id__shortlist__tmdb_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                child_id: number;
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

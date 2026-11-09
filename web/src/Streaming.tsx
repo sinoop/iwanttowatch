@@ -1,6 +1,6 @@
 import type { Me, PlatformCount, TitleAvailability } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, errorMessage, type WatchOn } from './api'
 import { Button, ErrorText } from './ui'
 
@@ -190,14 +190,30 @@ export function WatchBadges({ availability }: { availability: TitleAvailability 
   )
 }
 
-const chip = (selected: boolean) =>
-  `flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none ${
-    selected
-      ? 'border-accent bg-accent/15 text-accent-strong'
-      : 'border-white/10 text-white/65 hover:border-white/25 hover:text-white'
-  }`
+function PlatformStackIcon({
+  item,
+}: {
+  item: { key: string; name: string; logo_path: string | null }
+}) {
+  if (item.key === 'jellyfin') {
+    return (
+      <span
+        aria-hidden
+        title="Jellyfin"
+        className="flex size-5 shrink-0 items-center justify-center rounded-full bg-violet-500 text-[10px] font-bold text-white ring-2 ring-[#0c0e13]"
+      >
+        J
+      </span>
+    )
+  }
+  return (
+    <span title={item.name} className="inline-flex rounded-full ring-2 ring-[#0c0e13]">
+      <ProviderLogo path={item.logo_path} name={item.name} className="size-5 rounded-full!" />
+    </span>
+  )
+}
 
-/** Chips for Jellyfin and each service the listed films can be played on. */
+/** Dropdown filter for Jellyfin and each service the listed films can be played on, with stacked icons. */
 export function PlatformFilter({
   platforms,
   value,
@@ -207,9 +223,27 @@ export function PlatformFilter({
   value: WatchOn
   onChange: (value: WatchOn) => void
 }) {
+  const [open, setOpen] = useState(false)
   const [showFree, setShowFree] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
   const chosen = Array.isArray(value) ? value : []
-  // Free services can run to dozens, so they wait behind a chip unless one is chosen.
+  // Free services can run to dozens, so they wait behind a toggle unless one is chosen.
   const free = platforms.filter((p) => p.free)
   const shown = [
     ...platforms.filter((p) => !p.free || showFree || chosen.includes(p.key)),
@@ -223,53 +257,123 @@ export function PlatformFilter({
     onChange(next.length ? next : 'anywhere')
   }
 
+  const byKey = new Map(shown.map((p) => [p.key, p]))
+  const activePlatforms = Array.isArray(value)
+    ? chosen.map((k) => byKey.get(k) ?? { key: k, name: k === 'jellyfin' ? 'Jellyfin' : 'Service', logo_path: null, count: 0 })
+    : value === 'anywhere'
+      ? platforms.filter((p) => !p.free)
+      : []
+
+  const label =
+    value === 'anywhere'
+      ? 'Available to me'
+      : value === 'everything'
+        ? 'Include unavailable'
+        : activePlatforms.length === 1
+          ? activePlatforms[0].name
+          : `${activePlatforms.length} platforms`
+
   return (
-    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Where to watch">
+    <div ref={menuRef} className="relative">
       <button
         type="button"
-        aria-pressed={value === 'anywhere'}
-        onClick={() => onChange('anywhere')}
-        className={chip(value === 'anywhere')}
-        title="On Jellyfin or your services"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Where to watch: ${label}`}
+        onClick={() => setOpen((v) => !v)}
+        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none ${
+          Array.isArray(value) || value === 'everything'
+            ? 'border-accent/60 bg-accent/10 text-accent-strong'
+            : 'border-white/10 bg-black/30 text-white/80 hover:border-white/25 hover:text-white'
+        }`}
       >
-        Available to me
+        {activePlatforms.length > 0 && (
+          <span className="flex items-center -space-x-1.5" aria-hidden>
+            {activePlatforms.slice(0, 4).map((p) => (
+              <PlatformStackIcon key={p.key} item={p} />
+            ))}
+            {activePlatforms.length > 4 && (
+              <span className="flex size-5 items-center justify-center rounded-full bg-white/15 text-[10px] font-medium text-white/85 ring-2 ring-[#0c0e13]">
+                +{activePlatforms.length - 4}
+              </span>
+            )}
+          </span>
+        )}
+        <span>{label}</span>
+        <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="size-4 text-white/50">
+          <path
+            fillRule="evenodd"
+            d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+            clipRule="evenodd"
+          />
+        </svg>
       </button>
-      {shown.map((p) => (
-        <button
-          key={p.key}
-          type="button"
-          aria-pressed={chosen.includes(p.key)}
-          onClick={() => toggle(p.key)}
-          className={chip(chosen.includes(p.key))}
+      {open && (
+        <div
+          role="menu"
+          aria-label="Where to watch"
+          className="absolute left-0 z-20 mt-1.5 max-h-80 w-64 overflow-y-auto rounded-xl border border-white/10 bg-[#151922] p-1.5 shadow-2xl shadow-black/70"
         >
-          {p.key === 'jellyfin' ? (
-            <span aria-hidden className="size-2 rounded-full bg-violet-400" />
-          ) : (
-            <ProviderLogo path={p.logo_path} name={p.name} className="size-4 rounded" />
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={value === 'anywhere'}
+            onClick={() => onChange('anywhere')}
+            className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+              value === 'anywhere' ? 'bg-accent/15 text-accent-strong' : 'text-white/75 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <span>Available to me</span>
+            {value === 'anywhere' && <span aria-hidden>✓</span>}
+          </button>
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={value === 'everything'}
+            onClick={() => onChange('everything')}
+            className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+              value === 'everything' ? 'bg-accent/15 text-accent-strong' : 'text-white/75 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <span>Include unavailable</span>
+            {value === 'everything' && <span aria-hidden>✓</span>}
+          </button>
+          {(shown.length > 0 || free.length > 0) && <div className="my-1 border-t border-white/10" />}
+          {shown.map((p) => {
+            const on = chosen.includes(p.key)
+            return (
+              <button
+                key={p.key}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={on}
+                onClick={() => toggle(p.key)}
+                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+                  on ? 'bg-accent/15 text-accent-strong' : 'text-white/75 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                {p.key === 'jellyfin' ? (
+                  <span aria-hidden className="size-2.5 shrink-0 rounded-full bg-violet-400" />
+                ) : (
+                  <ProviderLogo path={p.logo_path} name={p.name} className="size-4 rounded" />
+                )}
+                <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                <span className="text-xs opacity-60">{p.count}</span>
+                {on && <span aria-hidden>✓</span>}
+              </button>
+            )
+          })}
+          {free.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowFree(!showFree)}
+              className="mt-1 w-full rounded-lg border border-dashed border-white/15 px-2.5 py-1.5 text-left text-xs text-white/60 hover:border-white/30 hover:text-white"
+            >
+              {showFree ? 'Hide free services' : `Show free services (${free.length})`}
+            </button>
           )}
-          {p.name}
-          <span className="text-xs opacity-60">{p.count}</span>
-        </button>
-      ))}
-      {free.length > 0 && (
-        <button
-          type="button"
-          aria-expanded={showFree}
-          onClick={() => setShowFree(!showFree)}
-          className="rounded-full border border-dashed border-white/20 px-3 py-1 text-sm text-white/60 hover:border-white/40 hover:text-white focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
-        >
-          {showFree ? 'Hide free services' : `Free services (${free.length})`}
-        </button>
+        </div>
       )}
-      <button
-        type="button"
-        aria-pressed={value === 'everything'}
-        onClick={() => onChange('everything')}
-        className={chip(value === 'everything')}
-        title="Also films that aren’t on Jellyfin or your services"
-      >
-        Include unavailable
-      </button>
     </div>
   )
 }

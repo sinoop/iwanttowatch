@@ -21,7 +21,7 @@ from iwanttowatch.api.deps import AdultUser, DbSession, Tmdb
 from iwanttowatch.api.streaming import TitleAvailability, shown_for, title_availability
 from iwanttowatch.availability import availability
 from iwanttowatch.catalog import ensure_titles, search_movies
-from iwanttowatch.children import allowed_for
+from iwanttowatch.children import allowed_for, library_owners
 from iwanttowatch.db import utcnow
 from iwanttowatch.models import (
     GroupShortlistItem,
@@ -164,11 +164,12 @@ def _places(
     session: Session, tmdb: Tmdb, host: User, ids: list[int]
 ) -> dict[int, TitleAvailability]:
     """Where the host can play each film: their Jellyfin libraries or services."""
+    owners = library_owners(session, host)
     rows = availability(session, tmdb, ids, host.region)
     library = set(
         session.scalars(
             select(LibraryItem.tmdb_id).where(
-                LibraryItem.user_id == (host.parent_id or host.id), LibraryItem.tmdb_id.in_(ids)
+                LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id.in_(ids)
             )
         )
     )

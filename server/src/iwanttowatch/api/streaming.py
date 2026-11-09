@@ -14,7 +14,7 @@ from iwanttowatch.availability import (
     regions,
     watchable,
 )
-from iwanttowatch.children import allowed_certificates, equivalent_certificate
+from iwanttowatch.children import child_age, library_owners, limit_for_age
 from iwanttowatch.models import Availability, LibraryItem, User
 from iwanttowatch.tmdb import client_from_settings
 
@@ -72,19 +72,19 @@ def set_streaming(
     body: StreamingUpdate, user: AdultUser, session: DbSession, request: Request
 ) -> Me:
     tmdb = client_from_settings(session, request.app.state.engine, request.app.state.tmdb_base_url)
-    children = session.scalars(select(User).where(User.parent_id == user.id)).all()
-    # Map age limits to the new country before changing anything: TMDb lookups write its
-    # cache on another connection, which would wait on this session's writes.
+    children = session.scalars(select(User).where(User.is_child.is_(True))).all()
+    # Look up age limits in the new country before changing anything: TMDb lookups write
+    # its cache on another connection, which would wait on this session's writes.
     limits: dict[int, tuple[str, list[str]]] = {}
     for child in children:
-        if child.max_certificate and user.region != body.region:
-            cert = equivalent_certificate(user.region, child.max_certificate, body.region, tmdb)
-            limits[child.id] = (cert, allowed_certificates(body.region, cert, tmdb))
+        age = child_age(child)
+        limits[child.id] = (
+            (limit_for_age(body.region, age, tmdb) or ("", [])) if age is not None else ("", [])
+        )
     user.region = body.region
     user.subscriptions = list(dict.fromkeys(body.subscriptions))
     for child in children:
-        if child.id in limits:
-            child.max_certificate, child.allowed_certificates = limits[child.id]
+        child.max_certificate, child.allowed_certificates = limits[child.id]
         child.region = body.region
         child.subscriptions = list(user.subscriptions)
     session.commit()
@@ -103,12 +103,12 @@ def read_availability(
     ids: Annotated[list[int], Query(min_length=1, max_length=60)],
 ) -> list[TitleAvailability]:
     """Where the user can watch each title: their Jellyfin libraries or streaming services."""
-    owner_id = user.parent_id or user.id
+    owners = library_owners(session, user)
     rows = availability(session, tmdb, ids, user.region)
     in_library = set(
         session.scalars(
             select(LibraryItem.tmdb_id).where(
-                LibraryItem.user_id == owner_id, LibraryItem.tmdb_id.in_(ids)
+                LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id.in_(ids)
             )
         )
     )

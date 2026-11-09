@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from iwanttowatch.api.deps import DbSession
 from iwanttowatch.availability import is_stale, watchable
-from iwanttowatch.children import allowed_for
+from iwanttowatch.children import allowed_for, library_owners
 from iwanttowatch.db import utcnow
 from iwanttowatch.feed import hidden, seen, shortlisted
 from iwanttowatch.imdb import enabled as imdb_enabled
@@ -175,7 +175,7 @@ def list_users(session: Session, _args: NoArgs) -> list[dict[str, Any]]:
                 "username": user.username,
                 "display_name": user.display_name,
                 "admin": user.is_admin,
-                "child_of": user.parent_id,
+                "child": user.is_child,
                 "max_certificate": user.max_certificate,
                 "region": user.region,
                 "languages": user.languages,
@@ -207,11 +207,11 @@ def _hide_reasons(session: Session, user: User, titles: list[Title]) -> dict[int
     watched = seen(session, user.id)
     saved = set(shortlisted(session, user.id))
     turned_down = hidden(session, user.id) - saved
-    owner = user.parent_id or user.id
+    owners = library_owners(session, user)
     library = set(
         session.scalars(
             select(LibraryItem.tmdb_id).where(
-                LibraryItem.user_id == owner, LibraryItem.tmdb_id.in_(ids)
+                LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id.in_(ids)
             )
         )
     )
@@ -294,10 +294,10 @@ def explain_title(session: Session, args: TitleArgs) -> dict[str, Any]:
     feedback = session.get(Feedback, (user.id, title.tmdb_id))
     group = session.get(GroupShortlistItem, title.tmdb_id)
     place = session.get(Availability, (title.tmdb_id, user.region))
-    owner = user.parent_id or user.id
+    owners = library_owners(session, user)
     on_jellyfin = session.scalar(
         select(LibraryItem.id).where(
-            LibraryItem.user_id == owner, LibraryItem.tmdb_id == title.tmdb_id
+            LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id == title.tmdb_id
         )
     )
     why_hidden = _hide_reasons(session, user, [title])[title.tmdb_id]

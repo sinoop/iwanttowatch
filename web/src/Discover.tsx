@@ -1,11 +1,11 @@
-import type { AskAnswer, FeedbackKind, FeedItem, FeedPage, Me } from '@iwanttowatch/api-client'
+import type { AskAnswer, ChildProfile, FeedbackKind, FeedItem, FeedPage, FeedSort, Me } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
-import { api, errorMessage, facts, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
+import { api, errorMessage, facts, useChildren, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
 import RateDialog, { ReactionIcon } from './RateDialog'
 import { PlatformFilter, WatchBadges } from './Streaming'
-import TitleDialog, { BookmarkIcon, Chips, MatchBadge } from './TitleDialog'
+import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
 
 const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
@@ -16,13 +16,19 @@ const TOAST_SECONDS = 8
 
 type Toast = { item: FeedItem; kind: FeedbackKind }
 type Answer = AskAnswer & { text: string }
+type ShortlistFilter = 'all' | 'only' | 'hide'
 
 export default function Discover({ me }: { me: Me }) {
   const settings = useServerSettings()
+  const children = useChildren(!me.is_child)
   const [watchOn, setWatchOn] = useState<WatchOn>('anywhere')
   const [language, setLanguage] = useState<string | null>(null)
   const [genre, setGenre] = useState<string | null>(null)
-  const [shortlistOnly, setShortlistOnly] = useState(false)
+  const [shortlistFilter, setShortlistFilter] = useState<ShortlistFilter>('all')
+  const [sort, setSort] = useState<FeedSort>('match')
+  const [ageLimitOffFor, setAgeLimitOffFor] = useState<number | null>(null)
+  const ageLimit = ageLimitOffFor !== me.id
+  const setAgeLimit = (on: boolean) => setAgeLimitOffFor(on ? null : me.id)
   const [open, setOpen] = useState<number | null>(null)
   const [rating, setRating] = useState<number | null>(null)
   const [toast, setToast] = useState<Toast | null>(null)
@@ -68,7 +74,9 @@ export default function Discover({ me }: { me: Me }) {
     ...watchOnQuery(watchOn),
     language: language ?? undefined,
     genre: genre ?? undefined,
-    shortlist: shortlistOnly || undefined,
+    shortlist: shortlistFilter === 'only' || undefined,
+    hide_shortlisted: shortlistFilter === 'hide' || undefined,
+    age_limit: me.max_certificate ? ageLimit : undefined,
   }
   const ask = useMutation({
     mutationFn: async (text: string) => {
@@ -81,12 +89,13 @@ export default function Discover({ me }: { me: Me }) {
   // While an answer is shown, the feed lists only the AI's picks, in the feed's order.
   const only = answer?.picks.map((p) => p.tmdb_id)
   const feed = useInfiniteQuery({
-    queryKey: ['feed', watchOn, language, genre, shortlistOnly, only],
+    queryKey: ['feed', me.id, watchOn, language, genre, shortlistFilter, sort, ageLimit, only],
     queryFn: async ({ pageParam }) => {
       const { data, error } = await api.GET('/api/v1/feed', {
         params: {
           query: {
             ...filters,
+            sort: sort !== 'match' ? sort : undefined,
             only: only?.length ? only : undefined,
             offset: pageParam,
             limit: PAGE,
@@ -159,14 +168,19 @@ export default function Discover({ me }: { me: Me }) {
       {first && (
         <Filters
           page={first}
+          maxCertificate={me.max_certificate ?? null}
+          ageLimit={ageLimit}
+          onAgeLimit={setAgeLimit}
           watchOn={watchOn}
           onWatchOn={setWatchOn}
           language={language}
           onLanguage={setLanguage}
           genre={genre}
           onGenre={setGenre}
-          shortlistOnly={shortlistOnly}
-          onShortlistOnly={setShortlistOnly}
+          shortlistFilter={shortlistFilter}
+          onShortlistFilter={setShortlistFilter}
+          sort={sort}
+          onSort={setSort}
         />
       )}
 
@@ -183,13 +197,14 @@ export default function Discover({ me }: { me: Me }) {
       {first && <BuildStatus page={first} empty={items.length === 0} />}
       {first?.status === 'ready' && items.length === 0 && !answer && (
         <EmptyFeed
-          emptyShortlist={shortlistOnly && first.shortlist_count === 0}
-          filtered={language !== null || genre !== null}
+          emptyShortlist={shortlistFilter === 'only' && first.shortlist_count === 0}
+          filtered={language !== null || genre !== null || shortlistFilter === 'hide'}
           watchOn={watchOn}
           onWatchOn={setWatchOn}
           onClearFilters={() => {
             setLanguage(null)
             setGenre(null)
+            if (shortlistFilter === 'hide') setShortlistFilter('all')
           }}
         />
       )}
@@ -200,6 +215,7 @@ export default function Discover({ me }: { me: Me }) {
             <FeedCard
               key={item.tmdb_id}
               item={item}
+              childProfiles={me.is_child ? [] : (children.data ?? [])}
               fit={whyFor.get(item.tmdb_id)}
               onOpen={() => setOpen(item.tmdb_id)}
               onAct={(kind) => act(item, kind)}
@@ -291,30 +307,40 @@ function RefreshButton({ page }: { page: FeedPage }) {
 
 function Filters({
   page,
+  maxCertificate,
+  ageLimit,
+  onAgeLimit,
   watchOn,
   onWatchOn,
   language,
   onLanguage,
   genre,
   onGenre,
-  shortlistOnly,
-  onShortlistOnly,
+  shortlistFilter,
+  onShortlistFilter,
+  sort,
+  onSort,
 }: {
   page: FeedPage
+  maxCertificate: string | null
+  ageLimit: boolean
+  onAgeLimit: (value: boolean) => void
   watchOn: WatchOn
   onWatchOn: (value: WatchOn) => void
   language: string | null
   onLanguage: (value: string | null) => void
   genre: string | null
   onGenre: (value: string | null) => void
-  shortlistOnly: boolean
-  onShortlistOnly: (value: boolean) => void
+  shortlistFilter: ShortlistFilter
+  onShortlistFilter: (value: ShortlistFilter) => void
+  sort: FeedSort
+  onSort: (value: FeedSort) => void
 }) {
-  const chip = (selected: boolean) =>
-    `rounded-full border px-3 py-1 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none ${
-      selected
-        ? 'border-accent bg-accent/15 text-accent-strong'
-        : 'border-white/10 text-white/65 hover:border-white/25 hover:text-white'
+  const selectClass = (active: boolean) =>
+    `rounded-lg border px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30 ${
+      active
+        ? 'border-accent/60 bg-accent/10 text-accent-strong'
+        : 'border-white/10 bg-black/30 text-white/80 hover:border-white/25 hover:text-white'
     }`
   // Keep a chosen filter visible even when it no longer matches anything.
   const languages = page.languages.map((l) => l.language)
@@ -322,42 +348,39 @@ function Filters({
   const genres = genre && !page.genres.includes(genre) ? [...page.genres, genre] : page.genres
 
   return (
-    <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-3">
-      <button
-        type="button"
-        aria-pressed={shortlistOnly}
-        onClick={() => onShortlistOnly(!shortlistOnly)}
-        title={page.shortlist_count === 0 && !shortlistOnly ? 'Save films with the bookmark on a card' : undefined}
-        className={`inline-flex items-center gap-1.5 ${chip(shortlistOnly)}`}
-      >
-        <BookmarkIcon filled={shortlistOnly} className="size-3.5" />
-        Shortlist ({page.shortlist_count})
-      </button>
+    <div className="mt-6 flex flex-wrap items-center gap-2.5">
       <PlatformFilter platforms={page.platforms} value={watchOn} onChange={onWatchOn} />
-      {languages.length > 1 || language ? (
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Language">
-          <button type="button" aria-pressed={language === null} onClick={() => onLanguage(null)} className={chip(language === null)}>
-            All languages
-          </button>
+      <select
+        value={shortlistFilter}
+        onChange={(e) => onShortlistFilter(e.target.value as ShortlistFilter)}
+        aria-label="Shortlist"
+        className={selectClass(shortlistFilter !== 'all')}
+      >
+        <option value="all">All films</option>
+        <option value="only">Shortlist only ({page.shortlist_count})</option>
+        <option value="hide">Hide shortlisted ({page.shortlist_count})</option>
+      </select>
+      {(languages.length > 1 || language) && (
+        <select
+          value={language ?? ''}
+          onChange={(e) => onLanguage(e.target.value || null)}
+          aria-label="Language"
+          className={selectClass(language !== null)}
+        >
+          <option value="">All languages</option>
           {languages.map((code) => (
-            <button
-              key={code}
-              type="button"
-              aria-pressed={language === code}
-              onClick={() => onLanguage(language === code ? null : code)}
-              className={chip(language === code)}
-            >
+            <option key={code} value={code}>
               {languageName.of(code)}
-            </button>
+            </option>
           ))}
-        </div>
-      ) : null}
+        </select>
+      )}
       {genres.length > 0 && (
         <select
           value={genre ?? ''}
           onChange={(e) => onGenre(e.target.value || null)}
           aria-label="Genre"
-          className="rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+          className={selectClass(genre !== null)}
         >
           <option value="">All genres</option>
           {genres.map((g) => (
@@ -366,6 +389,42 @@ function Filters({
             </option>
           ))}
         </select>
+      )}
+      <select
+        value={sort}
+        onChange={(e) => onSort(e.target.value as FeedSort)}
+        aria-label="Order by"
+        className={selectClass(sort !== 'match')}
+      >
+        <option value="match">Order: Best match</option>
+        <option value="rating">Order: Highest rated</option>
+        <option value="newest">Order: Newest first</option>
+        <option value="oldest">Order: Oldest first</option>
+        <option value="shortest">Order: Shortest first</option>
+      </select>
+      {maxCertificate && (
+        <div className="inline-flex items-center gap-1">
+          <select
+            value={ageLimit ? 'on' : 'off'}
+            onChange={(e) => onAgeLimit(e.target.value === 'on')}
+            aria-label="Age restriction"
+            className={selectClass(ageLimit)}
+          >
+            <option value="on">Rated {maxCertificate} &amp; under</option>
+            <option value="off">All age ratings</option>
+          </select>
+          {ageLimit && (
+            <button
+              type="button"
+              title="Remove age restriction filter"
+              aria-label="Remove age restriction filter"
+              onClick={() => onAgeLimit(false)}
+              className="flex size-8 items-center justify-center rounded-lg border border-white/10 bg-black/30 text-sm text-white/60 hover:border-white/25 hover:text-white focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
+            >
+              ×
+            </button>
+          )}
+        </div>
       )}
     </div>
   )
@@ -528,6 +587,7 @@ function EmptyFeed({
 
 function FeedCard({
   item,
+  childProfiles,
   fit,
   onOpen,
   onAct,
@@ -535,6 +595,7 @@ function FeedCard({
   busy,
 }: {
   item: FeedItem
+  childProfiles: ChildProfile[]
   // How the film fits the user's request, when it's one of the AI's picks.
   fit?: string
   onOpen: () => void
@@ -558,7 +619,7 @@ function FeedCard({
         <MatchBadge match={item.match} className="absolute top-2 left-2 shadow-lg shadow-black/50" />
       </button>
       <div className="mt-1.5 flex items-center justify-between" role="group" aria-label={`Feedback on ${item.title}`}>
-        <div className="flex">
+        <div className="flex items-center">
           <CardAction label="More like this" pressed={item.thumbs_up} disabled={busy} onClick={() => onAct('up')}>
             <ReactionIcon reaction="liked" className="size-4" />
           </CardAction>
@@ -573,6 +634,13 @@ function FeedCard({
           >
             <BookmarkIcon filled={item.shortlisted} />
           </CardAction>
+          <AssignToChildButton
+            compact
+            tmdbId={item.tmdb_id}
+            title={item.title}
+            assigned={item.assigned_children ?? []}
+            childProfiles={childProfiles}
+          />
         </div>
         <div className="flex">
           <CardAction label="Seen it" disabled={busy} onClick={() => onAct('seen')}>

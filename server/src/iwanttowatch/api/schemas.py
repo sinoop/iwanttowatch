@@ -19,8 +19,7 @@ class Me(BaseModel):
     # TMDb provider IDs of the streaming services the user subscribes to.
     subscriptions: list[int]
     birth_year: int | None
-    # Set on child profiles, pointing to the parent account that manages them.
-    parent_id: int | None = None
+    is_child: bool = False
     # Maximum film certificate in the user's region, e.g. "U/A 7+" or "PG".
     max_certificate: str | None = None
 

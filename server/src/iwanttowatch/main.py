@@ -49,8 +49,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = engine
     app.state.tmdb_base_url = settings.tmdb_base_url
     app.state.data_dir = settings.data_dir
-    # Parent ID -> times of recent wrong PINs when leaving a child profile.
-    app.state.pin_failures = {}
     app.state.feed_worker = FeedWorker(engine, settings.tmdb_base_url, settings.data_dir)
     app.state.feed_worker.start()
     # A finished import changes the user's taste, so their feed is rebuilt.

@@ -1,8 +1,9 @@
-"""Child profiles: per-country film certificates, family signals, and themes notes."""
+"""Child profiles: per-country film certificates, age limits, family signals, and themes notes."""
 
 import logging
+import re
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -31,60 +32,62 @@ class Certificate:
     code: str
     meaning: str
     order: int
-    adult: bool = False
+    # The youngest age the certificate suits, which is how a child's birth year picks
+    # the films they may see; None when it can't be told from the certificate.
+    age: int | None = None
 
 
 # Built-in scales for common countries, so India's age-graded U/A certificates work
 # even when TMDb's list only has legacy UA, and certificate checks need no network call.
 KNOWN_CERTIFICATES: dict[str, tuple[Certificate, ...]] = {
     "IN": (
-        Certificate("U", "Unrestricted public exhibition (all ages)", 1),
-        Certificate("U/A 7+", "Parental guidance for children under 7", 2),
-        Certificate("U/A 13+", "Parental guidance for children under 13", 3),
-        Certificate("U/A 16+", "Parental guidance for children under 16", 4),
-        Certificate("A", "Restricted to adults (18+)", 5, adult=True),
+        Certificate("U", "Unrestricted public exhibition (all ages)", 1, 0),
+        Certificate("U/A 7+", "Parental guidance for children under 7", 2, 7),
+        Certificate("U/A 13+", "Parental guidance for children under 13", 3, 13),
+        Certificate("U/A 16+", "Parental guidance for children under 16", 4, 16),
+        Certificate("A", "Restricted to adults (18+)", 5, 18),
     ),
     "US": (
-        Certificate("G", "General audiences (all ages)", 1),
-        Certificate("PG", "Parental guidance suggested", 2),
-        Certificate("PG-13", "Parents strongly cautioned (under 13)", 3),
-        Certificate("R", "Restricted (17+)", 4, adult=True),
-        Certificate("NC-17", "Adults only (18+)", 5, adult=True),
+        Certificate("G", "General audiences (all ages)", 1, 0),
+        Certificate("PG", "Parental guidance suggested", 2, 8),
+        Certificate("PG-13", "Parents strongly cautioned (under 13)", 3, 13),
+        Certificate("R", "Restricted (17+)", 4, 17),
+        Certificate("NC-17", "Adults only (18+)", 5, 18),
     ),
     "GB": (
-        Certificate("U", "Universal, suitable for all", 1),
-        Certificate("PG", "Parental guidance", 2),
-        Certificate("12A", "Suitable for 12 years and over", 3),
-        Certificate("15", "Suitable only for 15 years and over", 4),
-        Certificate("18", "Suitable only for adults (18+)", 5, adult=True),
+        Certificate("U", "Universal, suitable for all", 1, 0),
+        Certificate("PG", "Parental guidance", 2, 8),
+        Certificate("12A", "Suitable for 12 years and over", 3, 12),
+        Certificate("15", "Suitable only for 15 years and over", 4, 15),
+        Certificate("18", "Suitable only for adults (18+)", 5, 18),
     ),
     "AU": (
-        Certificate("G", "General (all ages)", 1),
-        Certificate("PG", "Parental guidance recommended", 2),
-        Certificate("M", "Mature audiences (15+)", 3),
-        Certificate("MA 15+", "Mature accompanied (15+)", 4),
-        Certificate("R 18+", "Restricted to 18 and over", 5, adult=True),
+        Certificate("G", "General (all ages)", 1, 0),
+        Certificate("PG", "Parental guidance recommended", 2, 8),
+        Certificate("M", "Mature audiences (15+)", 3, 15),
+        Certificate("MA 15+", "Mature accompanied (15+)", 4, 15),
+        Certificate("R 18+", "Restricted to 18 and over", 5, 18),
     ),
     "CA": (
-        Certificate("G", "General audience", 1),
-        Certificate("PG", "Parental guidance advised", 2),
-        Certificate("14A", "Suitable for 14 years and over", 3),
-        Certificate("18A", "Persons under 18 must be accompanied", 4, adult=True),
-        Certificate("R", "Restricted to 18 and over", 5, adult=True),
+        Certificate("G", "General audience", 1, 0),
+        Certificate("PG", "Parental guidance advised", 2, 8),
+        Certificate("14A", "Suitable for 14 years and over", 3, 14),
+        Certificate("18A", "Persons under 18 must be accompanied", 4, 18),
+        Certificate("R", "Restricted to 18 and over", 5, 18),
     ),
     "DE": (
-        Certificate("0", "Approved for all ages", 1),
-        Certificate("6", "Approved for ages 6 and up", 2),
-        Certificate("12", "Approved for ages 12 and up", 3),
-        Certificate("16", "Approved for ages 16 and up", 4),
-        Certificate("18", "No youth admission (18+)", 5, adult=True),
+        Certificate("0", "Approved for all ages", 1, 0),
+        Certificate("6", "Approved for ages 6 and up", 2, 6),
+        Certificate("12", "Approved for ages 12 and up", 3, 12),
+        Certificate("16", "Approved for ages 16 and up", 4, 16),
+        Certificate("18", "No youth admission (18+)", 5, 18),
     ),
     "FR": (
-        Certificate("U", "Suitable for all audiences", 1),
-        Certificate("10", "Not recommended for under 10", 2),
-        Certificate("12", "Forbidden for under 12", 3),
-        Certificate("16", "Forbidden for under 16", 4),
-        Certificate("18", "Forbidden for under 18", 5, adult=True),
+        Certificate("U", "Suitable for all audiences", 1, 0),
+        Certificate("10", "Not recommended for under 10", 2, 10),
+        Certificate("12", "Forbidden for under 12", 3, 12),
+        Certificate("16", "Forbidden for under 16", 4, 16),
+        Certificate("18", "Forbidden for under 18", 5, 18),
     ),
 }
 
@@ -106,6 +109,15 @@ ALIASES: dict[tuple[str, str], int] = {
 }
 
 
+def _code_age(code: str, order: int, lowest_order: int) -> int | None:
+    """A certificate's youngest age from TMDb's list: the number in its code ("12",
+    "16+"), 0 for the country's lowest ("all ages") one, and unknown for the rest."""
+    digits = re.search(r"\d+", code)
+    if digits:
+        return int(digits.group())
+    return 0 if order == lowest_order else None
+
+
 def _scale(region: str, tmdb: TmdbClient | None = None) -> tuple[Certificate, ...]:
     if region in KNOWN_CERTIFICATES:
         return KNOWN_CERTIFICATES[region]
@@ -124,13 +136,13 @@ def _scale(region: str, tmdb: TmdbClient | None = None) -> tuple[Certificate, ..
                 key=lambda item: int(item["order"]),
             )
             if valid:
-                max_order = max(int(item["order"]) for item in valid)
+                lowest = int(valid[0]["order"])
                 return tuple(
                     Certificate(
                         code=item["certification"].strip(),
                         meaning=(item.get("meaning") or "").strip(),
                         order=int(item["order"]),
-                        adult=int(item["order"]) == max_order and len(valid) > 1,
+                        age=_code_age(item["certification"].strip(), int(item["order"]), lowest),
                     )
                     for item in valid
                 )
@@ -138,11 +150,6 @@ def _scale(region: str, tmdb: TmdbClient | None = None) -> tuple[Certificate, ..
             pass
     # Another country's scale would match none of this country's films.
     return ()
-
-
-def certificates_for_region(tmdb: TmdbClient | None, region: str) -> list[Certificate]:
-    """The certificates a parent can pick as a child's maximum in this country."""
-    return [c for c in _scale(region, tmdb) if not c.adult]
 
 
 def certificate_rank(region: str, certificate: str, tmdb: TmdbClient | None = None) -> int | None:
@@ -159,13 +166,53 @@ def certificate_rank(region: str, certificate: str, tmdb: TmdbClient | None = No
 
 
 def allowed_certificates(region: str, max_certificate: str, tmdb: TmdbClient | None) -> list[str]:
-    """The upper-cased certificate codes at or below a child's limit in the region."""
+    """The upper-cased certificate codes at or below a limit in the region."""
     limit = certificate_rank(region, max_certificate, tmdb)
     if limit is None:
         return []
     codes = {c.code.upper() for c in _scale(region, tmdb) if c.order <= limit}
     codes |= {code for (r, code), rank in ALIASES.items() if r == region and rank <= limit}
     return sorted(codes)
+
+
+def age_for_certificate(
+    region: str, certificate: str, tmdb: TmdbClient | None = None
+) -> int | None:
+    """The youngest age a certificate suits in a country, or None when unknown."""
+    rank = certificate_rank(region, certificate, tmdb)
+    return next((c.age for c in _scale(region, tmdb) if c.order == rank), None)
+
+
+def child_age(user: User, today: date | None = None) -> int | None:
+    """A child's age this year, from their birth year; None without one."""
+    if user.birth_year is None:
+        return None
+    return max(0, (today or date.today()).year - user.birth_year)
+
+
+def limit_for_age(
+    region: str, age: int, tmdb: TmdbClient | None = None
+) -> tuple[str, list[str]] | None:
+    """The strictest-rated certificate a child of this age may watch in the country, with
+    every certificate code up to it; None when the country's scale has no usable ages."""
+    fits = [c for c in _scale(region, tmdb) if c.age is not None and c.age <= age]
+    if not fits:
+        return None
+    top = max(fits, key=lambda c: c.order)
+    return top.code, allowed_certificates(region, top.code, tmdb)
+
+
+def refresh_limit(user: User, tmdb: TmdbClient | None, today: date | None = None) -> bool:
+    """Work out a child's age limit from their birth year and country. False when it
+    couldn't be, which leaves the earlier limit in place."""
+    age = child_age(user, today)
+    if age is None:
+        return False
+    limit = limit_for_age(user.region, age, tmdb)
+    if limit is None:
+        return False
+    user.max_certificate, user.allowed_certificates = limit
+    return True
 
 
 def allowed_for(title: Title, region: str, allowed: list[str] | None) -> bool:
@@ -180,26 +227,22 @@ def allowed_for(title: Title, region: str, allowed: list[str] | None) -> bool:
     return cert is not None and cert.strip().upper() in allowed
 
 
-def equivalent_certificate(
-    old_region: str, old_cert: str, new_region: str, tmdb: TmdbClient | None = None
-) -> str:
-    """Map a child's certificate limit when their parent changes country."""
-    options = certificates_for_region(tmdb, new_region)
-    if not options:
-        return old_cert
-    rank = certificate_rank(old_region, old_cert, tmdb) or 1
-    best = min(options, key=lambda c: abs(c.order - rank))
-    return best.code
-
-
 def family_tagged_films(session: Session) -> set[int]:
-    """Films a parent on this server liked or loved and tagged 'Great with family'."""
+    """Films an adult on this server liked or loved and tagged 'Great with family'."""
     rows = session.execute(
         select(UserTitle.tmdb_id, UserTitle.tags)
         .join(User, User.id == UserTitle.user_id)
-        .where(User.parent_id.is_(None), UserTitle.reaction.in_(["liked", "loved"]))
+        .where(User.is_child.is_(False), UserTitle.reaction.in_(["liked", "loved"]))
     )
     return {tmdb_id for tmdb_id, tags in rows if tags and "great_with_family" in tags}
+
+
+def library_owners(session: Session, user: User) -> list[int]:
+    """Whose Jellyfin libraries a profile can play from. A child has no Jellyfin account,
+    so they play from the household's: every adult's."""
+    if not user.is_child:
+        return [user.id]
+    return list(session.scalars(select(User.id).where(User.is_child.is_(False))))
 
 
 def generate_themes_note(session: Session, title: Title, llm: LlmProvider) -> str:

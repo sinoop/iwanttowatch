@@ -1,6 +1,7 @@
 """Watch together: pick who's watching, share your taste, and get group picks."""
 
 import json
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
@@ -19,13 +20,14 @@ from iwanttowatch.api.streaming import (
     title_availability,
 )
 from iwanttowatch.availability import availability
-from iwanttowatch.children import allowed_for
+from iwanttowatch.children import allowed_for, library_owners
 from iwanttowatch.db import utcnow
 from iwanttowatch.models import (
     Availability,
     GroupShortlistItem,
     Guest,
     LibraryItem,
+    ShortlistItem,
     TasteShare,
     Title,
     User,
@@ -128,6 +130,8 @@ class GroupItem(BaseModel):
     imdb: ImdbScore | None
     # Who saved it to the group shortlist, if anyone.
     shortlisted_by: str | None
+    # Child profile IDs that have this film on their shortlist.
+    assigned_children: list[int] = Field(default_factory=list)
 
 
 class GroupPage(BaseModel):
@@ -160,10 +164,10 @@ def together_options(user: CurrentUser, session: DbSession) -> TogetherOptions:
     household = session.scalars(select(User).order_by(User.display_name)).all()
     guests = (
         session.scalars(select(Guest).where(Guest.owner_id == user.id).order_by(Guest.name)).all()
-        if user.parent_id is None
+        if not user.is_child
         else []
     )
-    share = session.get(TasteShare, user.id) if user.parent_id is None else None
+    share = session.get(TasteShare, user.id) if not user.is_child else None
     return TogetherOptions(
         household=[
             Person(id=u.id, name=u.display_name, max_certificate=u.max_certificate)
@@ -193,7 +197,7 @@ def together_picks(
     people = {u.id: u for u in session.scalars(select(User).where(User.id.in_(users)))}
     friends = (
         session.scalars(select(Guest).where(Guest.owner_id == user.id, Guest.id.in_(guests))).all()
-        if user.parent_id is None
+        if not user.is_child
         else []
     )
     tmdb = client_from_settings(session, request.app.state.engine, request.app.state.tmdb_base_url)
@@ -224,11 +228,11 @@ def together_picks(
     picks = group_picks(session, list(people), members, saved)
     ids = [p.tmdb_id for p in picks]
     titles = {t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(ids)))}
-    owner_id = user.parent_id or user.id
+    owners = library_owners(session, user)
     library = set(
         session.scalars(
             select(LibraryItem.tmdb_id).where(
-                LibraryItem.user_id == owner_id, LibraryItem.tmdb_id.in_(ids)
+                LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id.in_(ids)
             )
         )
     )
@@ -240,6 +244,14 @@ def together_picks(
             )
         )
     }
+    assigned: dict[int, list[int]] = defaultdict(list)
+    for tmdb_id, child_id in session.execute(
+        select(ShortlistItem.tmdb_id, ShortlistItem.user_id)
+        .join(User, User.id == ShortlistItem.user_id)
+        .where(User.is_child.is_(True), ShortlistItem.tmdb_id.in_(ids))
+        .order_by(ShortlistItem.user_id)
+    ):
+        assigned[tmdb_id].append(child_id)
     items = []
     places = []
     shortlist_count = 0
@@ -259,7 +271,7 @@ def together_picks(
         # Kids can't see other people's ratings, including in group reasons.
         reasons = (
             [r for r in pick.reasons if r.startswith(f"{user.display_name}: ")]
-            if user.parent_id is not None
+            if user.is_child
             else pick.reasons
         )
         items.append(
@@ -283,6 +295,7 @@ def together_picks(
                 availability=where,
                 imdb=imdb_score(title),
                 shortlisted_by=saved.get(pick.tmdb_id),
+                assigned_children=assigned[title.tmdb_id],
             )
         )
     return GroupPage(
@@ -298,11 +311,7 @@ def add_to_group_shortlist(
     tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
 ) -> Response:
     """Save a film for everyone on this server to choose from on Watch together."""
-    title = load_title(session, request, tmdb_id)
-    if not allowed_for(title, user.region, user.allowed_certificates):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "This film is above this profile's age limit"
-        )
+    load_title(session, request, tmdb_id)
     # Look up where it streams before writing: the lookup caches on its own connection.
     availability(session, tmdb, [tmdb_id], user.region)
     if session.get(GroupShortlistItem, tmdb_id) is None:
@@ -312,14 +321,10 @@ def add_to_group_shortlist(
 
 
 @router.delete("/together/shortlist/{tmdb_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_from_group_shortlist(tmdb_id: int, user: CurrentUser, session: DbSession) -> Response:
-    """Adults can take any film off; a child only the ones they added."""
+def remove_from_group_shortlist(tmdb_id: int, _user: CurrentUser, session: DbSession) -> Response:
+    """Take a film off the household's group shortlist."""
     entry = session.get(GroupShortlistItem, tmdb_id)
     if entry is not None:
-        if user.parent_id is not None and entry.added_by != user.id:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, "Ask a grown-up to take this film off the list"
-            )
         session.delete(entry)
         session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
