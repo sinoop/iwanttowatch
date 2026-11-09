@@ -1,8 +1,8 @@
 import type { Me } from '@iwanttowatch/api-client'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
-import { api, errorMessage, useServerSettings } from './api'
+import { api, useChildren, useServerSettings } from './api'
 import HeaderSearch from './Search'
 import { JustWatchCredit } from './Streaming'
 import { Button, Logo } from './ui'
@@ -17,18 +17,31 @@ const NAV = [
 export default function Shell({ me }: { me: Me }) {
   const queryClient = useQueryClient()
   const settings = useServerSettings()
-  const isChild = me.parent_id !== null
-  const children = useQuery({
-    queryKey: ['children'],
-    queryFn: async () => (await api.GET('/api/v1/children')).data ?? [],
-    enabled: !isChild,
-  })
-  const pin = useQuery({
-    queryKey: ['parent-pin'],
-    queryFn: async () => (await api.GET('/api/v1/me/parent-pin')).data,
-    enabled: !isChild,
-  })
+  const isChild = me.is_child
+  const children = useChildren()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onPointerDown = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [menuOpen])
+
   const refreshProfile = (next: Me | undefined) => {
+    setMenuOpen(false)
     if (next) queryClient.setQueryData(['me'], next)
     for (const key of ['feed', 'ratings', 'persona', 'together', 'title']) {
       queryClient.invalidateQueries({ queryKey: [key] })
@@ -39,13 +52,17 @@ export default function Shell({ me }: { me: Me }) {
       (await api.POST('/api/v1/children/{child_id}/switch', { params: { path: { child_id: childId } } })).data,
     onSuccess: refreshProfile,
   })
+  const exitChild = useMutation({
+    mutationFn: async () => (await api.POST('/api/v1/children/exit')).data,
+    onSuccess: refreshProfile,
+  })
   const logout = useMutation({
     mutationFn: () => api.POST('/api/v1/auth/logout'),
     onSuccess: () => queryClient.setQueryData(['me'], null),
   })
   const navItems = isChild ? NAV.filter((item) => item.to !== '/settings') : NAV
-  // Switching needs a parent PIN to come back; Settings explains how to set one.
-  const kids = pin.data?.pin_set ? (children.data ?? []) : []
+  const kids = children.data ?? []
+  const canSwitch = kids.length > 0 || isChild
 
   return (
     <div className="min-h-screen">
@@ -68,28 +85,80 @@ export default function Shell({ me }: { me: Me }) {
           ))}
         </nav>
         <div className="ml-auto flex flex-wrap items-center gap-2 text-sm sm:gap-3">
-          <HeaderSearch maxCertificate={me.max_certificate ?? null} />
-          <span className="flex items-center gap-1.5 text-white/75">
-            {me.display_name}
-            {me.max_certificate && (
-              <span className="rounded bg-accent/15 px-1.5 py-0.5 text-xs font-medium text-accent-strong">
-                {me.max_certificate}
-              </span>
-            )}
-          </span>
-          {!isChild &&
-            kids.map((child) => (
-              <Button
-                key={child.id}
-                variant="ghost"
-                className="border border-white/10 px-2.5 py-1 text-xs"
-                onClick={() => switchChild.mutate(child.id)}
-                disabled={switchChild.isPending}
+          <HeaderSearch />
+          {canSwitch ? (
+            <div ref={menuRef} className="relative">
+              <button
+                type="button"
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1.5 text-white/85 transition-colors hover:border-white/25 hover:text-white focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
               >
-                Switch to {child.name} ({child.max_certificate})
-              </Button>
-            ))}
-          {isChild && <ExitChild onExit={refreshProfile} />}
+                <span>{me.display_name}</span>
+                {me.max_certificate && (
+                  <span className="rounded bg-accent/15 px-1.5 py-0.5 text-xs font-medium text-accent-strong">
+                    {me.max_certificate}
+                  </span>
+                )}
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden className="size-3.5 text-white/50">
+                  <path d="m5 7.5 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              {menuOpen && (
+                <div
+                  role="menu"
+                  aria-label="Switch profile"
+                  className="absolute right-0 z-20 mt-1.5 min-w-52 rounded-xl border border-white/10 bg-[#151922] p-1.5 shadow-2xl shadow-black/70"
+                >
+                  {isChild && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={exitChild.isPending}
+                      onClick={() => exitChild.mutate()}
+                      className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium text-accent-strong hover:bg-white/10"
+                    >
+                      <span>Back to adult profile</span>
+                      <span aria-hidden>↩</span>
+                    </button>
+                  )}
+                  {kids.length > 0 && (
+                    <p className="px-2.5 pt-1.5 pb-1 text-[11px] font-medium tracking-wide text-white/40 uppercase">
+                      Child profiles
+                    </p>
+                  )}
+                  {kids.map((child) => {
+                    const active = isChild && me.id === child.id
+                    return (
+                      <button
+                        key={child.id}
+                        type="button"
+                        role="menuitem"
+                        disabled={active || switchChild.isPending}
+                        onClick={() => switchChild.mutate(child.id)}
+                        className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
+                          active ? 'bg-accent/15 text-accent-strong' : 'text-white/80 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <span className="truncate font-medium">{child.name}</span>
+                        <span className="flex items-center gap-1.5">
+                          {child.max_certificate && (
+                            <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-white/65">
+                              {child.max_certificate}
+                            </span>
+                          )}
+                          {active && <span aria-hidden>✓</span>}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <span className="flex items-center gap-1.5 text-white/75">{me.display_name}</span>
+          )}
           <Button variant="ghost" onClick={() => logout.mutate()}>
             Sign out
           </Button>
@@ -125,58 +194,5 @@ export default function Shell({ me }: { me: Me }) {
         )}
       </footer>
     </div>
-  )
-}
-
-function ExitChild({ onExit }: { onExit: (parent: Me) => void }) {
-  const [open, setOpen] = useState(false)
-  const [pin, setPin] = useState('')
-  const exit = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await api.POST('/api/v1/children/exit', { body: { pin } })
-      if (error) throw new Error(errorMessage(error))
-      return data
-    },
-    onSuccess: onExit,
-    onError: () => setPin(''),
-  })
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (pin) exit.mutate()
-  }
-
-  if (!open) {
-    return (
-      <Button variant="ghost" className="border border-white/10 px-2.5 py-1 text-xs" onClick={() => setOpen(true)}>
-        Exit child profile
-      </Button>
-    )
-  }
-  return (
-    <form onSubmit={submit} className="flex flex-wrap items-center gap-2">
-      <input
-        type="password"
-        inputMode="numeric"
-        autoComplete="off"
-        autoFocus
-        aria-label="Parent PIN"
-        placeholder="Parent PIN"
-        maxLength={8}
-        value={pin}
-        onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-        className="w-28 rounded-lg border border-white/10 bg-[#11141b] px-2.5 py-1 text-xs text-white outline-none focus:border-accent"
-      />
-      <Button type="submit" className="px-2.5 py-1 text-xs" disabled={!pin || exit.isPending}>
-        Exit
-      </Button>
-      <Button type="button" variant="ghost" className="px-2 py-1 text-xs" onClick={() => setOpen(false)}>
-        Cancel
-      </Button>
-      {exit.error && (
-        <span role="alert" className="text-xs text-red-300">
-          {exit.error.message}
-        </span>
-      )}
-    </form>
   )
 }

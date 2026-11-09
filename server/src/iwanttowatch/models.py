@@ -21,19 +21,17 @@ class User(Base):
     languages: Mapped[list[str]] = mapped_column(JSON, default=list)
     # TMDb provider IDs of the streaming services the user pays for, e.g. 8 for Netflix.
     subscriptions: Mapped[list[int]] = mapped_column(JSON, default=list)
-    # Optional; films from before it count a little against the user's matches.
+    # Optional on adults (films from before it count a little against their matches);
+    # required on child profiles, where it sets their certificate age limit.
     birth_year: Mapped[int | None]
-    # Set on child profiles, pointing to the parent account that manages them.
-    parent_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
-    # Age limit for a child profile, as a certificate in their region (e.g. "U/A 7+" or "PG").
+    # Household-level child profile, without a password; any adult can switch to it.
+    is_child: Mapped[bool] = mapped_column(default=False)
+    # Age limit for a child profile, as a certificate in their region (e.g. "U/A 7+" or "PG"),
+    # worked out from their birth year.
     max_certificate: Mapped[str | None] = mapped_column(String(16))
     # Child profiles only: the upper-cased certificate codes at or below the limit in their
-    # region, worked out when the limit or region is set. Null means no age limit.
+    # region, worked out when their birth year or region is set. Null means no age limit.
     allowed_certificates: Mapped[list[str] | None] = mapped_column(JSON)
-    # Parents only: the PIN that leaves a child profile, so a kid can't switch back.
-    parent_pin_hash: Mapped[str | None]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

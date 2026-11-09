@@ -1347,6 +1347,43 @@
             }
           },
           {
+            "name": "hide_shortlisted",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Hide Shortlisted"
+            }
+          },
+          {
+            "name": "age_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Age Limit"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "match",
+                "rating",
+                "newest",
+                "oldest",
+                "shortest"
+              ],
+              "type": "string",
+              "default": "match",
+              "title": "Sort"
+            }
+          },
+          {
             "name": "only",
             "in": "query",
             "required": false,
@@ -1477,6 +1514,26 @@
               "type": "boolean",
               "default": false,
               "title": "Shortlist"
+            }
+          },
+          {
+            "name": "hide_shortlisted",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Hide Shortlisted"
+            }
+          },
+          {
+            "name": "age_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Age Limit"
             }
           }
         ],
@@ -2075,7 +2132,7 @@
       },
       "delete": {
         "summary": "Remove From Group Shortlist",
-        "description": "Adults can take any film off; a child only the ones they added.",
+        "description": "Take a film off the household's group shortlist.",
         "operationId": "remove_from_group_shortlist_api_v1_together_shortlist__tmdb_id__delete",
         "parameters": [
           {
@@ -2302,62 +2359,10 @@
         }
       }
     },
-    "/api/v1/certificates": {
-      "get": {
-        "summary": "List Certificates",
-        "description": "Certificates a parent can set as a child's age limit in the country.",
-        "operationId": "list_certificates_api_v1_certificates_get",
-        "parameters": [
-          {
-            "name": "region",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "pattern": "^[A-Z]{2}$"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Region"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/CertificateOption"
-                  },
-                  "title": "Response List Certificates Api V1 Certificates Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/children": {
       "get": {
         "summary": "List Children",
-        "description": "The child profiles managed by the signed-in parent.",
+        "description": "The household's child profiles, available to any signed-in adult.",
         "operationId": "list_children_api_v1_children_get",
         "responses": {
           "200": {
@@ -2378,7 +2383,7 @@
       },
       "post": {
         "summary": "Create Child",
-        "description": "Create a child profile under your account with a maximum film certificate.",
+        "description": "Create a household child profile; its age limit comes from its birth year.",
         "operationId": "create_child_api_v1_children_post",
         "requestBody": {
           "content": {
@@ -2493,65 +2498,10 @@
         }
       }
     },
-    "/api/v1/me/parent-pin": {
-      "get": {
-        "summary": "Read Parent Pin",
-        "operationId": "read_parent_pin_api_v1_me_parent_pin_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PinStatus"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "summary": "Set Parent Pin",
-        "description": "Set the PIN that's needed to leave a child profile.",
-        "operationId": "set_parent_pin_api_v1_me_parent_pin_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PinUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PinStatus"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/children/{child_id}/switch": {
       "post": {
         "summary": "Switch To Child",
-        "description": "Use iWantToWatch as one of your child profiles; leaving it needs your parent PIN.",
+        "description": "Switch to any household child profile.",
         "operationId": "switch_to_child_api_v1_children__child_id__switch_post",
         "parameters": [
           {
@@ -2591,18 +2541,8 @@
     "/api/v1/children/exit": {
       "post": {
         "summary": "Exit Child",
-        "description": "Switch back from a child profile to your parent account with your parent PIN.",
+        "description": "Switch back from a child profile to your adult account.",
         "operationId": "exit_child_api_v1_children_exit_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PinCheck"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2613,6 +2553,77 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/children/{child_id}/shortlist/{tmdb_id}": {
+      "put": {
+        "summary": "Assign To Child",
+        "description": "Assign a film to a child profile's shortlist so it shows up in their picks.",
+        "operationId": "assign_to_child_api_v1_children__child_id__shortlist__tmdb_id__put",
+        "parameters": [
+          {
+            "name": "child_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Child Id"
+            }
+          },
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Unassign From Child",
+        "operationId": "unassign_from_child_api_v1_children__child_id__shortlist__tmdb_id__delete",
+        "parameters": [
+          {
+            "name": "child_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Child Id"
+            }
+          },
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -3493,24 +3504,6 @@
         ],
         "title": "Candidate"
       },
-      "CertificateOption": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "title": "Code"
-          },
-          "meaning": {
-            "type": "string",
-            "title": "Meaning"
-          }
-        },
-        "type": "object",
-        "required": [
-          "code",
-          "meaning"
-        ],
-        "title": "CertificateOption"
-      },
       "ChildCreate": {
         "properties": {
           "name": {
@@ -3519,17 +3512,17 @@
             "minLength": 1,
             "title": "Name"
           },
-          "max_certificate": {
-            "type": "string",
-            "maxLength": 16,
-            "minLength": 1,
-            "title": "Max Certificate"
+          "birth_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 1900.0,
+            "title": "Birth Year"
           }
         },
         "type": "object",
         "required": [
           "name",
-          "max_certificate"
+          "birth_year"
         ],
         "title": "ChildCreate"
       },
@@ -3543,6 +3536,10 @@
             "type": "string",
             "title": "Name"
           },
+          "birth_year": {
+            "type": "integer",
+            "title": "Birth Year"
+          },
           "max_certificate": {
             "type": "string",
             "title": "Max Certificate"
@@ -3552,6 +3549,7 @@
         "required": [
           "id",
           "name",
+          "birth_year",
           "max_certificate"
         ],
         "title": "ChildOut"
@@ -3564,17 +3562,17 @@
             "minLength": 1,
             "title": "Name"
           },
-          "max_certificate": {
-            "type": "string",
-            "maxLength": 16,
-            "minLength": 1,
-            "title": "Max Certificate"
+          "birth_year": {
+            "type": "integer",
+            "maximum": 2100.0,
+            "minimum": 1900.0,
+            "title": "Birth Year"
           }
         },
         "type": "object",
         "required": [
           "name",
-          "max_certificate"
+          "birth_year"
         ],
         "title": "ChildUpdate"
       },
@@ -3971,6 +3969,13 @@
             "type": "boolean",
             "title": "Shortlisted"
           },
+          "assigned_children": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Assigned Children"
+          },
           "imdb": {
             "anyOf": [
               {
@@ -4281,6 +4286,13 @@
               }
             ],
             "title": "Shortlisted By"
+          },
+          "assigned_children": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Assigned Children"
           }
         },
         "type": "object",
@@ -5310,16 +5322,10 @@
             ],
             "title": "Birth Year"
           },
-          "parent_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Id"
+          "is_child": {
+            "type": "boolean",
+            "title": "Is Child",
+            "default": false
           },
           "max_certificate": {
             "anyOf": [
@@ -5520,47 +5526,6 @@
           "refreshing"
         ],
         "title": "PersonaOut"
-      },
-      "PinCheck": {
-        "properties": {
-          "pin": {
-            "type": "string",
-            "maxLength": 8,
-            "title": "Pin"
-          }
-        },
-        "type": "object",
-        "required": [
-          "pin"
-        ],
-        "title": "PinCheck"
-      },
-      "PinStatus": {
-        "properties": {
-          "pin_set": {
-            "type": "boolean",
-            "title": "Pin Set"
-          }
-        },
-        "type": "object",
-        "required": [
-          "pin_set"
-        ],
-        "title": "PinStatus"
-      },
-      "PinUpdate": {
-        "properties": {
-          "pin": {
-            "type": "string",
-            "pattern": "^[0-9]{4,8}$",
-            "title": "Pin"
-          }
-        },
-        "type": "object",
-        "required": [
-          "pin"
-        ],
-        "title": "PinUpdate"
       },
       "PlatformCount": {
         "properties": {
@@ -6523,6 +6488,13 @@
             "type": "boolean",
             "title": "Shortlisted",
             "default": false
+          },
+          "assigned_children": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Assigned Children"
           },
           "explanation": {
             "anyOf": [

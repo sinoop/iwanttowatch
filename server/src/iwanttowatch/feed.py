@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 from iwanttowatch import imdb
 from iwanttowatch.availability import availability, watchable
 from iwanttowatch.catalog import ensure_titles, find_by_title
-from iwanttowatch.children import allowed_for, family_tagged_films
+from iwanttowatch.children import allowed_for, family_tagged_films, library_owners, refresh_limit
 from iwanttowatch.db import utcnow
 from iwanttowatch.llm import LlmError, LlmProvider, llm_order, provider_from_settings
 from iwanttowatch.models import (
@@ -126,7 +126,7 @@ def user_labels(session: Session, user_id: int) -> list[Label]:
             labels.append(Label(tmdb_id, THUMB_LABELS[kind], THUMB_WEIGHT, explicit=False))
             known.add(tmdb_id)
     user = session.get(User, user_id)
-    if user is not None and user.parent_id is not None:
+    if user is not None and user.is_child:
         for tmdb_id in sorted(family_tagged_films(session)):
             if tmdb_id not in known:
                 labels.append(Label(tmdb_id, FAVOURITE_LABEL, FAVOURITE_WEIGHT, explicit=False))
@@ -190,13 +190,13 @@ def _discover(region: str, language: str | None, providers: list[int]) -> dict[s
 
 def candidates(session: Session, tmdb: TmdbClient, user: User, labels: list[Label]) -> list[int]:
     """Films to score, most trustworthy sources first, without anything already seen."""
-    owner_id = user.parent_id or user.id
+    owners = library_owners(session, user)
     library = [
         i
-        for i in session.scalars(select(LibraryItem.tmdb_id).where(LibraryItem.user_id == owner_id))
+        for i in session.scalars(select(LibraryItem.tmdb_id).where(LibraryItem.user_id.in_(owners)))
         if i is not None
     ]
-    family = sorted(family_tagged_films(session)) if user.parent_id is not None else []
+    family = sorted(family_tagged_films(session)) if user.is_child else []
     rated = {label.tmdb_id for label in labels if label.explicit}
     languages = list(
         dict.fromkeys(
@@ -265,7 +265,13 @@ def ai_review(
         session.execute(delete(AiPick).where(AiPick.user_id == user.id))
         return
     playable = _playable(session, user, [s.tmdb_id for s in scored])
-    top = sorted(scored, key=lambda s: s.tmdb_id not in playable)[:REVIEW_FILMS]
+    top = sorted(
+        scored,
+        key=lambda s: (
+            not allowed_for(titles[s.tmdb_id], user.region, user.allowed_certificates),
+            s.tmdb_id not in playable,
+        ),
+    )[:REVIEW_FILMS]
     try:
         review = review_films(session, user.id, llm, [titles[s.tmdb_id] for s in top])
     except LlmError:
@@ -308,7 +314,13 @@ def tag_feed_moods(
     """Have the LLM pick moods for the untagged films nearest the top of the feed,
     playable films first, in one call. Moods are kept per film, so each is tagged once."""
     playable = _playable(session, user, [s.tmdb_id for s in scored])
-    order = sorted(scored, key=lambda s: s.tmdb_id not in playable)
+    order = sorted(
+        scored,
+        key=lambda s: (
+            not allowed_for(titles[s.tmdb_id], user.region, user.allowed_certificates),
+            s.tmdb_id not in playable,
+        ),
+    )
     untagged = [titles[s.tmdb_id] for s in order if titles[s.tmdb_id].ai_moods is None]
     llm = provider_from_settings(session, "moods")
     if not untagged or llm is None:
@@ -379,11 +391,11 @@ def films_for_request(llm: LlmProvider, request: str, films: Sequence[Title]) ->
 
 def _playable(session: Session, user: User, ids: list[int]) -> set[int]:
     """The films the user can play now: on their Jellyfin server or their services."""
-    owner_id = user.parent_id or user.id
+    owners = library_owners(session, user)
     library = set(
         session.scalars(
             select(LibraryItem.tmdb_id).where(
-                LibraryItem.user_id == owner_id, LibraryItem.tmdb_id.in_(ids)
+                LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id.in_(ids)
             )
         )
     )
@@ -433,6 +445,8 @@ def build_feed(engine: Engine, tmdb_base_url: str, data_dir: Path, user_id: int)
             session.commit()
             return
         try:
+            if user.is_child and refresh_limit(user, tmdb):
+                session.commit()
             step("Finding films")
             labels = user_labels(session, user_id)
             exclude = seen(session, user_id)
@@ -451,18 +465,14 @@ def build_feed(engine: Engine, tmdb_base_url: str, data_dir: Path, user_id: int)
             step(f"Reading details of {len(ids)} films")
             titles = ensure_titles(session, tmdb, [*(label.tmdb_id for label in labels), *ids])
             session.commit()
-            ids = [
-                i
-                for i in ids
-                if i in titles and allowed_for(titles[i], user.region, user.allowed_certificates)
-            ]
+            ids = [i for i in ids if i in titles]
             if imdb.enabled(session):
                 step("Reading IMDb ratings")
                 imdb.update_ratings(session, data_dir)
             step("Checking where they stream")
             availability(session, tmdb, ids, user.region)
             step("Matching them to your taste")
-            family = family_tagged_films(session) if user.parent_id is not None else set()
+            family = family_tagged_films(session) if user.is_child else set()
 
             def rank(ids: list[int]) -> Sequence[Scored]:
                 picks = stored_picks(session, user_id)
@@ -472,7 +482,7 @@ def build_feed(engine: Engine, tmdb_base_url: str, data_dir: Path, user_id: int)
                     ids,
                     user.birth_year,
                     ai_percentiles(session, user_id, picks),
-                    child=user.parent_id is not None,
+                    child=user.is_child,
                     family_picks=family,
                 )
                 _store(session, user_id, scored, picks)
@@ -492,10 +502,7 @@ def build_feed(engine: Engine, tmdb_base_url: str, data_dir: Path, user_id: int)
                 new = [
                     i
                     for i in stored_picks(session, user_id)
-                    if i not in ids
-                    and i not in exclude
-                    and i in titles
-                    and allowed_for(titles[i], user.region, user.allowed_certificates)
+                    if i not in ids and i not in exclude and i in titles
                 ]
                 availability(session, tmdb, new, user.region)
                 ids = [*ids, *new]
@@ -527,7 +534,7 @@ def rescore_feed(engine: Engine, user_id: int) -> None:
 
 def feed_films(session: Session, user: User) -> list[int]:
     """The films a rescore scores: the feed's, a child's family picks, and the shortlist."""
-    family = family_tagged_films(session) if user.parent_id is not None else set()
+    family = family_tagged_films(session) if user.is_child else set()
     return list(
         dict.fromkeys(
             [
@@ -542,26 +549,22 @@ def feed_films(session: Session, user: User) -> list[int]:
 
 
 def score_films(session: Session, user: User, ids: list[int]) -> list[Scored]:
-    """Score films the user hasn't seen, and is allowed to, as a rescore does. Scores
-    depend on the films scored together, so score feed_films to match the feed."""
-    family = family_tagged_films(session) if user.parent_id is not None else set()
+    """Score films the user hasn't seen as a rescore does. Scores depend on the films
+    scored together, so score feed_films to match the feed."""
+    family = family_tagged_films(session) if user.is_child else set()
     labels = user_labels(session, user.id)
     exclude = seen(session, user.id)
     ids = [i for i in ids if i not in exclude]
     wanted = {*ids, *(label.tmdb_id for label in labels)}
     titles = {t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(wanted)))}
-    ids = [
-        i
-        for i in ids
-        if i in titles and allowed_for(titles[i], user.region, user.allowed_certificates)
-    ]
+    ids = [i for i in ids if i in titles]
     return score(
         titles,
         labels,
         ids,
         user.birth_year,
         ai_percentiles(session, user.id, stored_picks(session, user.id)),
-        child=user.parent_id is not None,
+        child=user.is_child,
         family_picks=family,
     )
 

@@ -12,7 +12,6 @@ export function FilmSearch({
   placeholder,
   label,
   prompt,
-  maxCertificate,
   onPick,
   autoFocus = false,
 }: {
@@ -20,8 +19,6 @@ export function FilmSearch({
   label: string
   // Shown above the results, such as "Pick the film to rate".
   prompt: string
-  // Child profiles only find films within this certificate.
-  maxCertificate: string | null
   onPick: (tmdbId: number) => void
   autoFocus?: boolean
 }) {
@@ -64,11 +61,7 @@ export function FilmSearch({
         <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
           <div className="mb-2 flex items-center justify-between gap-3 text-sm">
             <span className="text-white/60">
-              {search.data.length
-                ? prompt
-                : maxCertificate
-                  ? `No films found rated ${maxCertificate} or below. Films above this profile’s age limit don’t show up.`
-                  : 'No films found.'}
+              {search.data.length ? prompt : 'No films found.'}
             </span>
             <Button variant="ghost" className="px-2 py-1" onClick={() => search.reset()}>
               Clear
@@ -98,7 +91,7 @@ export function FilmSearch({
 }
 
 /** The header's search: find any film and see how well it suits you. */
-export default function HeaderSearch({ maxCertificate }: { maxCertificate: string | null }) {
+export default function HeaderSearch() {
   const settings = useServerSettings()
   const dialog = useRef<HTMLDialogElement>(null)
   const [open, setOpen] = useState<number | null>(null)
@@ -130,7 +123,6 @@ export default function HeaderSearch({ maxCertificate }: { maxCertificate: strin
           placeholder="Film title…"
           label="Search for a film"
           prompt="Pick a film to see your match"
-          maxCertificate={maxCertificate}
           autoFocus
           onPick={(tmdbId) => {
             dialog.current?.close()

@@ -398,6 +398,9 @@ def test_the_shortlist_keeps_films_with_their_match_until_they_are_watched(
     assert client.put("/api/v1/titles/401/shortlist").status_code == 204  # idempotent
     everything = {i["tmdb_id"]: i for i in feed(client, available_only=False)["items"]}
     assert everything[401]["shortlisted"] and not everything[201]["shortlisted"]
+    without_saved = feed(client, hide_shortlisted=True, available_only=False)
+    assert 401 not in {i["tmdb_id"] for i in without_saved["items"]}
+    assert without_saved["shortlist_count"] == 1
     saved = feed(client, shortlist=True, available_only=False)
     assert [i["tmdb_id"] for i in saved["items"]] == [401] and saved["shortlist_count"] == 1
     assert saved["items"][0]["match"] == everything[401]["match"]
@@ -460,3 +463,33 @@ def test_any_film_gets_a_match_like_the_feeds_and_seen_films_show_the_rating(
     assert imported["seen"] == {"rating": 10.0, "reaction": None}
     client.put("/api/v1/titles/401/feedback", json={"kind": "seen"})
     assert client.get("/api/v1/titles/401").json()["seen"] == {"rating": None, "reaction": None}
+
+
+def test_feed_can_be_ordered_by_rating_year_or_runtime(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtimes = {201: 135, 301: 160, 302: 110, 401: 156}
+    ratings = {201: 8.6, 301: 8.3, 302: 6.5, 401: 8.1, 402: 6.2}
+
+    def details(tmdb_id: int) -> dict[str, Any]:
+        d = base_details(tmdb_id)
+        if tmdb_id in runtimes:
+            d["runtime"] = runtimes[tmdb_id]
+        if tmdb_id in ratings:
+            d["vote_average"] = ratings[tmdb_id]
+        return d
+
+    monkeypatch.setattr(test_imports, "_details", details)
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    client.put("/api/v1/titles/101/reaction", json={"reaction": "loved"})
+    feed(client)
+    idle(client)
+
+    def order(sort: str) -> list[int]:
+        return [i["tmdb_id"] for i in feed(client, available_only=False, sort=sort)["items"]]
+
+    assert order("rating") == [201, 301, 401, 302, 402]
+    assert order("newest") == [201, 402, 401, 301, 302]
+    assert order("oldest") == [302, 301, 401, 402, 201]
+    # 402 has no runtime, so it goes last when sorting shortest first.
+    assert order("shortest") == [302, 201, 401, 301, 402]

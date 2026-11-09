@@ -722,32 +722,27 @@ function InviteRow({ invite }: { invite: InviteOut }) {
   )
 }
 
+const CURRENT_YEAR = new Date().getFullYear()
+
 function ChildProfiles({ me }: { me: Me }) {
   const queryClient = useQueryClient()
-  const certificates = useQuery({
-    queryKey: ['certificates', me.region],
-    queryFn: async () => (await api.GET('/api/v1/certificates')).data ?? [],
-  })
   const children = useQuery({
     queryKey: ['children'],
     queryFn: async () => (await api.GET('/api/v1/children')).data ?? [],
   })
-  const pin = useQuery({
-    queryKey: ['parent-pin'],
-    queryFn: async () => (await api.GET('/api/v1/me/parent-pin')).data,
-  })
-  const pinSet = pin.data?.pin_set ?? false
+  const currentYear = CURRENT_YEAR
   const [name, setName] = useState('')
-  const [cert, setCert] = useState('')
-  const selectedCert = cert || certificates.data?.[0]?.code || ''
+  const [birthYear, setBirthYear] = useState(String(currentYear - 8))
 
   const refresh = () => {
     for (const key of ['children', 'together']) queryClient.invalidateQueries({ queryKey: [key] })
   }
+  const parsedYear = Number(birthYear)
+  const validYear = Number.isInteger(parsedYear) && parsedYear >= 1900 && parsedYear <= currentYear
   const create = useMutation({
     mutationFn: async () => {
       const { data, error } = await api.POST('/api/v1/children', {
-        body: { name: name.trim(), max_certificate: selectedCert },
+        body: { name: name.trim(), birth_year: parsedYear },
       })
       if (error) throw new Error(errorMessage(error))
       return data
@@ -759,23 +754,22 @@ function ChildProfiles({ me }: { me: Me }) {
   })
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (name.trim() && selectedCert) create.mutate()
+    if (name.trim() && validYear) create.mutate()
   }
-  const options = certificates.data ?? []
 
   return (
     <section className="mt-6 max-w-xl rounded-xl border border-white/10 p-5">
       <h2 className="font-semibold">Child profiles</h2>
       <p className="mt-2 text-sm text-white/60">
-        Create a profile for each child with a maximum film certificate for {me.region}. Films above
-        their certificate or without one never appear in their feed or in any Watch together group
-        that includes them, and kids can’t see other people’s ratings.
+        Create a household profile for each child with their birth year. Their birth year sets the
+        default certificate filter for {me.region} on Discover (and in Watch together groups that
+        include them), and any adult in the household can switch to a child profile or assign
+        films to them.
       </p>
-      <ParentPin pinSet={pinSet} />
       {children.data && children.data.length > 0 && (
         <ul className="mt-4 divide-y divide-white/10 border-y border-white/10">
           {children.data.map((child) => (
-            <ChildRow key={child.id} child={child} options={options} pinSet={pinSet} onChanged={refresh} />
+            <ChildRow key={child.id} child={child} currentYear={currentYear} onChanged={refresh} />
           ))}
         </ul>
       )}
@@ -790,22 +784,18 @@ function ChildProfiles({ me }: { me: Me }) {
             placeholder="e.g. Kabir"
           />
         </div>
-        <label className="block">
-          <span className="mb-1.5 block text-sm text-white/80">Max certificate</span>
-          <select
-            aria-label="Maximum certificate"
-            value={selectedCert}
-            onChange={(e) => setCert(e.target.value)}
-            className="rounded-lg border border-white/10 bg-[#11141b] px-3 py-2 text-sm text-white outline-none focus:border-accent"
-          >
-            {options.map((opt) => (
-              <option key={opt.code} value={opt.code}>
-                {opt.code} — {opt.meaning}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Button type="submit" disabled={create.isPending || !name.trim() || !selectedCert}>
+        <div className="w-32">
+          <Field
+            label="Birth year"
+            type="number"
+            min={1900}
+            max={currentYear}
+            value={birthYear}
+            onChange={(e) => setBirthYear(e.target.value)}
+            required
+          />
+        </div>
+        <Button type="submit" disabled={create.isPending || !name.trim() || !validYear}>
           {create.isPending ? 'Adding…' : 'Add child'}
         </Button>
       </form>
@@ -818,78 +808,22 @@ function ChildProfiles({ me }: { me: Me }) {
   )
 }
 
-function ParentPin({ pinSet }: { pinSet: boolean }) {
-  const queryClient = useQueryClient()
-  const [pin, setPin] = useState('')
-  const save = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await api.PUT('/api/v1/me/parent-pin', { body: { pin } })
-      if (error) throw new Error(errorMessage(error))
-      return data
-    },
-    onSuccess: (data) => {
-      setPin('')
-      queryClient.setQueryData(['parent-pin'], data)
-    },
-  })
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    if (/^\d{4,8}$/.test(pin)) save.mutate()
-  }
-
-  return (
-    <form onSubmit={submit} className="mt-4 flex flex-wrap items-end gap-3">
-      <div className="w-44">
-        <Field
-          label={pinSet ? 'Change parent PIN' : 'Parent PIN'}
-          type="password"
-          inputMode="numeric"
-          autoComplete="new-password"
-          maxLength={8}
-          value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-          placeholder="4 to 8 digits"
-        />
-      </div>
-      <Button type="submit" variant="ghost" className="border border-white/10" disabled={!/^\d{4,8}$/.test(pin) || save.isPending}>
-        {pinSet ? 'Change PIN' : 'Set PIN'}
-      </Button>
-      <p className="basis-full text-xs text-white/50">
-        {pinSet
-          ? 'Leaving a child profile asks for this PIN.'
-          : 'Set a PIN before switching to a child profile. Leaving it asks for the PIN, so kids can’t switch back to your account.'}
-      </p>
-      {save.isSuccess && (
-        <p role="status" className="basis-full text-sm text-emerald-300">
-          PIN saved.
-        </p>
-      )}
-      {save.error && (
-        <div className="basis-full">
-          <ErrorText>{save.error.message}</ErrorText>
-        </div>
-      )}
-    </form>
-  )
-}
-
 function ChildRow({
   child,
-  options,
-  pinSet,
+  currentYear,
   onChanged,
 }: {
   child: ChildProfile
-  options: { code: string; meaning: string }[]
-  pinSet: boolean
+  currentYear: number
   onChanged: () => void
 }) {
   const queryClient = useQueryClient()
+  const [birthYear, setBirthYear] = useState(String(child.birth_year))
   const update = useMutation({
-    mutationFn: async (max_certificate: string) => {
+    mutationFn: async (birth_year: number) => {
       const { data, error } = await api.PUT('/api/v1/children/{child_id}', {
         params: { path: { child_id: child.id } },
-        body: { name: child.name, max_certificate },
+        body: { name: child.name, birth_year },
       })
       if (error) throw new Error(errorMessage(error))
       return data
@@ -910,30 +844,43 @@ function ChildRow({
     mutationFn: () => api.DELETE('/api/v1/children/{child_id}', { params: { path: { child_id: child.id } } }),
     onSuccess: onChanged,
   })
+  const saveYear = (value: string) => {
+    setBirthYear(value)
+    const parsed = Number(value)
+    if (Number.isInteger(parsed) && parsed >= 1900 && parsed <= currentYear && parsed !== child.birth_year) {
+      update.mutate(parsed)
+    }
+  }
 
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
-      <span className="font-medium">{child.name}</span>
+      <div className="flex items-center gap-2">
+        <span className="font-medium">{child.name}</span>
+        {child.max_certificate && (
+          <span className="rounded bg-accent/15 px-1.5 py-0.5 text-xs font-medium text-accent-strong">
+            {child.max_certificate}
+          </span>
+        )}
+      </div>
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          aria-label={`Maximum certificate for ${child.name}`}
-          value={child.max_certificate}
-          onChange={(e) => update.mutate(e.target.value)}
-          disabled={update.isPending}
-          className="rounded-lg border border-white/10 bg-[#11141b] px-2.5 py-1.5 text-xs text-white outline-none focus:border-accent"
-        >
-          {options.map((opt) => (
-            <option key={opt.code} value={opt.code}>
-              {opt.code}
-            </option>
-          ))}
-        </select>
+        <label className="flex items-center gap-1.5 text-xs text-white/60">
+          <span>Born</span>
+          <input
+            type="number"
+            aria-label={`Birth year for ${child.name}`}
+            min={1900}
+            max={currentYear}
+            value={birthYear}
+            onChange={(e) => saveYear(e.target.value)}
+            disabled={update.isPending}
+            className="w-20 rounded-lg border border-white/10 bg-[#11141b] px-2 py-1 text-xs text-white outline-none focus:border-accent"
+          />
+        </label>
         <Button
           variant="ghost"
           className="border border-white/10 px-2.5 py-1 text-xs"
           onClick={() => switchTo.mutate()}
-          disabled={!pinSet || switchTo.isPending}
-          title={pinSet ? undefined : 'Set a parent PIN first'}
+          disabled={switchTo.isPending}
         >
           Switch
         </Button>

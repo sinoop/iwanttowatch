@@ -182,12 +182,6 @@ def test_the_group_shortlist_is_shared_and_shows_who_added_each_film(
         session.add(UserTitle(user_id=2, tmdb_id=402, source="app", watched=True))
         session.commit()
     assert [i["tmdb_id"] for i in picks(client, shortlist=True, **both)] == [401]
-    # A child can't take off a film a grown-up saved.
-    child = client.post("/api/v1/children", json={"name": "Kabir", "max_certificate": "U/A 13+"})
-    client.put("/api/v1/me/parent-pin", json={"pin": "2468"})
-    client.post(f"/api/v1/children/{child.json()['id']}/switch")
-    assert client.delete("/api/v1/together/shortlist/401").status_code == 403
-    client.post("/api/v1/children/exit", json={"pin": "2468"})
     assert client.delete("/api/v1/together/shortlist/401").status_code == 204
     assert picks(client, shortlist=True, **both) == []
 

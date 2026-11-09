@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import UTC, date, datetime
 from typing import Annotated, Literal, cast
 
@@ -19,7 +19,12 @@ from iwanttowatch.api.streaming import (
     title_availability,
 )
 from iwanttowatch.availability import availability
-from iwanttowatch.children import allowed_for, ensure_themes_note_quietly, generate_themes_note
+from iwanttowatch.children import (
+    allowed_for,
+    ensure_themes_note_quietly,
+    generate_themes_note,
+    library_owners,
+)
 from iwanttowatch.db import utcnow
 from iwanttowatch.feed import (
     ASK_FILMS,
@@ -55,6 +60,7 @@ from iwanttowatch.taste import effective_ratings, explain_match
 router = APIRouter(prefix="/api/v1")
 
 FeedStatus = Literal["none", "queued", "building", "ready", "failed"]
+FeedSort = Literal["match", "rating", "newest", "oldest", "shortest"]
 # "seen" marks the film watched (without a rating); the others are Feedback kinds.
 FeedbackKind = Literal["up", "down", "dismissed", "snoozed", "seen"]
 
@@ -78,6 +84,8 @@ class FeedItem(BaseModel):
     # The user asked for more like this.
     thumbs_up: bool
     shortlisted: bool
+    # Child profile IDs that have this film on their shortlist.
+    assigned_children: list[int] = Field(default_factory=list)
     imdb: ImdbScore | None
 
 
@@ -100,6 +108,25 @@ class FeedPage(BaseModel):
     shortlist_count: int
 
 
+def _sort_key(sort: FeedSort, rec: Recommendation, title: Title) -> tuple[float | int, ...]:
+    if sort == "rating":
+        public = (
+            title.imdb_rating
+            if title.imdb_rating is not None and title.imdb_votes
+            else (title.vote_average or 0.0)
+        )
+        return (-public, rec.rank)
+    if sort == "newest":
+        day = title.release_date.toordinal() if title.release_date else 0
+        return (-(title.year or 0), -day, rec.rank)
+    if sort == "oldest":
+        day = title.release_date.toordinal() if title.release_date else 0
+        return (1 if title.year is None else 0, title.year or 0, day, rec.rank)
+    if sort == "shortest":
+        return (1 if not title.runtime else 0, title.runtime or 0, rec.rank)
+    return (rec.rank,)
+
+
 @router.get("/feed")
 def read_feed(
     user: CurrentUser,
@@ -112,6 +139,11 @@ def read_feed(
     genre: str | None = None,
     # Only the user's shortlist, which may hold films the feed would hide.
     shortlist: bool = False,
+    # Hide films the user has already shortlisted, to browse fresh picks.
+    hide_shortlisted: bool = False,
+    # On a child profile, keep only films within their birth-year certificate limit.
+    age_limit: bool = True,
+    sort: FeedSort = "match",
     # Only these films, such as the AI's picks for a request.
     only: Annotated[list[int], Query(max_length=ASK_PICKS)] = [],  # noqa: B006
     offset: int = Query(0, ge=0),
@@ -139,11 +171,11 @@ def read_feed(
             select(Feedback.tmdb_id).where(Feedback.user_id == user.id, Feedback.kind == "up")
         )
     )
-    owner_id = user.parent_id or user.id
+    owners = library_owners(session, user)
     library = set(
         session.scalars(
             select(LibraryItem.tmdb_id).where(
-                LibraryItem.user_id == owner_id, LibraryItem.tmdb_id.in_(ids)
+                LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id.in_(ids)
             )
         )
     )
@@ -155,15 +187,29 @@ def read_feed(
             )
         )
     }
+    assigned: dict[int, list[int]] = defaultdict(list)
+    for tmdb_id, child_id in session.execute(
+        select(ShortlistItem.tmdb_id, ShortlistItem.user_id)
+        .join(User, User.id == ShortlistItem.user_id)
+        .where(User.is_child.is_(True), ShortlistItem.tmdb_id.in_(ids))
+        .order_by(ShortlistItem.user_id)
+    ):
+        assigned[tmdb_id].append(child_id)
     listed = []
     shortlist_count = 0
     for rec, title in rows:
-        if title.tmdb_id in exclude or not allowed_for(
-            title, user.region, user.allowed_certificates
+        if title.tmdb_id in exclude or (
+            age_limit
+            and title.tmdb_id not in saved
+            and not allowed_for(title, user.region, user.allowed_certificates)
         ):
             continue
         shortlist_count += title.tmdb_id in saved
-        if (shortlist and title.tmdb_id not in saved) or (only and title.tmdb_id not in only):
+        if (
+            (shortlist and title.tmdb_id not in saved)
+            or (hide_shortlisted and not shortlist and title.tmdb_id in saved)
+            or (only and title.tmdb_id not in only)
+        ):
             continue
         where = title_availability(
             title.tmdb_id, offers.get(title.tmdb_id), title.tmdb_id in library, user.subscriptions
@@ -178,6 +224,8 @@ def read_feed(
         if (language is None or title.original_language == language)
         and (genre is None or genre in title.genres)
     ]
+    if sort != "match":
+        matching.sort(key=lambda item: _sort_key(sort, item[0], item[1]))
     return FeedPage(
         status=cast(FeedStatus, state.status) if state and state.status else "none",
         step=state.step if state else None,
@@ -202,6 +250,7 @@ def read_feed(
                 availability=where,
                 thumbs_up=title.tmdb_id in thumbs_up,
                 shortlisted=title.tmdb_id in saved,
+                assigned_children=assigned[title.tmdb_id],
                 imdb=imdb_score(title),
             )
             for rec, title, where in matching[offset : offset + limit]
@@ -242,6 +291,8 @@ def ask_feed(
     language: str | None = None,
     genre: str | None = None,
     shortlist: bool = False,
+    hide_shortlisted: bool = False,
+    age_limit: bool = True,
 ) -> AskAnswer:
     """Ask the configured LLM which films near the top of the feed, with the same
     filters, fit a request such as "a light Malayalam comedy under 2 hours"."""
@@ -249,9 +300,21 @@ def ask_feed(
     if llm is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Connect Ollama or Gemini in Settings first")
     page = read_feed(
-        user, session, request, available_only, platforms, language, genre, shortlist,
-        only=[], offset=0, limit=ASK_FILMS,
-    )  # fmt: skip
+        user,
+        session,
+        request,
+        available_only,
+        platforms,
+        language,
+        genre,
+        shortlist,
+        hide_shortlisted,
+        age_limit,
+        sort="match",
+        only=[],
+        offset=0,
+        limit=ASK_FILMS,
+    )
     if not page.items:
         return AskAnswer(picks=[], considered=0)
     found = session.scalars(select(Title).where(Title.tmdb_id.in_(i.tmdb_id for i in page.items)))
@@ -289,11 +352,7 @@ def give_feedback(
 ) -> FeedbackOut:
     """Thumbs up or down, not interested, not now (for 30 days), or seen it. Only the
     latest applies; the feed is rescored shortly after."""
-    title = load_title(session, request, tmdb_id)
-    if not allowed_for(title, user.region, user.allowed_certificates):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "This film is above this profile's age limit"
-        )
+    load_title(session, request, tmdb_id)
     entry = session.get(Feedback, (user.id, tmdb_id))
     until = None
     if body.kind == "seen":
@@ -350,11 +409,7 @@ def add_to_shortlist(
     tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
 ) -> Response:
     """Save a film to choose from later; it stays in the feed with its match."""
-    title = load_title(session, request, tmdb_id)
-    if not allowed_for(title, user.region, user.allowed_certificates):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "This film is above this profile's age limit"
-        )
+    load_title(session, request, tmdb_id)
     # Look up where it streams before writing: the lookup caches on its own connection.
     availability(session, tmdb, [tmdb_id], user.region)
     if session.get(ShortlistItem, (user.id, tmdb_id)) is None:
@@ -410,17 +465,27 @@ class TitleDetail(BaseModel):
     # Optional AI-written note on the film's themes and values for parents.
     themes_note: str | None = None
     shortlisted: bool = False
+    # Child profile IDs that have this film on their shortlist.
+    assigned_children: list[int] = Field(default_factory=list)
     # The AI's answer to "Why this?", once the user has asked.
     explanation: str | None = None
 
 
 def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> TitleDetail:
-    owner_id = user.parent_id or user.id
+    owners = library_owners(session, user)
     offers = availability(session, tmdb, [title.tmdb_id], user.region).get(title.tmdb_id)
     rec = session.get(Recommendation, (user.id, title.tmdb_id))
     item_id = session.scalar(
         select(LibraryItem.item_id).where(
-            LibraryItem.user_id == owner_id, LibraryItem.tmdb_id == title.tmdb_id
+            LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id == title.tmdb_id
+        )
+    )
+    assigned = list(
+        session.scalars(
+            select(ShortlistItem.user_id)
+            .join(User, User.id == ShortlistItem.user_id)
+            .where(User.is_child.is_(True), ShortlistItem.tmdb_id == title.tmdb_id)
+            .order_by(ShortlistItem.user_id)
         )
     )
     jellyfin = get_setting(session, JELLYFIN_URL_SETTING)
@@ -473,6 +538,7 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
         imdb=imdb_score(title),
         themes_note=title.themes_note,
         shortlisted=session.get(ShortlistItem, (user.id, title.tmdb_id)) is not None,
+        assigned_children=assigned,
         explanation=explained.text
         if (explained := session.get(Explanation, (user.id, title.tmdb_id)))
         else None,
@@ -484,11 +550,7 @@ def read_title(
     tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
 ) -> TitleDetail:
     title = load_title(session, request, tmdb_id)
-    if not allowed_for(title, user.region, user.allowed_certificates):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "This film is above this profile's age limit"
-        )
-    if user.parent_id is not None:
+    if user.is_child:
         ensure_themes_note_quietly(session, title, user.id)
     return _title_detail(session, user, tmdb, title)
 
@@ -499,10 +561,6 @@ def write_title_themes(
 ) -> TitleDetail:
     """Ask the configured LLM to write a 'themes and values' note for this film."""
     title = load_title(session, request, tmdb_id)
-    if not allowed_for(title, user.region, user.allowed_certificates):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "This film is above this profile's age limit"
-        )
     llm = provider_from_settings(session, "themes", user.id)
     if llm is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Connect Ollama or Gemini in Settings first")
@@ -519,10 +577,6 @@ def explain_title(
 ) -> TitleDetail:
     """Ask the configured LLM how well this film fits the user's taste; asked once."""
     title = load_title(session, request, tmdb_id)
-    if not allowed_for(title, user.region, user.allowed_certificates):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "This film is above this profile's age limit"
-        )
     llm = provider_from_settings(session, "why", user.id)
     if llm is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Connect Ollama or Gemini in Settings first")

@@ -29,6 +29,34 @@ export function useShortlist() {
   })
 }
 
+/** The household's child profiles. */
+export function useChildren(enabled = true) {
+  return useQuery({
+    queryKey: ['children'],
+    queryFn: async () => (await api.GET('/api/v1/children')).data ?? [],
+    enabled,
+  })
+}
+
+/** Assign a film to a child profile's shortlist, or take it off. */
+export function useAssignToChild() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ childId, tmdbId, save }: { childId: number; tmdbId: number; save: boolean }) => {
+      const params = { params: { path: { child_id: childId, tmdb_id: tmdbId } } }
+      const { error } = save
+        ? await api.PUT('/api/v1/children/{child_id}/shortlist/{tmdb_id}', params)
+        : await api.DELETE('/api/v1/children/{child_id}/shortlist/{tmdb_id}', params)
+      if (error) throw new Error(errorMessage(error))
+    },
+    onSettled: (_, __, { tmdbId }) => {
+      queryClient.invalidateQueries({ queryKey: ['feed'] })
+      queryClient.invalidateQueries({ queryKey: ['together', 'picks'] })
+      queryClient.invalidateQueries({ queryKey: ['title', tmdbId] })
+    },
+  })
+}
+
 export function useServerSettings() {
   return useQuery({
     queryKey: ['settings'],

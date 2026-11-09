@@ -51,7 +51,7 @@ function Main() {
           <Route index element={<Discover me={me.data} />} />
           <Route path="together" element={<Together me={me.data} />} />
           <Route path="taste" element={<Taste me={me.data} />} />
-          {me.data.parent_id === null && (
+          {!me.data.is_child && (
             <>
               <Route path="taste/imports/:jobId" element={<Review />} />
               <Route path="settings" element={<Settings me={me.data} />} />

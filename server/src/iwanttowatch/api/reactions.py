@@ -10,7 +10,6 @@ from sqlalchemy import select
 
 from iwanttowatch.api.deps import CurrentUser, DbSession
 from iwanttowatch.catalog import ensure_title
-from iwanttowatch.children import allowed_for
 from iwanttowatch.models import Title, User, UserTitle
 from iwanttowatch.tags import BY_ID, MAX_NOTE, MAX_TAGS, Group, options_for
 from iwanttowatch.taste import refresh_reaction_ratings
@@ -107,10 +106,6 @@ def read_reaction(
     tmdb_id: int, user: CurrentUser, session: DbSession, request: Request
 ) -> TitleReaction:
     title = load_title(session, request, tmdb_id)
-    if not allowed_for(title, user.region, user.allowed_certificates):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "This film is above this profile's age limit"
-        )
     return _out(title, _entry(session, user.id, tmdb_id))
 
 
@@ -119,10 +114,6 @@ def set_reaction(
     tmdb_id: int, body: ReactionUpdate, user: CurrentUser, session: DbSession, request: Request
 ) -> TitleReaction:
     title = load_title(session, request, tmdb_id)
-    if not allowed_for(title, user.region, user.allowed_certificates):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "This film is above this profile's age limit"
-        )
     positive = body.reaction != "disliked"
     tags = list(dict.fromkeys(body.tags))
     for tag in tags:
@@ -145,8 +136,8 @@ def set_reaction(
     session.commit()
     worker = request.app.state.feed_worker
     worker.rescore_soon(user.id)
-    if user.parent_id is None:
-        for child_id in session.scalars(select(User.id).where(User.parent_id.is_not(None))):
+    if not user.is_child:
+        for child_id in session.scalars(select(User.id).where(User.is_child.is_(True))):
             worker.rescore_soon(child_id)
     return _out(title, entry)
 
@@ -161,7 +152,7 @@ def clear_reaction(
         session.commit()
         worker = request.app.state.feed_worker
         worker.rescore_soon(user.id)
-        if user.parent_id is None:
-            for child_id in session.scalars(select(User.id).where(User.parent_id.is_not(None))):
+        if not user.is_child:
+            for child_id in session.scalars(select(User.id).where(User.is_child.is_(True))):
                 worker.rescore_soon(child_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -6,8 +6,7 @@ from sqlalchemy import func, select
 
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.imports import Candidate
-from iwanttowatch.catalog import ensure_titles, search_movies
-from iwanttowatch.children import allowed_for
+from iwanttowatch.catalog import search_movies
 from iwanttowatch.llm import LlmError, llm_order, provider_from_settings
 from iwanttowatch.models import Persona, Title, UserTitle
 from iwanttowatch.taste import (
@@ -19,8 +18,6 @@ from iwanttowatch.taste import (
 )
 
 router = APIRouter(prefix="/api/v1")
-# Child searches read each result's certificates, which can mean a TMDb request per film.
-SEARCH_RESULTS_FOR_CHILDREN = 10
 
 
 class RatedTitle(BaseModel):
@@ -104,25 +101,12 @@ def list_ratings(
 
 @router.get("/catalog/search")
 def search_catalog(
-    user: CurrentUser,
-    session: DbSession,
+    _user: CurrentUser,
     tmdb: Tmdb,
     query: str = Query(min_length=1),
     year: int | None = None,
 ) -> list[Candidate]:
-    results = search_movies(tmdb, query, year)
-    if user.allowed_certificates is not None:
-        # Child profiles only find films within their age limit, the first page's worth.
-        results = results[:SEARCH_RESULTS_FOR_CHILDREN]
-        titles = ensure_titles(session, tmdb, [c["tmdb_id"] for c in results])
-        session.commit()
-        results = [
-            c
-            for c in results
-            if c["tmdb_id"] in titles
-            and allowed_for(titles[c["tmdb_id"]], user.region, user.allowed_certificates)
-        ]
-    return [Candidate(**c) for c in results]
+    return [Candidate(**c) for c in search_movies(tmdb, query, year)]
 
 
 class PersonaOut(BaseModel):
