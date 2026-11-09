@@ -320,15 +320,44 @@ function WhereToWatch({ film }: { film: TitleDetail }) {
 }
 
 export function MatchBadge({ match, className = '' }: { match: number; className?: string }) {
-  const tone =
-    match >= 80
-      ? 'bg-accent text-black'
-      : match >= 60
-        ? 'bg-accent/25 text-accent-strong'
-        : 'bg-white/15 text-white/80'
+  const clamped = Math.max(0, Math.min(100, match))
+  const arcColor =
+    match >= 80 ? 'text-emerald-400' : match >= 60 ? 'text-accent' : 'text-white/55'
   return (
-    <span className={`inline-block rounded-md px-1.5 py-0.5 text-xs font-semibold ${tone} ${className}`}>
-      {match}% match
+    <span
+      title={`${match}% match`}
+      aria-label={`${match}% match`}
+      className={`inline-grid size-10 shrink-0 place-items-center rounded-full bg-black/85 ring-1 ring-white/15 backdrop-blur-sm ${className}`}
+    >
+      <svg viewBox="0 0 36 36" className="col-start-1 row-start-1 size-full -rotate-90" aria-hidden="true">
+        <circle
+          cx="18"
+          cy="18"
+          r="14.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          className="text-white/15"
+        />
+        {clamped > 0 && (
+          <circle
+            cx="18"
+            cy="18"
+            r="14.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            pathLength={100}
+            strokeDasharray={`${clamped} 100`}
+            className={arcColor}
+          />
+        )}
+      </svg>
+      <span className="col-start-1 row-start-1 flex items-baseline text-[11px] leading-none font-bold tracking-tight text-white tabular-nums">
+        {match}
+        <span className="text-[8px] font-semibold text-white/75">%</span>
+      </span>
     </span>
   )
 }
