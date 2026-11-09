@@ -21,6 +21,7 @@ import httpx
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
+from iwanttowatch import __version__
 from iwanttowatch.catalog import LOOKUP_CACHE, ensure_title, find_by_title
 from iwanttowatch.db import utcnow
 from iwanttowatch.models import ConnectorStatus, LibraryItem, User, UserTitle, get_setting
@@ -41,7 +42,7 @@ CLIENT_FIELDS = {
     "Client": "iWantToWatch",
     "Device": "iWantToWatch server",
     "DeviceId": "iwanttowatch-server",
-    "Version": "0.1.0",
+    "Version": __version__,
 }
 
 

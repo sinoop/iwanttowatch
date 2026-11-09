@@ -354,7 +354,7 @@ Proposed 2026-11-08 from the ideas review: decide faster between films you'd wat
 ### Phase 7 — v0.1 release
 
 - [x] Multi-arch images: each push to `main` that passes CI publishes `ghcr.io/sinoop/iwanttowatch` for amd64 and arm64 (`latest` and the commit SHA). The web app is built on the runner's own platform and only the Python stage runs under QEMU. The compose file pulls the image and can still build from the checkout, so updating a Pi is `docker compose pull && docker compose up -d` (pulled forward, 2026-11-08)
-- [x] Install docs with screenshots (`docs/install.md`), release notes (`CHANGELOG.md`), and version tags: a `v*` tag publishes the image as `0.1.0` and `0.1` as well (2026-11-08)
+- [x] Install docs with screenshots (`docs/install.md`), release notes (`CHANGELOG.md`), and version tags: each merge to `main` automatically increments the patch version (unless `server/pyproject.toml` was bumped higher), creates a `vX.Y.Z` GitHub release with generated notes, stamps the version into the container, and publishes `ghcr.io/sinoop/iwanttowatch` as `latest`, the commit SHA, `X.Y.Z`, and `X.Y` (revised 2026-11-09)
 
 ### After the Web App: mobile
 
