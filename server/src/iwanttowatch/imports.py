@@ -17,7 +17,11 @@ from sqlalchemy.orm import Session
 from iwanttowatch.catalog import LOOKUP_CACHE, ensure_title, find_by_title, is_tv_show
 from iwanttowatch.db import utcnow
 from iwanttowatch.models import ImportJob, ImportRow, UserTitle
-from iwanttowatch.taste import mark_persona_stale, refresh_persona_quietly
+from iwanttowatch.taste import (
+    mark_persona_stale,
+    refresh_persona_quietly,
+    refresh_reaction_ratings,
+)
 from iwanttowatch.tmdb import TmdbAuthError, TmdbClient, TmdbError, client_from_settings
 
 log = logging.getLogger(__name__)
@@ -361,8 +365,12 @@ class ImportWorker:
                 run_job(self._engine, self._tmdb_base_url, job_id)
                 with Session(self._engine) as session:
                     job = session.get(ImportJob, job_id)
-                    if job is not None and job.status == "done" and self._on_done:
-                        self._on_done(job.user_id)
+                    if job is not None and job.status == "done":
+                        # New ratings can change the scale that reactions are read against.
+                        if refresh_reaction_ratings(session, job.user_id):
+                            session.commit()
+                        if self._on_done:
+                            self._on_done(job.user_id)
             except Exception:
                 log.exception("Import job %s crashed", job_id)
                 with Session(self._engine) as session:

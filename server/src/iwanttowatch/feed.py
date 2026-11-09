@@ -85,13 +85,24 @@ RESCORE_AFTER_SECONDS = 15.0
 
 
 def user_labels(session: Session, user_id: int) -> list[Label]:
-    """The user's ratings as percentiles, plus unrated watches as weaker labels."""
+    """The user's ratings as percentiles, plus unrated watches as weaker labels.
+
+    Imported ratings are placed among each other. An in-app reaction is placed as an
+    imported rating with the same score would be, but isn't added to the pool, so films
+    sharing a reaction don't pile up as ties and reshape the scale."""
     effective = effective_ratings(user_id)
-    ratings = {
-        tmdb_id: rating
-        for tmdb_id, rating in session.execute(select(effective.c.tmdb_id, effective.c.rating))
-    }
-    labels = [Label(tmdb_id, value) for tmdb_id, value in percentiles(ratings).items()]
+    rows = session.execute(
+        select(effective.c.tmdb_id, effective.c.rating, effective.c.reaction)
+    ).all()
+    ratings = {tmdb_id: rating for tmdb_id, rating, _ in rows}
+    numeric = {tmdb_id: rating for tmdb_id, rating, reaction in rows if reaction is None}
+    labels = [Label(tmdb_id, value) for tmdb_id, value in percentiles(numeric).items()]
+    pool = list(numeric.values())
+    labels += [
+        Label(tmdb_id, percentile_of(pool, rating))
+        for tmdb_id, rating, reaction in rows
+        if reaction is not None
+    ]
     watched = session.execute(
         select(UserTitle.tmdb_id, func.max(UserTitle.favorite))
         .where(UserTitle.user_id == user_id, UserTitle.watched)
@@ -390,9 +401,12 @@ def _playable(session: Session, user: User, ids: list[int]) -> set[int]:
 
 
 def ai_percentiles(session: Session, user_id: int, picks: dict[int, AiPick]) -> dict[int, float]:
-    """The LLM's predicted ratings as percentiles of the user's own ratings."""
+    """The LLM's predicted ratings as percentiles of the user's own imported ratings, the
+    same scale `user_labels` reads reactions against."""
     effective = effective_ratings(user_id)
-    ratings = list(session.scalars(select(effective.c.rating)))
+    ratings = list(
+        session.scalars(select(effective.c.rating).where(effective.c.reaction.is_(None)))
+    )
     return {i: percentile_of(ratings, p.rating) for i, p in picks.items() if p.rating is not None}
 
 

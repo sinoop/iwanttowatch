@@ -346,6 +346,7 @@ Proposed 2026-11-08 from the ideas review: decide faster between films you'd wat
 - [x] Server backups: SQLite's backup API copies the whole database every day and before each upgrade's migrations, into `backups/` in the data folder or `IWANTTOWATCH_BACKUP_DIR`, keeping the newest 7. Admins see them in Settings → Server backups, back up on demand, and download a copy; restoring is manual (2026-11-08)
 - [x] Film search: a search button in the header finds any film and opens its details with a match scored on request against the feed's own films, so it means the same as on Discover, without adding the film to the feed. Films the user has seen show their rating instead (2026-11-08)
 - [x] The running version in the footer, from `pyproject.toml`, linking to the releases (2026-11-08)
+- [x] Reaction scores follow the user's current scale: a reaction's 0–10 score is re-derived from their imported ratings after every reaction, import, and restore, so reactions given before an import aren't stuck on the default 3/8/9.5. The recommender places a reaction like an imported rating with the same score but leaves it out of the pool, so films sharing a reaction don't pile up as ties; the AI's predicted ratings are read against the same pool (2026-11-08)
 - [ ] UI translations, docs
 
 ### Phase 7 — v0.1 release

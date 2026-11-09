@@ -114,9 +114,10 @@ REACTION_FALLBACK = {"disliked": 3.0, "liked": 8.0, "loved": 9.5}
 MIN_RATINGS_FOR_DISTRIBUTION = 10
 
 
-def reaction_rating(session: Session, user_id: int, reaction: str) -> float:
-    """The 0–10 score a reaction stands for, given how this user rates on 1–10 scales."""
-    numeric = sorted(
+def numeric_ratings(session: Session, user_id: int) -> list[float]:
+    """The user's imported 1–10 ratings, lowest first. In-app reactions are left out so
+    they never shape the scale they are read against."""
+    return sorted(
         rating
         for rating in session.scalars(
             select(UserTitle.rating).where(
@@ -125,9 +126,31 @@ def reaction_rating(session: Session, user_id: int, reaction: str) -> float:
         )
         if rating is not None
     )
+
+
+def reaction_score(numeric: Sequence[float], reaction: str) -> float:
+    """The 0–10 score a reaction stands for, given the user's sorted numeric ratings."""
     if len(numeric) < MIN_RATINGS_FOR_DISTRIBUTION:
         return REACTION_FALLBACK[reaction]
     return float(numeric[round(REACTION_PERCENTILES[reaction] * (len(numeric) - 1))])
+
+
+def refresh_reaction_ratings(session: Session, user_id: int) -> int:
+    """Re-derive every in-app reaction's 0–10 score from the user's current numeric
+    ratings, so reactions given before an import follow the scale it reveals. The caller
+    commits. Returns how many scores changed."""
+    numeric = numeric_ratings(session, user_id)
+    changed = 0
+    for entry in session.scalars(
+        select(UserTitle).where(UserTitle.user_id == user_id, UserTitle.reaction.is_not(None))
+    ):
+        if entry.reaction not in REACTION_FALLBACK:
+            continue
+        score = reaction_score(numeric, entry.reaction)
+        if entry.rating != score:
+            entry.rating = score
+            changed += 1
+    return changed
 
 
 def rating_count(session: Session, user_id: int) -> int:

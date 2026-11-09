@@ -21,6 +21,7 @@ from iwanttowatch.catalog import ensure_titles
 from iwanttowatch.db import utcnow
 from iwanttowatch.models import Feedback, ShortlistItem, Title, UserTitle
 from iwanttowatch.tags import BY_ID, MAX_NOTE, MAX_TAGS
+from iwanttowatch.taste import refresh_reaction_ratings
 
 router = APIRouter(prefix="/api/v1/me")
 
@@ -210,6 +211,7 @@ def restore_data(
             session.merge(
                 ShortlistItem(user_id=user.id, tmdb_id=saved.tmdb_id, added_at=saved.added_at)
             )
+    refresh_reaction_ratings(session, user.id)
     user.region = data.profile.region
     user.languages = data.profile.languages
     user.subscriptions = data.profile.subscriptions

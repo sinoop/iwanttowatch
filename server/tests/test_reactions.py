@@ -2,12 +2,15 @@ from datetime import date
 from typing import Any
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from test_imports import KEY
 
+from iwanttowatch.feed import user_labels
 from iwanttowatch.models import Title, UserTitle
+from iwanttowatch.recommender import percentile_of
 from iwanttowatch.tags import TAGS
-from iwanttowatch.taste import taste_summary
+from iwanttowatch.taste import refresh_reaction_ratings, taste_summary
 
 
 def add_title(
@@ -119,3 +122,64 @@ def test_every_film_offers_the_same_core_tags_then_suggestions_that_fit_it(
 
     disliked = groups(client.get("/api/v1/titles/601/reaction").json(), "disliked_tags")
     assert "not_funny" in disliked["suggested"] and "not_scary" in disliked["more"]
+
+
+def add_imported(client: TestClient, scores: list[float], first_id: int = 100) -> None:
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        for i, score in enumerate(scores):
+            tmdb_id = first_id + i
+            session.add(
+                Title(
+                    tmdb_id=tmdb_id, title=f"T{i}", original_title=f"T{i}", original_language="en"
+                )
+            )
+            session.add(
+                UserTitle(
+                    user_id=1, tmdb_id=tmdb_id, source="imdb", rating=score,
+                    rated_at=date(2020, 1, 1),
+                )
+            )  # fmt: skip
+        session.commit()
+
+
+def test_earlier_reactions_follow_ratings_imported_afterwards(client: TestClient) -> None:
+    add_title(client, 500, ["Drama"])
+    assert react(client, 500, "liked", []).status_code == 200
+    assert client.get("/api/v1/ratings").json()["items"][0]["rating"] == 8.0  # the default
+
+    # A harsh rater: their 65th percentile is a 6, so "liked" drops from the default 8.
+    add_imported(client, [3, 4, 4, 5, 5, 6, 6, 7, 7, 8])
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        assert refresh_reaction_ratings(session, 1) == 1
+        session.commit()
+        assert refresh_reaction_ratings(session, 1) == 0  # nothing left to change
+    rated = {i["tmdb_id"]: i for i in client.get("/api/v1/ratings").json()["items"]}
+    assert rated[500]["rating"] == 6.0 and rated[500]["reaction"] == "liked"
+
+    # A more generous scale moves the same reaction up, without tapping it again.
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        for entry in session.scalars(select(UserTitle).where(UserTitle.source == "imdb")):
+            assert entry.rating is not None
+            entry.rating = entry.rating + 2
+        session.commit()
+        assert refresh_reaction_ratings(session, 1) == 1
+        session.commit()
+    rated = {i["tmdb_id"]: i for i in client.get("/api/v1/ratings").json()["items"]}
+    assert rated[500]["rating"] == 8.0
+
+
+def test_reactions_do_not_join_the_pool_they_are_scored_against(client: TestClient) -> None:
+    add_imported(client, [4, 5, 6, 6, 7, 8, 8, 9, 9, 10])
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        before = {label.tmdb_id: label.value for label in user_labels(session, 1)}
+    for tmdb_id in range(500, 520):
+        add_title(client, tmdb_id, ["Drama"])
+        assert react(client, tmdb_id, "liked", []).status_code == 200
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        after = {label.tmdb_id: label.value for label in user_labels(session, 1)}
+    # Twenty "liked" films add no ties to the imported ratings' scale...
+    assert all(after[i] == before[i] for i in before)
+    # ...and each lands where an imported 8 would.
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        eight = percentile_of([4, 5, 6, 6, 7, 8, 8, 9, 9, 10], 8.0)
+    assert all(after[i] == eight for i in range(500, 520))
