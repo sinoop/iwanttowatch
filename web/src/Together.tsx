@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { Link } from 'react-router'
 import { renderSVG } from 'uqr'
 import { api, copyToClipboard, errorMessage, facts, useChildren, watchOnQuery, type WatchOn } from './api'
-import RateDialog from './RateDialog'
 import { PlatformFilter, WatchBadges } from './Streaming'
 import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Field, Poster } from './ui'
@@ -31,7 +30,6 @@ export default function Together({ me }: { me: Me }) {
   const [watchOn, setWatchOn] = useState<WatchOn>('anywhere')
   const [shortlistOnly, setShortlistOnly] = useState(false)
   const [open, setOpen] = useState<number | null>(null)
-  const [rating, setRating] = useState<number | null>(null)
 
   const household = options.data?.household ?? []
   const guests = options.data?.guests ?? []
@@ -167,15 +165,7 @@ export default function Together({ me }: { me: Me }) {
 
       {options.data && !me.is_child && <ShareTaste share={options.data.share} />}
 
-      <TitleDialog
-        tmdbId={open}
-        onClose={() => setOpen(null)}
-        onRate={(id) => {
-          setOpen(null)
-          setRating(id)
-        }}
-      />
-      <RateDialog tmdbId={rating} onClose={() => setRating(null)} />
+      <TitleDialog tmdbId={open} onClose={() => setOpen(null)} />
     </>
   )
 }

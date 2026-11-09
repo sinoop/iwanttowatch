@@ -2,7 +2,7 @@ import type { ImportJob, Me, RatedTitle, TitleAvailability } from '@iwanttowatch
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { api, errorMessage, REACTIONS, useAvailability, useServerSettings } from './api'
+import { api, errorMessage, REACTIONS, TAG_LABELS, useAvailability, useServerSettings } from './api'
 import RateDialog, { ReactionIcon } from './RateDialog'
 import { FilmSearch } from './Search'
 import { WatchBadges } from './Streaming'
@@ -388,6 +388,22 @@ function RatingCard({
             .filter(Boolean)
             .join(' · ')}
         </p>
+        {item.tags.length > 0 && (
+          <ul className="mt-1.5 flex flex-wrap gap-1" aria-label="What you thought">
+            {item.tags.map((tagId) => (
+              <li
+                key={tagId}
+                className={`rounded-full px-2 py-0.5 text-[10.5px] ${
+                  item.reaction === 'disliked'
+                    ? 'border border-white/10 bg-white/5 text-white/60'
+                    : 'border border-accent/25 bg-accent/10 text-accent-strong'
+                }`}
+              >
+                {TAG_LABELS[tagId] ?? tagId}
+              </li>
+            ))}
+          </ul>
+        )}
       </button>
       <WatchBadges availability={where} />
     </li>

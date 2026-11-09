@@ -1,20 +1,13 @@
 import type { ChildProfile, Me, TitleDetail } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { api, errorMessage, facts, REACTIONS, useAssignToChild, useChildren, useServerSettings, useShortlist } from './api'
+import { api, errorMessage, facts, useAssignToChild, useChildren, useServerSettings, useShortlist } from './api'
+import { RatePicker } from './RateDialog'
 import { JustWatchCredit, ProviderLogo } from './Streaming'
 import { Button, ErrorText, Poster } from './ui'
 
 /** A film's details: why it was suggested, who made it, and where to watch it. */
-export default function TitleDialog({
-  tmdbId,
-  onClose,
-  onRate,
-}: {
-  tmdbId: number | null
-  onClose: () => void
-  onRate: (tmdbId: number) => void
-}) {
+export default function TitleDialog({ tmdbId, onClose }: { tmdbId: number | null; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     if (tmdbId !== null) dialog.current?.showModal()
@@ -29,14 +22,12 @@ export default function TitleDialog({
       aria-label="Film details"
       className="m-auto max-h-[calc(100dvh-2rem)] w-[min(40rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#11141b] p-0 text-[#e7e9ee] shadow-2xl backdrop:bg-black/70"
     >
-      {tmdbId !== null && (
-        <Details key={tmdbId} tmdbId={tmdbId} onClose={() => dialog.current?.close()} onRate={() => onRate(tmdbId)} />
-      )}
+      {tmdbId !== null && <Details key={tmdbId} tmdbId={tmdbId} onClose={() => dialog.current?.close()} />}
     </dialog>
   )
 }
 
-function Details({ tmdbId, onClose, onRate }: { tmdbId: number; onClose: () => void; onRate: () => void }) {
+function Details({ tmdbId, onClose }: { tmdbId: number; onClose: () => void }) {
   const queryClient = useQueryClient()
   const me = queryClient.getQueryData<Me>(['me'])
   const children = useChildren(!me?.is_child)
@@ -84,10 +75,15 @@ function Details({ tmdbId, onClose, onRate }: { tmdbId: number; onClose: () => v
             </a>
           )}
           {film.match !== null && <MatchBadge match={film.match} className="mt-3" />}
-          {film.seen && <p className="mt-3 text-sm font-medium text-accent-strong">{seenText(film.seen)}</p>}
+          {/* A reaction given here shows in the rating buttons below instead. */}
+          {film.seen && !film.seen.reaction && (
+            <p className="mt-3 text-sm font-medium text-accent-strong">{seenText(film.seen)}</p>
+          )}
           {film.tagline && <p className="mt-3 text-sm text-white/70 italic">{film.tagline}</p>}
         </div>
       </div>
+
+      <RatePicker tmdbId={tmdbId} compact className="mt-4" />
 
       {film.reasons.length > 0 && (
         <section className="mt-5">
@@ -150,9 +146,6 @@ function Details({ tmdbId, onClose, onRate }: { tmdbId: number; onClose: () => v
               childProfiles={children.data ?? []}
             />
           )}
-          <Button variant="ghost" onClick={onRate}>
-            {film.seen?.rating != null ? 'Change your rating' : film.seen ? 'Rate it' : 'I’ve seen it — rate it'}
-          </Button>
         </div>
         <Button onClick={onClose}>Close</Button>
       </div>
@@ -161,8 +154,6 @@ function Details({ tmdbId, onClose, onRate }: { tmdbId: number; onClose: () => v
 }
 
 function seenText(seen: NonNullable<TitleDetail['seen']>): string {
-  const reaction = REACTIONS.find((r) => r.value === seen.reaction)
-  if (reaction) return `You’ve seen it · ${reaction.label}`
   if (seen.rating !== null) return `You’ve seen it · rated ${Number.isInteger(seen.rating) ? seen.rating : seen.rating.toFixed(1)}/10`
   return 'You’ve seen it'
 }

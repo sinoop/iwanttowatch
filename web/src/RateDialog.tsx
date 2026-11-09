@@ -1,7 +1,6 @@
 import type { Reaction, TitleReaction } from '@iwanttowatch/api-client'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { api, errorMessage, REACTIONS } from './api'
+import { REACTIONS, useReaction } from './api'
 import { Button, ErrorText, Poster } from './ui'
 
 const MAX_TAGS = 3
@@ -31,62 +30,11 @@ export default function RateDialog({ tmdbId, onClose }: { tmdbId: number | null;
 }
 
 function RateForm({ tmdbId, onDone }: { tmdbId: number; onDone: () => void }) {
-  const queryClient = useQueryClient()
-  const key = ['reaction', tmdbId]
-  const state = useQuery({
-    queryKey: key,
-    queryFn: async () => {
-      const { data, error } = await api.GET('/api/v1/titles/{tmdb_id}/reaction', {
-        params: { path: { tmdb_id: tmdbId } },
-      })
-      if (error) throw new Error(errorMessage(error))
-      return data
-    },
-  })
-  const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ['ratings'] })
-    queryClient.invalidateQueries({ queryKey: ['persona'] })
-    // Rated films leave the feed and group picks.
-    queryClient.invalidateQueries({ queryKey: ['feed'] })
-    queryClient.invalidateQueries({ queryKey: ['together'] })
-  }
-  const save = useMutation({
-    mutationFn: async (body: { reaction: Reaction; tags: string[]; note: string }) => {
-      const { data, error } = await api.PUT('/api/v1/titles/{tmdb_id}/reaction', {
-        params: { path: { tmdb_id: tmdbId } },
-        body,
-      })
-      if (error) throw new Error(errorMessage(error))
-      return data
-    },
-    // Show the choice at once; the server's answer replaces it.
-    onMutate: (body) =>
-      queryClient.setQueryData<TitleReaction>(key, (old) => old && { ...old, ...body }),
-    onSuccess: (data) => {
-      queryClient.setQueryData(key, data)
-      refresh()
-    },
-    onError: () => queryClient.invalidateQueries({ queryKey: key }),
-  })
-  const remove = useMutation({
-    mutationFn: () =>
-      api.DELETE('/api/v1/titles/{tmdb_id}/reaction', { params: { path: { tmdb_id: tmdbId } } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: key })
-      refresh()
-      onDone()
-    },
-  })
-
-  const film = state.data
-  const [note, setNote] = useState<string | null>(null)
-  const [more, setMore] = useState(false)
-  // The note being typed, or the saved one until the user edits it.
-  const draft = note ?? film?.note ?? ''
-  if (state.error) {
+  const { film, error, remove } = useReaction(tmdbId)
+  if (error) {
     return (
       <div className="space-y-4 p-6">
-        <ErrorText>{state.error.message}</ErrorText>
+        <ErrorText>{error.message}</ErrorText>
         <Button variant="ghost" onClick={onDone}>
           Close
         </Button>
@@ -94,51 +42,6 @@ function RateForm({ tmdbId, onDone }: { tmdbId: number; onDone: () => void }) {
     )
   }
   if (!film) return <p className="p-6 text-sm text-white/50">Loading…</p>
-
-  const positive = film.reaction !== 'disliked'
-  const options = positive ? film.liked_tags : film.disliked_tags
-  const group = (name: TagOption['group']) => options.filter((t) => t.group === name)
-  const extra = group('more')
-  const showMore = more || extra.some((t) => film.tags.includes(t.id))
-  const choose = (reaction: Reaction) => {
-    // Tags only carry over while the answer stays on the same side; the note always does.
-    const sameSide = (reaction === 'disliked') === (film.reaction === 'disliked')
-    save.mutate({ reaction, tags: sameSide ? film.tags : [], note: draft })
-  }
-  const toggle = (tag: string) => {
-    if (!film.reaction) return
-    const tags = film.tags.includes(tag) ? film.tags.filter((t) => t !== tag) : [...film.tags, tag]
-    save.mutate({ reaction: film.reaction, tags, note: draft })
-  }
-  const saveNote = () => {
-    if (film.reaction && draft.trim() !== (film.note ?? '')) {
-      save.mutate({ reaction: film.reaction, tags: film.tags, note: draft })
-    }
-  }
-  const chips = (tags: TagOption[]) => (
-    <div className="mt-2 flex flex-wrap gap-2">
-      {tags.map((tag) => {
-        const selected = film.tags.includes(tag.id)
-        const full = !selected && film.tags.length >= MAX_TAGS
-        return (
-          <button
-            key={tag.id}
-            type="button"
-            aria-pressed={selected}
-            disabled={full}
-            onClick={() => toggle(tag.id)}
-            className={`rounded-full border px-3 py-1 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-35 ${
-              selected
-                ? 'border-accent bg-accent/15 text-accent-strong'
-                : 'border-white/10 text-white/65 hover:border-white/25 hover:text-white'
-            }`}
-          >
-            {tag.label}
-          </button>
-        )
-      })}
-    </div>
-  )
 
   return (
     <div className="p-5 sm:p-6">
@@ -149,44 +52,158 @@ function RateForm({ tmdbId, onDone }: { tmdbId: number; onDone: () => void }) {
         <div className="min-w-0">
           <h2 className="text-lg font-semibold">{film.title}</h2>
           <p className="text-sm text-white/50">
-            {[film.year, film.original_title !== film.title ? film.original_title : null]
-              .filter(Boolean)
-              .join(' · ')}
+            {[film.year, film.original_title !== film.title ? film.original_title : null].filter(Boolean).join(' · ')}
           </p>
           <p className="mt-2 text-sm text-white/70">How was it?</p>
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-2" role="radiogroup" aria-label="Your rating">
+      <RatePicker tmdbId={tmdbId} className="mt-4" />
+
+      {remove.error && (
+        <div className="mt-4">
+          <ErrorText>{remove.error.message}</ErrorText>
+        </div>
+      )}
+
+      <div className="mt-6 flex items-center justify-between gap-3">
+        {film.reaction ? (
+          <Button variant="ghost" onClick={() => remove.mutate(undefined, { onSuccess: onDone })} disabled={remove.isPending}>
+            Remove rating
+          </Button>
+        ) : (
+          <span />
+        )}
+        <Button onClick={onDone}>Done</Button>
+      </div>
+    </div>
+  )
+}
+
+/** One tag the user can pick for why they liked, or didn't like, a film. */
+function TagChip({
+  tag,
+  selected,
+  disabled,
+  onClick,
+}: {
+  tag: TagOption
+  selected: boolean
+  disabled: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      disabled={disabled}
+      onClick={onClick}
+      className={`rounded-full border px-3 py-1 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-35 ${
+        selected
+          ? 'border-accent bg-accent/15 text-accent-strong'
+          : 'border-white/10 text-white/65 hover:border-white/25 hover:text-white'
+      }`}
+    >
+      {tag.label}
+    </button>
+  )
+}
+
+/**
+ * The three reactions as buttons, then, once one is chosen, tags and a note. Choosing saves
+ * at once and marks the film watched. `compact` lays it out for the film details, where the
+ * note stays behind a link until it is wanted.
+ */
+export function RatePicker({
+  tmdbId,
+  compact = false,
+  className = '',
+  onRemoved,
+}: {
+  tmdbId: number
+  compact?: boolean
+  className?: string
+  onRemoved?: () => void
+}) {
+  const { film, error, save, remove } = useReaction(tmdbId)
+  const [note, setNote] = useState<string | null>(null)
+  const [more, setMore] = useState(false)
+  const [noting, setNoting] = useState(false)
+  // The note being typed, or the saved one until the user edits it.
+  const draft = note ?? film?.note ?? ''
+
+  const positive = film?.reaction !== 'disliked'
+  const options = film ? (positive ? film.liked_tags : film.disliked_tags) : []
+  const group = (name: TagOption['group']) => options.filter((t) => t.group === name)
+  const extra = group('more')
+  const showMore = more || (film !== undefined && extra.some((t) => film.tags.includes(t.id)))
+  const choose = (reaction: Reaction) => {
+    // Tags only carry over while the answer stays on the same side; the note always does.
+    const tags = film && (reaction === 'disliked') === (film.reaction === 'disliked') ? film.tags : []
+    save.mutate({ reaction, tags, note: draft })
+  }
+  const toggle = (tag: string) => {
+    if (!film?.reaction) return
+    const tags = film.tags.includes(tag) ? film.tags.filter((t) => t !== tag) : [...film.tags, tag]
+    save.mutate({ reaction: film.reaction, tags, note: draft })
+  }
+  const saveNote = () => {
+    if (film?.reaction && draft.trim() !== (film.note ?? '')) {
+      save.mutate({ reaction: film.reaction, tags: film.tags, note: draft })
+    }
+  }
+  const chips = (tags: TagOption[]) => (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {tags.map((tag) => {
+        const selected = film?.tags.includes(tag.id) ?? false
+        return (
+          <TagChip
+            key={tag.id}
+            tag={tag}
+            selected={selected}
+            disabled={!selected && (film?.tags.length ?? 0) >= MAX_TAGS}
+            onClick={() => toggle(tag.id)}
+          />
+        )
+      })}
+    </div>
+  )
+  const showNote = !compact || noting || draft !== ''
+  const failure = error ?? save.error ?? remove.error
+
+  return (
+    <div className={className}>
+      <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Your rating">
         {REACTIONS.map((r) => {
-          const selected = film.reaction === r.value
+          const selected = film?.reaction === r.value
           return (
             <button
               key={r.value}
               type="button"
               role="radio"
               aria-checked={selected}
+              disabled={!film}
               onClick={() => choose(r.value)}
-              className={`flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none ${
+              className={`flex items-center rounded-xl border text-sm transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none disabled:opacity-50 ${
+                compact ? 'justify-center gap-2 px-2 py-2' : 'flex-col gap-1.5 px-2 py-3'
+              } ${
                 selected
-                  ? 'border-accent bg-accent/15 text-accent-strong'
+                  ? 'border-accent bg-accent/15 font-medium text-accent-strong'
                   : 'border-white/10 text-white/70 hover:border-white/30 hover:text-white'
               }`}
             >
-              <ReactionIcon reaction={r.value} className="size-6" />
+              <ReactionIcon reaction={r.value} className={compact ? 'size-5' : 'size-6'} />
               {r.label}
             </button>
           )
         })}
       </div>
 
-      {film.reaction && (
-        <fieldset className="mt-5">
+      {film?.reaction && (
+        <fieldset className={compact ? 'mt-3 rounded-xl border border-accent/30 bg-white/[0.02] p-3' : 'mt-5'}>
           <legend className="text-sm font-medium">
             {positive ? 'What did you like most?' : 'What didn’t work?'}{' '}
-            <span className="font-normal text-white/45">
-              Optional, up to {MAX_TAGS}
-            </span>
+            <span className="font-normal text-white/45">Optional, up to {MAX_TAGS}</span>
           </legend>
           {chips(group('core'))}
           {group('suggested').length > 0 && (
@@ -209,11 +226,34 @@ function RateForm({ tmdbId, onDone }: { tmdbId: number; onDone: () => void }) {
               More tags ({extra.length})
             </button>
           )}
+          {compact && (
+            <div className="mt-3 flex items-center justify-between gap-3 text-sm">
+              {showNote ? (
+                <span />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setNoting(true)}
+                  className="text-accent-strong underline-offset-2 hover:underline"
+                >
+                  + Add a note
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => remove.mutate(undefined, { onSuccess: onRemoved })}
+                disabled={remove.isPending}
+                className="text-white/45 underline-offset-2 hover:text-white hover:underline disabled:opacity-40"
+              >
+                Remove rating
+              </button>
+            </div>
+          )}
         </fieldset>
       )}
 
-      {film.reaction && (
-        <label className="mt-5 block">
+      {film?.reaction && showNote && (
+        <label className={compact ? 'mt-3 block' : 'mt-5 block'}>
           <span className="text-sm font-medium">
             Anything else? <span className="font-normal text-white/45">Optional</span>
           </span>
@@ -235,22 +275,48 @@ function RateForm({ tmdbId, onDone }: { tmdbId: number; onDone: () => void }) {
         </label>
       )}
 
-      {(save.error || remove.error) && (
-        <div className="mt-4">
-          <ErrorText>{(save.error ?? remove.error)?.message}</ErrorText>
+      {failure && (
+        <div className="mt-3">
+          <ErrorText>{failure.message}</ErrorText>
         </div>
       )}
+    </div>
+  )
+}
 
-      <div className="mt-6 flex items-center justify-between gap-3">
-        {film.reaction ? (
-          <Button variant="ghost" onClick={() => remove.mutate()} disabled={remove.isPending}>
-            Remove rating
-          </Button>
-        ) : (
-          <span />
-        )}
-        <Button onClick={onDone}>Done</Button>
+/** A film's most common tags as quick taps, for right after rating it. */
+export function QuickTags({ tmdbId, onChange }: { tmdbId: number; onChange?: () => void }) {
+  const { film, save } = useReaction(tmdbId)
+  if (!film?.reaction) return null
+  const positive = film.reaction !== 'disliked'
+  const tags = (positive ? film.liked_tags : film.disliked_tags).filter((t) => t.group === 'core')
+  const toggle = (tag: string) => {
+    const chosen = film.tags.includes(tag) ? film.tags.filter((t) => t !== tag) : [...film.tags, tag]
+    save.mutate({ reaction: film.reaction!, tags: chosen, note: film.note ?? '' })
+    onChange?.()
+  }
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-xs text-white/50">{positive ? 'What stood out?' : 'What didn’t work?'}</span>
+        {tags.map((tag) => {
+          const selected = film.tags.includes(tag.id)
+          return (
+            <TagChip
+              key={tag.id}
+              tag={tag}
+              selected={selected}
+              disabled={!selected && film.tags.length >= MAX_TAGS}
+              onClick={() => toggle(tag.id)}
+            />
+          )
+        })}
       </div>
+      {save.error && (
+        <div className="mt-2">
+          <ErrorText>{save.error.message}</ErrorText>
+        </div>
+      )}
     </div>
   )
 }

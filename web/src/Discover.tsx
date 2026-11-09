@@ -1,9 +1,9 @@
-import type { AskAnswer, ChildProfile, FeedbackKind, FeedItem, FeedPage, FeedSort, Me } from '@iwanttowatch/api-client'
+import type { AskAnswer, ChildProfile, FeedItem, FeedPage, FeedSort, Me, Reaction } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
-import { api, errorMessage, facts, useChildren, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
-import RateDialog, { ReactionIcon } from './RateDialog'
+import { api, errorMessage, facts, useChildren, useQuickRate, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
+import RateDialog, { QuickTags, ReactionIcon } from './RateDialog'
 import { PlatformFilter, WatchBadges } from './Streaming'
 import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
@@ -12,9 +12,11 @@ const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
 const PAGE = 24
 // Below this many ratings the feed leans on quality rather than taste.
 const FEW_RATINGS = 15
-const TOAST_SECONDS = 8
+const TOAST_SECONDS = 10
 
-type Toast = { item: FeedItem; kind: FeedbackKind }
+type Toast =
+  | { type: 'reaction'; item: FeedItem; reaction: Reaction }
+  | { type: 'feedback'; item: FeedItem; kind: 'snoozed' | 'dismissed' }
 type Answer = AskAnswer & { text: string }
 type ShortlistFilter = 'all' | 'only' | 'hide'
 
@@ -36,23 +38,26 @@ export default function Discover({ me }: { me: Me }) {
   const [answer, setAnswer] = useState<Answer | null>(null)
   const queryClient = useQueryClient()
   const refreshFeed = () => queryClient.invalidateQueries({ queryKey: ['feed'] })
+  const quickRate = useQuickRate()
   const feedback = useMutation({
-    mutationFn: async ({ item, kind }: Toast) => {
+    mutationFn: async ({ item, kind }: { item: FeedItem; kind: 'snoozed' | 'dismissed' }) => {
       const { error } = await api.PUT('/api/v1/titles/{tmdb_id}/feedback', {
         params: { path: { tmdb_id: item.tmdb_id } },
         body: { kind },
       })
       if (error) throw new Error(errorMessage(error))
     },
-    onSuccess: (_, toast) => {
-      if (toast.kind !== 'up') setToast(toast)
-      if (toast.kind === 'seen') queryClient.invalidateQueries({ queryKey: ['ratings'] })
-    },
+    onSuccess: (_, { item, kind }) => setToast({ type: 'feedback', item, kind }),
     onSettled: refreshFeed,
   })
   const undo = useMutation({
     mutationFn: (tmdbId: number) =>
       api.DELETE('/api/v1/titles/{tmdb_id}/feedback', { params: { path: { tmdb_id: tmdbId } } }),
+    onSettled: refreshFeed,
+  })
+  const undoReaction = useMutation({
+    mutationFn: (tmdbId: number) =>
+      api.DELETE('/api/v1/titles/{tmdb_id}/reaction', { params: { path: { tmdb_id: tmdbId } } }),
     onSettled: refreshFeed,
   })
   const shortlist = useShortlist()
@@ -61,10 +66,10 @@ export default function Discover({ me }: { me: Me }) {
     const timer = setTimeout(() => setToast(null), TOAST_SECONDS * 1000)
     return () => clearTimeout(timer)
   }, [toast])
-  const act = (item: FeedItem, kind: FeedbackKind) => {
-    // A second thumbs up takes it back.
-    if (kind === 'up' && item.thumbs_up) undo.mutate(item.tmdb_id)
-    else feedback.mutate({ item, kind })
+  const act = (item: FeedItem, kind: 'snoozed' | 'dismissed') => feedback.mutate({ item, kind })
+  const rateFilm = (item: FeedItem, reaction: Reaction) => {
+    quickRate.mutate({ tmdbId: item.tmdb_id, reaction })
+    setToast({ type: 'reaction', item, reaction })
   }
 
   const ratings = useQuery({
@@ -228,11 +233,14 @@ export default function Discover({ me }: { me: Me }) {
               childProfiles={me.is_child ? [] : (children.data ?? [])}
               fit={whyFor.get(item.tmdb_id)}
               onOpen={() => setOpen(item.tmdb_id)}
+              onRate={(reaction) => rateFilm(item, reaction)}
               onAct={(kind) => act(item, kind)}
               onShortlist={() => shortlist.mutate({ tmdbId: item.tmdb_id, save: !item.shortlisted })}
               busy={
-                (feedback.isPending && feedback.variables.item.tmdb_id === item.tmdb_id) ||
+                (quickRate.isPending && quickRate.variables?.tmdbId === item.tmdb_id) ||
+                (feedback.isPending && feedback.variables?.item.tmdb_id === item.tmdb_id) ||
                 (undo.isPending && undo.variables === item.tmdb_id) ||
+                (undoReaction.isPending && undoReaction.variables === item.tmdb_id) ||
                 (shortlist.isPending && shortlist.variables.tmdbId === item.tmdb_id)
               }
             />
@@ -256,24 +264,25 @@ export default function Discover({ me }: { me: Me }) {
         </div>
       )}
 
-      <TitleDialog
-        tmdbId={open}
-        onClose={() => setOpen(null)}
-        onRate={(id) => {
-          setOpen(null)
-          setRating(id)
-        }}
-      />
+      <TitleDialog tmdbId={open} onClose={() => setOpen(null)} />
       <RateDialog tmdbId={rating} onClose={() => setRating(null)} />
       {toast && (
         <UndoToast
-          key={`${toast.item.tmdb_id}-${toast.kind}`}
+          key={
+            toast.type === 'reaction'
+              ? `${toast.item.tmdb_id}-${toast.reaction}`
+              : `${toast.item.tmdb_id}-${toast.kind}`
+          }
           toast={toast}
           onUndo={() => {
-            undo.mutate(toast.item.tmdb_id)
+            if (toast.type === 'reaction') {
+              undoReaction.mutate(toast.item.tmdb_id)
+            } else {
+              undo.mutate(toast.item.tmdb_id)
+            }
             setToast(null)
           }}
-          onRate={() => {
+          onMore={() => {
             setRating(toast.item.tmdb_id)
             setToast(null)
           }}
@@ -623,6 +632,7 @@ function FeedCard({
   childProfiles,
   fit,
   onOpen,
+  onRate,
   onAct,
   onShortlist,
   busy,
@@ -632,7 +642,8 @@ function FeedCard({
   // How the film fits the user's request, when it's one of the AI's picks.
   fit?: string
   onOpen: () => void
-  onAct: (kind: FeedbackKind) => void
+  onRate: (reaction: Reaction) => void
+  onAct: (kind: 'snoozed' | 'dismissed') => void
   onShortlist: () => void
   busy: boolean
 }) {
@@ -651,14 +662,19 @@ function FeedCard({
         />
         <MatchBadge match={item.match} className="absolute top-2 left-2 shadow-lg shadow-black/50" />
       </button>
-      <div className="mt-1.5 flex items-center justify-between" role="group" aria-label={`Feedback on ${item.title}`}>
-        <div className="flex items-center">
-          <CardAction label="More like this" pressed={item.thumbs_up} disabled={busy} onClick={() => onAct('up')}>
-            <ReactionIcon reaction="liked" className="size-4" />
-          </CardAction>
-          <CardAction label="Less like this" disabled={busy} onClick={() => onAct('down')}>
+      <div className="mt-1.5 flex items-center justify-between" role="group" aria-label={`Actions for ${item.title}`}>
+        <div className="flex items-center rounded-full border border-white/10 bg-white/[0.03] p-0.5">
+          <CardAction label="Didn’t like" disabled={busy} onClick={() => onRate('disliked')}>
             <ReactionIcon reaction="disliked" className="size-4" />
           </CardAction>
+          <CardAction label="Liked" disabled={busy} onClick={() => onRate('liked')}>
+            <ReactionIcon reaction="liked" className="size-4" />
+          </CardAction>
+          <CardAction label="Loved" disabled={busy} onClick={() => onRate('loved')}>
+            <ReactionIcon reaction="loved" className="size-4" />
+          </CardAction>
+        </div>
+        <div className="flex items-center">
           <CardAction
             label={item.shortlisted ? 'Remove from shortlist' : 'Add to shortlist'}
             pressed={item.shortlisted}
@@ -674,11 +690,6 @@ function FeedCard({
             assigned={item.assigned_children ?? []}
             childProfiles={childProfiles}
           />
-        </div>
-        <div className="flex">
-          <CardAction label="Seen it" disabled={busy} onClick={() => onAct('seen')}>
-            <Icon d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0" />
-          </CardAction>
           <CardAction label="Not now (hide for 30 days)" disabled={busy} onClick={() => onAct('snoozed')}>
             <Icon d="M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2" />
           </CardAction>
@@ -738,34 +749,56 @@ function Icon({ d }: { d: string }) {
   )
 }
 
-const TOAST_TEXT: Record<FeedbackKind, (title: string) => string> = {
-  up: (title) => `More like ${title}.`,
-  down: (title) => `Got it: fewer films like ${title}.`,
-  dismissed: (title) => `${title} won’t be suggested again.`,
-  snoozed: (title) => `${title} is hidden for 30 days.`,
-  seen: (title) => `Marked ${title} as seen.`,
-}
-
 function UndoToast({
   toast,
   onUndo,
-  onRate,
+  onMore,
 }: {
   toast: Toast
   onUndo: () => void
-  onRate: () => void
+  onMore: () => void
 }) {
+  if (toast.type === 'reaction') {
+    const label = toast.reaction === 'loved' ? 'Loved' : toast.reaction === 'liked' ? 'Liked' : 'Didn’t like'
+    return (
+      <div
+        role="status"
+        className="fixed inset-x-4 bottom-4 z-10 mx-auto flex max-w-xl flex-col gap-2 rounded-xl border border-accent/30 bg-[#1a1e27] p-3 text-sm shadow-2xl shadow-black/80 sm:p-3.5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1 font-semibold text-accent-strong">
+              <ReactionIcon reaction={toast.reaction} className="size-4" />
+              {label}
+            </span>
+            <span className="truncate">
+              <strong>{toast.item.title}</strong> · Marked as watched
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button variant="ghost" className="px-2.5 py-1 text-xs" onClick={onMore}>
+              More tags / note…
+            </Button>
+            <Button variant="ghost" className="px-2.5 py-1 text-xs" onClick={onUndo}>
+              Undo
+            </Button>
+          </div>
+        </div>
+        <QuickTags tmdbId={toast.item.tmdb_id} />
+      </div>
+    )
+  }
+
   return (
     <div
       role="status"
       className="fixed inset-x-4 bottom-4 z-10 mx-auto flex max-w-md items-center gap-3 rounded-xl border border-white/10 bg-[#1a1e27] py-2 pr-2 pl-4 text-sm shadow-2xl shadow-black/60"
     >
-      <span className="flex-1">{TOAST_TEXT[toast.kind](toast.item.title)}</span>
-      {toast.kind === 'seen' && (
-        <Button variant="ghost" className="px-3 py-1.5" onClick={onRate}>
-          Rate it
-        </Button>
-      )}
+      <span className="flex-1">
+        {toast.kind === 'snoozed'
+          ? `${toast.item.title} is hidden for 30 days.`
+          : `${toast.item.title} won’t be suggested again.`}
+      </span>
       <Button variant="ghost" className="px-3 py-1.5" onClick={onUndo}>
         Undo
       </Button>
