@@ -218,7 +218,7 @@ export default function Discover({ me }: { me: Me }) {
           {answer.considered === 0
             ? 'There are no films to choose from with these filters.'
             : nothingFits
-              ? `None of the top ${answer.considered} films in your feed fit that. Try asking more loosely, or choose Everything to include films you can’t play now.`
+              ? `None of the top ${answer.considered} films in your feed fit that. Try asking more loosely, or choose Include unavailable to include films you can’t play now.`
               : 'None of the AI’s picks match these filters.'}
         </div>
       )}
@@ -503,7 +503,7 @@ function EmptyFeed({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span>None of your picks are on the platforms you chose.</span>
           <Button variant="ghost" onClick={() => onWatchOn('anywhere')}>
-            Show anywhere I can watch
+            Show what’s available to me
           </Button>
         </div>
       ) : watchOn === 'anywhere' ? (
