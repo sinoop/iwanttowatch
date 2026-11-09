@@ -20,10 +20,12 @@ from iwanttowatch.api.streaming import (
 )
 from iwanttowatch.availability import availability
 from iwanttowatch.children import (
+    allowed_certificates,
     allowed_for,
     ensure_themes_note_quietly,
     generate_themes_note,
     library_owners,
+    region_certificates,
 )
 from iwanttowatch.db import utcnow
 from iwanttowatch.feed import (
@@ -56,6 +58,7 @@ from iwanttowatch.models import (
 )
 from iwanttowatch.moods import moods_for
 from iwanttowatch.taste import effective_ratings, explain_match
+from iwanttowatch.tmdb import client_from_settings
 
 router = APIRouter(prefix="/api/v1")
 
@@ -102,6 +105,8 @@ class FeedPage(BaseModel):
     # Languages and genres among the feed (before the language and genre filters).
     languages: list[LanguageCount]
     genres: list[str]
+    # Film certificates in the user's region, mildest first.
+    certificates: list[str]
     # Where the feed's films can be played (before the platform filter).
     platforms: list[PlatformCount]
     # Shortlisted films the user hasn't watched yet.
@@ -137,6 +142,8 @@ def read_feed(
     platforms: Annotated[list[str], Query()] = [],  # noqa: B006 (FastAPI copies defaults)
     language: str | None = None,
     genre: str | None = None,
+    # Maximum film certificate in the user's region, e.g. "U/A 13+" or "PG-13".
+    max_certificate: str | None = None,
     # Only the user's shortlist, which may hold films the feed would hide.
     shortlist: bool = False,
     # Hide films the user has already shortlisted, to browse fresh picks.
@@ -215,6 +222,12 @@ def read_feed(
             title.tmdb_id, offers.get(title.tmdb_id), title.tmdb_id in library, user.subscriptions
         )
         listed.append((rec, title, where))
+    tmdb = client_from_settings(session, request.app.state.engine, request.app.state.tmdb_base_url)
+    cert_limit = (
+        allowed_certificates(user.region, max_certificate, tmdb)
+        if max_certificate is not None
+        else None
+    )
     shown = [row for row in listed if shown_for(row[2], available_only, platforms)]
     languages = Counter(title.original_language for _, title, _ in shown)
     genres = Counter(g for _, title, _ in shown for g in title.genres)
@@ -223,6 +236,7 @@ def read_feed(
         for rec, title, where in shown
         if (language is None or title.original_language == language)
         and (genre is None or genre in title.genres)
+        and allowed_for(title, user.region, cert_limit)
     ]
     if sort != "match":
         matching.sort(key=lambda item: _sort_key(sort, item[0], item[1]))
@@ -257,6 +271,7 @@ def read_feed(
         ],
         languages=[LanguageCount(language=k, count=n) for k, n in languages.most_common(10)],
         genres=[g for g, _ in genres.most_common(12)],
+        certificates=region_certificates(user.region, tmdb),
         platforms=platform_counts([where for _, _, where in listed]),
         shortlist_count=shortlist_count,
     )
@@ -290,6 +305,7 @@ def ask_feed(
     platforms: Annotated[list[str], Query()] = [],  # noqa: B006
     language: str | None = None,
     genre: str | None = None,
+    max_certificate: str | None = None,
     shortlist: bool = False,
     hide_shortlisted: bool = False,
     age_limit: bool = True,
@@ -307,6 +323,7 @@ def ask_feed(
         platforms,
         language,
         genre,
+        max_certificate,
         shortlist,
         hide_shortlisted,
         age_limit,
@@ -532,7 +549,7 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
         if watched
         else None,
         availability=title_availability(
-            title.tmdb_id, offers, item_id is not None, user.subscriptions
+            title.tmdb_id, offers, item_id is not None, user.subscriptions, with_others=True
         ),
         jellyfin_url=f"{jellyfin}/web/#/details?id={item_id}" if jellyfin and item_id else None,
         imdb=imdb_score(title),

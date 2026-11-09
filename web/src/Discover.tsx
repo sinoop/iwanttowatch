@@ -26,6 +26,7 @@ export default function Discover({ me }: { me: Me }) {
   const [watchOn, setWatchOn] = useState<WatchOn>('anywhere')
   const [language, setLanguage] = useState<string | null>(null)
   const [genre, setGenre] = useState<string | null>(null)
+  const [certificate, setCertificate] = useState<string | null>(null)
   const [shortlistFilter, setShortlistFilter] = useState<ShortlistFilter>('all')
   const [sort, setSort] = useState<FeedSort>('match')
   const [ageLimitOffFor, setAgeLimitOffFor] = useState<number | null>(null)
@@ -79,6 +80,7 @@ export default function Discover({ me }: { me: Me }) {
     ...watchOnQuery(watchOn),
     language: language ?? undefined,
     genre: genre ?? undefined,
+    max_certificate: !me.is_child ? (certificate ?? undefined) : undefined,
     shortlist: shortlistFilter === 'only' || undefined,
     hide_shortlisted: shortlistFilter === 'hide' || undefined,
     age_limit: me.max_certificate ? ageLimit : undefined,
@@ -94,7 +96,7 @@ export default function Discover({ me }: { me: Me }) {
   // While an answer is shown, the feed lists only the AI's picks, in the feed's order.
   const only = answer?.picks.map((p) => p.tmdb_id)
   const feed = useInfiniteQuery({
-    queryKey: ['feed', me.id, watchOn, language, genre, shortlistFilter, sort, ageLimit, only],
+    queryKey: ['feed', me.id, watchOn, language, genre, certificate, shortlistFilter, sort, ageLimit, only],
     queryFn: async ({ pageParam }) => {
       const { data, error } = await api.GET('/api/v1/feed', {
         params: {
@@ -182,6 +184,8 @@ export default function Discover({ me }: { me: Me }) {
           onLanguage={setLanguage}
           genre={genre}
           onGenre={setGenre}
+          certificate={!me.is_child ? certificate : null}
+          onCertificate={setCertificate}
           shortlistFilter={shortlistFilter}
           onShortlistFilter={setShortlistFilter}
           sort={sort}
@@ -203,12 +207,18 @@ export default function Discover({ me }: { me: Me }) {
       {first?.status === 'ready' && items.length === 0 && !answer && (
         <EmptyFeed
           emptyShortlist={shortlistFilter === 'only' && first.shortlist_count === 0}
-          filtered={language !== null || genre !== null || shortlistFilter === 'hide'}
+          filtered={
+            language !== null ||
+            genre !== null ||
+            (!me.is_child && certificate !== null) ||
+            shortlistFilter === 'hide'
+          }
           watchOn={watchOn}
           onWatchOn={setWatchOn}
           onClearFilters={() => {
             setLanguage(null)
             setGenre(null)
+            setCertificate(null)
             if (shortlistFilter === 'hide') setShortlistFilter('all')
           }}
         />
@@ -325,6 +335,8 @@ function Filters({
   onLanguage,
   genre,
   onGenre,
+  certificate,
+  onCertificate,
   shortlistFilter,
   onShortlistFilter,
   sort,
@@ -340,6 +352,8 @@ function Filters({
   onLanguage: (value: string | null) => void
   genre: string | null
   onGenre: (value: string | null) => void
+  certificate: string | null
+  onCertificate: (value: string | null) => void
   shortlistFilter: ShortlistFilter
   onShortlistFilter: (value: ShortlistFilter) => void
   sort: FeedSort
@@ -355,6 +369,10 @@ function Filters({
   const languages = page.languages.map((l) => l.language)
   if (language && !languages.includes(language)) languages.push(language)
   const genres = genre && !page.genres.includes(genre) ? [...page.genres, genre] : page.genres
+  const certificates =
+    certificate && !page.certificates.includes(certificate)
+      ? [...page.certificates, certificate]
+      : page.certificates
 
   return (
     <div className="mt-6 flex flex-wrap items-center gap-2.5">
@@ -395,6 +413,21 @@ function Filters({
           {genres.map((g) => (
             <option key={g} value={g}>
               {g}
+            </option>
+          ))}
+        </select>
+      )}
+      {!maxCertificate && certificates.length > 0 && (
+        <select
+          value={certificate ?? ''}
+          onChange={(e) => onCertificate(e.target.value || null)}
+          aria-label="Age rating"
+          className={selectClass(certificate !== null)}
+        >
+          <option value="">All age ratings</option>
+          {certificates.map((cert) => (
+            <option key={cert} value={cert}>
+              Rated {cert} &amp; under
             </option>
           ))}
         </select>

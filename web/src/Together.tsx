@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { Link } from 'react-router'
 import { renderSVG } from 'uqr'
 import { api, copyToClipboard, errorMessage, facts, useChildren, watchOnQuery, type WatchOn } from './api'
+import RateDialog from './RateDialog'
 import { PlatformFilter, WatchBadges } from './Streaming'
 import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Field, Poster } from './ui'

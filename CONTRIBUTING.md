@@ -12,7 +12,7 @@ Everyone works in this repository, in parallel, on branches; `main` only changes
 4. **Open a pull request** early as a draft if you want feedback. Its title becomes the commit message on `main`, so describe what changes for the people using iWantToWatch.
 5. **Merge once the checks pass and a maintainer approves.** Pull requests are squashed into one commit and the branch is deleted.
 
-`main` is always releasable: every merge publishes the `latest` Docker image. Maintainers release by tagging `main` as `vX.Y.Z`, which publishes the matching image, and by adding the release notes to [CHANGELOG.md](CHANGELOG.md).
+`main` is always releasable: every merge automatically increments the patch version, creates a `vX.Y.Z` GitHub release, and publishes the matching Docker image (`latest`, `X.Y.Z`, and `X.Y`). To bump the minor or major version, update `version` in `server/pyproject.toml` in your pull request.
 
 ### Working in git worktrees
 

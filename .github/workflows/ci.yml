@@ -41,17 +41,68 @@ jobs:
       - uses: actions/checkout@v5
       - run: docker build .
 
-  # Each push to main that passes the checks publishes the image for amd64 and arm64
-  # (Raspberry Pi), so servers update with `docker compose pull`.
+  # Each push to main that passes the checks increments the version, publishes the image
+  # for amd64 and arm64 (Raspberry Pi), and creates a GitHub release, so servers update
+  # with `docker compose pull` and show the new version in the footer.
   publish:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     needs: [server, web, docker]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: version
+        name: Determine version and update package metadata
+        run: |
+          python3 - <<'PY'
+          import os, re, subprocess, tomllib
+          from pathlib import Path
+
+          ref = os.environ["GITHUB_REF"]
+          pyproject_path = Path("server/pyproject.toml")
+          data = tomllib.loads(pyproject_path.read_text())
+          p_ver = tuple(int(x) for x in data["project"]["version"].split("."))
+
+          if ref.startswith("refs/tags/v"):
+              ver_str = ref.removeprefix("refs/tags/v")
+              ver = tuple(int(x) for x in ver_str.split("."))
+              create_release = False
+          else:
+              tags = subprocess.check_output(["git", "tag", "-l", "v*.*.*"], text=True).splitlines()
+              semver_tags = []
+              for t in tags:
+                  m = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", t.strip())
+                  if m:
+                      semver_tags.append(tuple(int(x) for x in m.groups()))
+              latest_tag = max(semver_tags, default=(0, 0, 0))
+              ver = p_ver if p_ver > latest_tag else (latest_tag[0], latest_tag[1], latest_tag[2] + 1)
+              ver_str = f"{ver[0]}.{ver[1]}.{ver[2]}"
+              create_release = True
+
+          old_ver = data["project"]["version"]
+          if old_ver != ver_str:
+              pyproject_path.write_text(
+                  pyproject_path.read_text().replace(f'version = "{old_ver}"', f'version = "{ver_str}"', 1)
+              )
+              lock_path = Path("server/uv.lock")
+              lock_path.write_text(
+                  re.sub(
+                      r'(name = "iwanttowatch"\r?\nversion = )"[^"]+"',
+                      rf'\g<1>"{ver_str}"',
+                      lock_path.read_text(),
+                      count=1,
+                  )
+              )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"version={ver_str}\n")
+              out.write(f"major_minor={ver[0]}.{ver[1]}\n")
+              out.write(f"create_release={'true' if create_release else 'false'}\n")
+          PY
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -59,7 +110,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # `latest` and the commit SHA from main; `0.1.0` and `0.1` from a v0.1.0 tag.
       - id: meta
         uses: docker/metadata-action@v5
         with:
@@ -67,8 +117,8 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=long,prefix=,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.major_minor }}
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -78,3 +128,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Create git tag and GitHub release
+        if: steps.version.outputs.create_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            gh release create "v${{ steps.version.outputs.version }}" \
+              --target "${{ github.sha }}" \
+              --title "iWantToWatch v${{ steps.version.outputs.version }}" \
+              --generate-notes
+          fi

@@ -1614,6 +1614,8 @@ export interface components {
             languages: components["schemas"]["LanguageCount"][];
             /** Genres */
             genres: string[];
+            /** Certificates */
+            certificates: string[];
             /** Platforms */
             platforms: components["schemas"]["PlatformCount"][];
             /** Shortlist Count */
@@ -2312,6 +2314,8 @@ export interface components {
             on_jellyfin: boolean;
             /** Offers */
             offers: components["schemas"]["Offer"][];
+            /** Other Offers */
+            other_offers?: components["schemas"]["Offer"][];
             /** Link */
             link: string | null;
             /** Checked At */
@@ -3515,6 +3519,7 @@ export interface operations {
                 platforms?: string[];
                 language?: string | null;
                 genre?: string | null;
+                max_certificate?: string | null;
                 shortlist?: boolean;
                 hide_shortlisted?: boolean;
                 age_limit?: boolean;
@@ -3556,6 +3561,7 @@ export interface operations {
                 platforms?: string[];
                 language?: string | null;
                 genre?: string | null;
+                max_certificate?: string | null;
                 shortlist?: boolean;
                 hide_shortlisted?: boolean;
                 age_limit?: boolean;

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "iWantToWatch",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "paths": {
     "/api/v1/setup": {
@@ -1337,6 +1337,22 @@
             }
           },
           {
+            "name": "max_certificate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Certificate"
+            }
+          },
+          {
             "name": "shortlist",
             "in": "query",
             "required": false,
@@ -1504,6 +1520,22 @@
                 }
               ],
               "title": "Genre"
+            }
+          },
+          {
+            "name": "max_certificate",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Certificate"
             }
           },
           {
@@ -4083,6 +4115,13 @@
             "type": "array",
             "title": "Genres"
           },
+          "certificates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Certificates"
+          },
           "platforms": {
             "items": {
               "$ref": "#/components/schemas/PlatformCount"
@@ -4106,6 +4145,7 @@
           "items",
           "languages",
           "genres",
+          "certificates",
           "platforms",
           "shortlist_count"
         ],
@@ -6283,6 +6323,13 @@
             },
             "type": "array",
             "title": "Offers"
+          },
+          "other_offers": {
+            "items": {
+              "$ref": "#/components/schemas/Offer"
+            },
+            "type": "array",
+            "title": "Other Offers"
           },
           "link": {
             "anyOf": [

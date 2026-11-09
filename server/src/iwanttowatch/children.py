@@ -152,6 +152,11 @@ def _scale(region: str, tmdb: TmdbClient | None = None) -> tuple[Certificate, ..
     return ()
 
 
+def region_certificates(region: str, tmdb: TmdbClient | None = None) -> list[str]:
+    """The region's film certificate codes from mildest to strictest."""
+    return [c.code for c in _scale(region, tmdb)]
+
+
 def certificate_rank(region: str, certificate: str, tmdb: TmdbClient | None = None) -> int | None:
     """Numeric age rank of a certificate in a country, or None when unrated/unknown."""
     code = certificate.strip()
