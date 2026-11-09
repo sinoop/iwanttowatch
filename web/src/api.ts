@@ -1,5 +1,5 @@
-import { createApiClient, type Reaction } from '@iwanttowatch/api-client'
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { createApiClient, type Reaction, type TitleReaction } from '@iwanttowatch/api-client'
+import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 
 export const api = createApiClient()
 
@@ -110,6 +110,118 @@ export const REACTIONS: { value: Reaction; label: string }[] = [
   { value: 'liked', label: 'Liked' },
   { value: 'loved', label: 'Loved' },
 ]
+
+export const TAG_LABELS: Record<string, string> = {
+  great_story: 'Great story',
+  great_acting: 'Great acting',
+  great_direction: 'Great direction',
+  beautiful_visuals: 'Beautiful visuals',
+  great_music: 'Great music',
+  sharp_dialogue: 'Sharp dialogue',
+  exciting: 'Exciting',
+  great_action: 'Great action scenes',
+  unexpected_suspense: 'Unexpected suspense',
+  clever_twist: 'Clever twist',
+  great_villain: 'Great villain performance',
+  genuinely_scary: 'Genuinely scary',
+  made_me_laugh: 'Made me laugh',
+  feel_good: 'Feel-good',
+  moved_me: 'Moved me',
+  lovely_romance: 'Lovely romance',
+  relatable_characters: 'Relatable characters',
+  slice_of_life: 'Slice of life',
+  felt_real: 'Felt real',
+  thought_provoking: 'Thought-provoking',
+  mind_bending: 'Mind-bending',
+  world_building: 'Great world-building',
+  epic_scale: 'Epic scale',
+  great_with_family: 'Great with family',
+  learned_something: 'Learned something',
+  weak_story: 'Weak story',
+  predictable: 'Predictable',
+  too_slow: 'Too slow',
+  too_long: 'Too long',
+  unconvincing_acting: 'Unconvincing acting',
+  disappointing_ending: 'Disappointing ending',
+  cliched: 'Clichéd',
+  too_violent: 'Too violent',
+  not_funny: 'Not funny',
+  not_scary: 'Not scary',
+  confusing: 'Confusing',
+  overhyped: 'Overhyped',
+}
+
+const reactionKey = (tmdbId: number) => ['reaction', tmdbId]
+
+/** A rating changes what the user has seen, their taste, and what the feed and group picks offer. */
+export function refreshAfterReaction(queryClient: QueryClient, tmdbId: number) {
+  queryClient.invalidateQueries({ queryKey: ['ratings'] })
+  queryClient.invalidateQueries({ queryKey: ['persona'] })
+  // Rated films leave the feed and group picks.
+  queryClient.invalidateQueries({ queryKey: ['feed'] })
+  queryClient.invalidateQueries({ queryKey: ['together'] })
+  queryClient.invalidateQueries({ queryKey: ['title', tmdbId] })
+}
+
+/** A film's reaction, tags and note, with saving and removing; rating a film also marks it watched. */
+export function useReaction(tmdbId: number) {
+  const queryClient = useQueryClient()
+  const key = reactionKey(tmdbId)
+  const state = useQuery({
+    queryKey: key,
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/v1/titles/{tmdb_id}/reaction', {
+        params: { path: { tmdb_id: tmdbId } },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+  })
+  const save = useMutation({
+    mutationFn: async (body: { reaction: Reaction; tags: string[]; note: string }) => {
+      const { data, error } = await api.PUT('/api/v1/titles/{tmdb_id}/reaction', {
+        params: { path: { tmdb_id: tmdbId } },
+        body,
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    // Show the choice at once; the server's answer replaces it.
+    onMutate: (body) => queryClient.setQueryData<TitleReaction>(key, (old) => old && { ...old, ...body }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(key, data)
+      refreshAfterReaction(queryClient, tmdbId)
+    },
+    onError: () => queryClient.invalidateQueries({ queryKey: key }),
+  })
+  const remove = useMutation({
+    mutationFn: () => api.DELETE('/api/v1/titles/{tmdb_id}/reaction', { params: { path: { tmdb_id: tmdbId } } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: key })
+      refreshAfterReaction(queryClient, tmdbId)
+    },
+  })
+  return { film: state.data, error: state.error, save, remove }
+}
+
+/** Rate a film in one click, without tags or a note, as from a card in a list. */
+export function useQuickRate() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ tmdbId, reaction }: { tmdbId: number; reaction: Reaction }) => {
+      const { data, error } = await api.PUT('/api/v1/titles/{tmdb_id}/reaction', {
+        params: { path: { tmdb_id: tmdbId } },
+        body: { reaction, tags: [], note: '' },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(reactionKey(data.tmdb_id), data)
+      refreshAfterReaction(queryClient, data.tmdb_id)
+    },
+  })
+}
 
 const AVAILABILITY_CHUNK = 48
 

@@ -1,7 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
 import { api, errorMessage, useServerSettings } from './api'
-import RateDialog from './RateDialog'
 import TitleDialog from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
 
@@ -95,7 +94,6 @@ export default function HeaderSearch() {
   const settings = useServerSettings()
   const dialog = useRef<HTMLDialogElement>(null)
   const [open, setOpen] = useState<number | null>(null)
-  const [rating, setRating] = useState<number | null>(null)
   if (!settings.data?.tmdb_configured) return null
 
   return (
@@ -130,15 +128,7 @@ export default function HeaderSearch() {
           }}
         />
       </dialog>
-      <TitleDialog
-        tmdbId={open}
-        onClose={() => setOpen(null)}
-        onRate={(tmdbId) => {
-          setOpen(null)
-          setRating(tmdbId)
-        }}
-      />
-      <RateDialog tmdbId={rating} onClose={() => setRating(null)} />
+      <TitleDialog tmdbId={open} onClose={() => setOpen(null)} />
     </>
   )
 }
