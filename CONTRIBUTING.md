@@ -14,6 +14,34 @@ Everyone works in this repository, in parallel, on branches; `main` only changes
 
 `main` is always releasable: every merge publishes the `latest` Docker image. Maintainers release by tagging `main` as `vX.Y.Z`, which publishes the matching image, and by adding the release notes to [CHANGELOG.md](CHANGELOG.md).
 
+### Working in git worktrees
+
+Make every change in its own git worktree under `.git_worktrees/` rather than in the main checkout, so multiple people or AI agents can work in parallel without sharing a working directory:
+
+```sh
+# 1. Create a worktree from main before touching any file
+git worktree add .git_worktrees/<task-name> -b <task-name> main
+cd .git_worktrees/<task-name>
+
+# 2. Install dependencies inside the worktree and make your change
+pnpm install --frozen-lockfile
+cd server && uv sync --frozen && cd ..
+
+# 3. Stage only the files you changed (never `git add .`), commit, and push
+git add <file1> <file2>
+git commit -m "Describe the change"
+git push origin <task-name>
+
+# 4. Review the diff against main
+git diff main..<task-name>
+
+# 5. Once merged to main (via a squashed pull request or `git merge --squash <task-name>`),
+#    clean up from the main checkout:
+cd ../..
+git worktree remove .git_worktrees/<task-name>
+git branch -D <task-name>
+```
+
 ## Development setup
 
 Requirements: [uv](https://docs.astral.sh/uv/), Node.js 26, and pnpm 12.

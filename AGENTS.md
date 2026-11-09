@@ -8,6 +8,35 @@ Self-hosted movie recommender: Python API server, React web app, shared generate
 - `web/` — React + Vite + Tailwind; talks to the API only through `@iwanttowatch/api-client`.
 - `packages/api-client/` — `openapi.json` and `src/schema.d.ts` are generated; never edit them by hand.
 
+## Git worktree workflow
+
+Every change must be made in its own git worktree inside `.git_worktrees/<task-name>`, never in the main checkout. Keep the main checkout on `main` so multiple people or agents can work in parallel without colliding.
+
+1. **Create a worktree for each task** before touching any file:
+   ```sh
+   git worktree add .git_worktrees/<task-name> -b <task-name> main
+   ```
+2. **Edit and run checks only inside the worktree.** Every file path, editor action, and shell command must point at `.git_worktrees/<task-name>/...`. Before running server or web checks in a new worktree, install its local dependencies (`pnpm install --frozen-lockfile` from the worktree root and `cd server && uv sync --frozen`, or `./.agents/setup`) so workspace packages and virtualenvs resolve inside the worktree rather than the main checkout.
+3. **Stage and commit selectively** from inside `.git_worktrees/<task-name>/`:
+   - Never use `git add .`. Stage only the files you changed (`git add <file1> <file2>`) or specific hunks (`git add -p`).
+   - Run `git add`, `git commit`, and `git push` as separate commands rather than chaining them with `&&`:
+     ```sh
+     git add <file1> <file2>
+     git commit -m "short description"
+     git push origin <task-name>
+     ```
+4. **Review the diff:**
+   ```sh
+   git diff main..<task-name>
+   ```
+5. **Land on `main`** via a squashed pull request or squash-merge from the main checkout (`git checkout main`, `git pull --rebase origin main`, `git merge --squash <task-name>`, `git commit -m "short description"`, `git push origin main`).
+6. **Clean up** after the change lands on `main`:
+   ```sh
+   git worktree remove .git_worktrees/<task-name>
+   git branch -D <task-name>
+   ```
+   Use `git worktree list` to inspect active worktrees and `git worktree prune` to clear stale entries.
+
 ## Commands
 
 - Server checks (from `server/`): `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest`

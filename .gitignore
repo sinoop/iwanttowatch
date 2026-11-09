@@ -9,3 +9,4 @@ __pycache__/
 data/
 .amp/in/
 .amp/portals/*
+.git_worktrees/

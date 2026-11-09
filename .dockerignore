@@ -1,4 +1,5 @@
 .git
+.git_worktrees
 .amp
 .github
 **/node_modules
