@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { renderSVG } from 'uqr'
-import { api, errorMessage, facts, useChildren, watchOnQuery, type WatchOn } from './api'
+import { api, copyToClipboard, errorMessage, facts, useChildren, watchOnQuery, type WatchOn } from './api'
 import RateDialog from './RateDialog'
 import { PlatformFilter, WatchBadges } from './Streaming'
 import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, MatchBadge } from './TitleDialog'
@@ -257,7 +257,9 @@ function VoteResults({ session }: { session: VoteSessionOut }) {
             variant="ghost"
             className="border border-white/10 px-2 py-1 text-xs"
             onClick={() => {
-              navigator.clipboard.writeText(link).then(() => setCopied(true))
+              void copyToClipboard(link).then((ok) => {
+                if (ok) setCopied(true)
+              })
             }}
           >
             {copied ? 'Link copied' : 'Copy link'}
@@ -718,8 +720,9 @@ function ShareTaste({ share }: { share: TogetherOptions['share'] }) {
             />
             <Button
               onClick={() => {
-                void navigator.clipboard?.writeText(link)
-                setCopied(true)
+                void copyToClipboard(link).then((ok) => {
+                  if (ok) setCopied(true)
+                })
               }}
             >
               {copied ? 'Copied' : 'Copy'}

@@ -1,7 +1,7 @@
 import type { ServerSettings } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { api, errorMessage } from './api'
+import { api, copyToClipboard, errorMessage } from './api'
 import { Button, ErrorText, Field } from './ui'
 
 const relative = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
@@ -154,9 +154,10 @@ function WebhookSetup({ path, receivedAt }: { path: string; receivedAt: string |
   const url = window.location.origin + path
   const [copied, setCopied] = useState(false)
   const copy = async () => {
-    await navigator.clipboard.writeText(url)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    if (await copyToClipboard(url)) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
   return (
     <details className="mt-4 border-t border-white/10 pt-4 text-sm text-white/60">
