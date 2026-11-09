@@ -232,7 +232,7 @@ export function PlatformFilter({
         className={chip(value === 'anywhere')}
         title="On Jellyfin or your services"
       >
-        Anywhere
+        Available to me
       </button>
       {shown.map((p) => (
         <button
@@ -268,7 +268,7 @@ export function PlatformFilter({
         className={chip(value === 'everything')}
         title="Also films that aren’t on Jellyfin or your services"
       >
-        Everything
+        Include unavailable
       </button>
     </div>
   )
