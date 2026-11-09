@@ -6324,6 +6324,13 @@
             "type": "array",
             "title": "Offers"
           },
+          "other_offers": {
+            "items": {
+              "$ref": "#/components/schemas/Offer"
+            },
+            "type": "array",
+            "title": "Other Offers"
+          },
           "link": {
             "anyOf": [
               {

@@ -263,6 +263,10 @@ function ThemesSection({ film }: { film: TitleDetail }) {
 function WhereToWatch({ film }: { film: TitleDetail }) {
   const { availability } = film
   const nothing = !availability.on_jellyfin && availability.offers.length === 0
+  const others = availability.other_offers ?? []
+  const elsewhere = others.filter((o) => o.kind === 'flatrate')
+  const rent = others.filter((o) => o.kind === 'rent')
+  const buy = others.filter((o) => o.kind === 'buy')
   return (
     <section className="mt-5 rounded-xl border border-white/10 p-4">
       <h3 className="text-sm font-medium text-white/80">Where to watch</h3>
@@ -299,6 +303,9 @@ function WhereToWatch({ film }: { film: TitleDetail }) {
           </li>
         ))}
       </ul>
+      <OtherOffers label="On other streaming services" offers={elsewhere} />
+      <OtherOffers label="Rent" offers={rent} />
+      <OtherOffers label="Buy" offers={buy} />
       {availability.stale && availability.checked_at && (
         <p className="mt-2 text-xs text-amber-300/80">
           Last checked {new Date(availability.checked_at).toLocaleDateString()}
@@ -316,6 +323,27 @@ function WhereToWatch({ film }: { film: TitleDetail }) {
         <JustWatchCredit />
       </p>
     </section>
+  )
+}
+
+/** Services the user can't play a film on now, such as ones they don't pay for or to rent. */
+function OtherOffers({ label, offers }: { label: string; offers: TitleDetail['availability']['offers'] }) {
+  if (offers.length === 0) return null
+  return (
+    <div className="mt-3">
+      <h4 className="text-xs font-medium text-white/50">{label}</h4>
+      <ul className="mt-1.5 flex flex-wrap gap-2">
+        {offers.map((offer) => (
+          <li
+            key={offer.provider_id}
+            className="flex items-center gap-2 rounded-full border border-white/10 py-1 pr-3 pl-1 text-sm text-white/65"
+          >
+            <ProviderLogo path={offer.logo_path} name={offer.name} className="size-6" />
+            {offer.name}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 

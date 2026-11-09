@@ -549,7 +549,7 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
         if watched
         else None,
         availability=title_availability(
-            title.tmdb_id, offers, item_id is not None, user.subscriptions
+            title.tmdb_id, offers, item_id is not None, user.subscriptions, with_others=True
         ),
         jellyfin_url=f"{jellyfin}/web/#/details?id={item_id}" if jellyfin and item_id else None,
         imdb=imdb_score(title),

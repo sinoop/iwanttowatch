@@ -257,6 +257,7 @@ Built and tested against a fake TMDb on 2026-11-06. The exit criterion still nee
 
 - [x] Provider catalogue per region, subscription settings (per person: country and services)
 - [x] Per-title availability cache (3 days, last good data kept and marked stale on failure), badges on My taste, JustWatch attribution. Rechecks happen when titles are shown; Phase 4 adds the background refresh for feed candidates.
+- [x] Other ways to watch (2026-11-09): a film's details also list what the user can't play now, as `other_offers`: services they don't pay for, and renting or buying. So a film shown with "Include unavailable" no longer reads "Not on your Jellyfin server or your streaming services" with nothing beneath it. Feed and search lists omit them to stay light
 
 Built and tested against a fake TMDb on 2026-11-06; channel variants are listed separately rather than grouped. The exit criterion still needs a real TMDb key.
 

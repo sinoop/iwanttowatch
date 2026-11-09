@@ -2314,6 +2314,8 @@ export interface components {
             on_jellyfin: boolean;
             /** Offers */
             offers: components["schemas"]["Offer"][];
+            /** Other Offers */
+            other_offers?: components["schemas"]["Offer"][];
             /** Link */
             link: string | null;
             /** Checked At */

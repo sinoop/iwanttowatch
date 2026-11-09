@@ -10,6 +10,7 @@ from iwanttowatch.api.schemas import Me
 from iwanttowatch.availability import (
     availability,
     is_stale,
+    other_offers,
     provider_catalogue,
     regions,
     watchable,
@@ -35,7 +36,9 @@ class Provider(BaseModel):
 
 
 class Offer(Provider):
-    # "flatrate" (in a subscription), "free", or "ads" (free with ads).
+    # "flatrate" (in a subscription), "free", or "ads" (free with ads); among
+    # `other_offers`, a "flatrate" one is on a service the user doesn't pay for, and
+    # "rent" and "buy" appear too.
     kind: str
 
 
@@ -44,6 +47,9 @@ class TitleAvailability(BaseModel):
     on_jellyfin: bool
     # Where the user can play it now: their subscriptions, plus free services.
     offers: list[Offer]
+    # What the user can't play now: services they don't pay for, renting, and buying.
+    # Only filled in a film's details, to keep lists light.
+    other_offers: list[Offer] = Field(default_factory=list)
     # TMDb's watch page for the user's region (JustWatch data).
     link: str | None
     checked_at: datetime | None
@@ -175,12 +181,19 @@ def shown_for(where: TitleAvailability, available_only: bool, platforms: list[st
 
 
 def title_availability(
-    tmdb_id: int, row: Availability | None, on_jellyfin: bool, subscriptions: list[int]
+    tmdb_id: int,
+    row: Availability | None,
+    on_jellyfin: bool,
+    subscriptions: list[int],
+    with_others: bool = False,
 ) -> TitleAvailability:
     return TitleAvailability(
         tmdb_id=tmdb_id,
         on_jellyfin=on_jellyfin,
         offers=[Offer(**o) for o in watchable(row.offers, subscriptions)] if row else [],
+        other_offers=[Offer(**o) for o in other_offers(row.offers, subscriptions)]
+        if row and with_others
+        else [],
         link=row.link if row else None,
         # SQLite returns stored UTC times without their time zone.
         checked_at=row.checked_at.replace(tzinfo=UTC) if row else None,

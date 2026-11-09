@@ -51,8 +51,15 @@ def test_badges_show_only_what_each_person_can_play_in_their_region(
     assert found[101]["on_jellyfin"] is True
     assert found[101]["offers"] == [{"provider_id": 515, "name": "MX Player",
                                      "logo_path": "/mx.jpg", "kind": "ads"}]  # fmt: skip
-    assert found[999] == {"tmdb_id": 999, "on_jellyfin": False, "offers": [], "link": None,
-                          "checked_at": found[999]["checked_at"], "stale": False}  # fmt: skip
+    assert found[999] == {
+        "tmdb_id": 999,
+        "on_jellyfin": False,
+        "offers": [],
+        "other_offers": [],
+        "link": None,
+        "checked_at": found[999]["checked_at"],
+        "stale": False,
+    }
     assert found[201]["on_jellyfin"] is False
 
     # Checks are cached per region.
@@ -75,3 +82,20 @@ def test_badges_show_only_what_each_person_can_play_in_their_region(
         session.commit()
     stale = availability(client, 101)[101]
     assert names(stale) == ["Netflix"] and stale["stale"] is True
+
+
+def test_details_list_what_the_user_cant_play_yet(client: TestClient) -> None:
+    assert client.put("/api/v1/settings/tmdb", json={"api_key": KEY}).status_code == 200
+    client.put("/api/v1/me/streaming", json={"region": "IN", "subscriptions": [8]})
+    client.app.state.feed_worker.wait_until_idle()  # type: ignore[attr-defined]
+
+    # Drishyam is on Prime and JioHotstar, which the user doesn't have, and to rent on Apple.
+    where = client.get("/api/v1/titles/301").json()["availability"]
+    assert where["offers"] == []
+    assert [(o["name"], o["kind"]) for o in where["other_offers"]] == [
+        ("Amazon Prime Video", "flatrate"), ("JioHotstar", "flatrate"), ("Apple TV", "rent"),
+    ]  # fmt: skip
+    # Lists stay light: only a film's details carry them.
+    assert availability(client, 301)[301]["other_offers"] == []
+    # What can be played now isn't repeated.
+    assert client.get("/api/v1/titles/201").json()["availability"]["other_offers"] == []
