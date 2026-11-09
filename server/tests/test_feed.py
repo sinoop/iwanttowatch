@@ -493,3 +493,38 @@ def test_feed_can_be_ordered_by_rating_year_or_runtime(
     assert order("oldest") == [302, 301, 401, 402, 201]
     # 402 has no runtime, so it goes last when sorting shortest first.
     assert order("shortest") == [302, 201, 401, 301, 402]
+
+
+def test_adult_feed_can_be_filtered_by_certificate_limit(client: TestClient) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    client.put("/api/v1/titles/101/reaction", json={"reaction": "loved"})
+    feed(client)
+    idle(client)
+
+    page = feed(client, available_only=False)
+    assert page["certificates"] == ["U", "U/A 7+", "U/A 13+", "U/A 16+", "A"]
+    assert {i["tmdb_id"] for i in page["items"]} == {201, 301, 302, 401, 402}
+    assert {
+        i["tmdb_id"] for i in feed(client, available_only=False, max_certificate="U")["items"]
+    } == {
+        301,
+        401,
+    }
+    assert {
+        i["tmdb_id"] for i in feed(client, available_only=False, max_certificate="U/A 7+")["items"]
+    } == {201, 301, 401}
+
+    client.put("/api/v1/me/streaming", json={"region": "US", "subscriptions": []})
+    idle(client)
+    us_page = feed(client, available_only=False)
+    assert us_page["certificates"] == ["G", "PG", "PG-13", "R", "NC-17"]
+    assert {
+        i["tmdb_id"] for i in feed(client, available_only=False, max_certificate="PG")["items"]
+    } == {
+        201,
+        301,
+        401,
+    }
+    assert {
+        i["tmdb_id"] for i in feed(client, available_only=False, max_certificate="PG-13")["items"]
+    } == {201, 301, 302, 401}
