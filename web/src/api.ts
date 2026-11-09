@@ -11,6 +11,42 @@ export function errorMessage(error: unknown): string {
   return 'Something went wrong. Please try again.'
 }
 
+/** Copy text to the clipboard, falling back to a temporary textarea when served over plain HTTP. */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Fall through to the textarea fallback when the Clipboard API is blocked.
+    }
+  }
+  if (typeof document === 'undefined' || typeof document.execCommand !== 'function') {
+    return false
+  }
+  const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.readOnly = true
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  textarea.style.left = '0'
+  textarea.style.opacity = '0'
+  textarea.style.pointerEvents = 'none'
+  document.body.appendChild(textarea)
+  try {
+    textarea.focus({ preventScroll: true })
+    textarea.select()
+    textarea.setSelectionRange(0, text.length)
+    return document.execCommand('copy')
+  } catch {
+    return false
+  } finally {
+    document.body.removeChild(textarea)
+    active?.focus({ preventScroll: true })
+  }
+}
+
 /** Save a film to the shortlist, or take it off. */
 export function useShortlist() {
   const queryClient = useQueryClient()

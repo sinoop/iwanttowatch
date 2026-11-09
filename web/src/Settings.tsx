@@ -1,7 +1,7 @@
 import type { Backups, ChildProfile, InviteOut, Me, ServerSettings } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
-import { api, errorMessage, useServerSettings } from './api'
+import { api, copyToClipboard, errorMessage, useServerSettings } from './api'
 import { JellyfinAccount, JellyfinServer } from './JellyfinSettings'
 import { StreamingSettings } from './Streaming'
 import { Button, ErrorText, Field } from './ui'
@@ -369,7 +369,9 @@ function McpSection({ enabled }: { enabled: boolean }) {
             variant="ghost"
             className="mt-2 border border-white/10 px-2 py-1 text-xs"
             onClick={() => {
-              navigator.clipboard.writeText(config).then(() => setCopied(true))
+              void copyToClipboard(config).then((ok) => {
+                if (ok) setCopied(true)
+              })
             }}
           >
             {copied ? 'Copied' : 'Copy'}
@@ -710,7 +712,9 @@ function InviteRow({ invite }: { invite: InviteOut }) {
         variant="ghost"
         className="border border-white/10 px-2 py-1 text-xs"
         onClick={() => {
-          navigator.clipboard.writeText(link).then(() => setCopied(true))
+          void copyToClipboard(link).then((ok) => {
+            if (ok) setCopied(true)
+          })
         }}
       >
         {copied ? 'Link copied' : 'Copy link'}
