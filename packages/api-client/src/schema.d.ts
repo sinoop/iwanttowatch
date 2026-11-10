@@ -4123,7 +4123,7 @@ export interface operations {
                 shortlist?: boolean;
                 hide_shortlisted?: boolean;
                 age_limit?: boolean;
-                sort?: "match" | "rating" | "newest" | "oldest" | "shortest";
+                sort?: "recommended" | "match" | "rating" | "newest" | "oldest" | "shortest";
                 only?: number[];
                 offset?: number;
                 limit?: number;

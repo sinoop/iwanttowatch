@@ -28,7 +28,7 @@ export default function Discover({ me }: { me: Me }) {
   const [genre, setGenre] = useState<string | null>(null)
   const [certificate, setCertificate] = useState<string | null>(null)
   const [shortlistFilter, setShortlistFilter] = useState<ShortlistFilter>('all')
-  const [sort, setSort] = useState<FeedSort>('match')
+  const [sort, setSort] = useState<FeedSort>('recommended')
   const [ageLimitOffFor, setAgeLimitOffFor] = useState<number | null>(null)
   const ageLimit = ageLimitOffFor !== me.id
   const setAgeLimit = (on: boolean) => setAgeLimitOffFor(on ? null : me.id)
@@ -113,7 +113,7 @@ export default function Discover({ me }: { me: Me }) {
         params: {
           query: {
             ...filters,
-            sort: sort !== 'match' ? sort : undefined,
+            sort: sort !== 'recommended' ? sort : undefined,
             only: only?.length ? only : undefined,
             offset: pageParam,
             limit: PAGE,
@@ -180,7 +180,7 @@ export default function Discover({ me }: { me: Me }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Discover</h1>
-          <p className="mt-1 text-white/60">Films picked for {me.display_name}, best match first.</p>
+          <p className="mt-1 text-white/60">Films picked for {me.display_name}, recommended first.</p>
         </div>
         {first && <RefreshButton page={first} language={language} genre={genre} />}
       </div>
@@ -224,7 +224,7 @@ export default function Discover({ me }: { me: Me }) {
             </span>
             {answer.picks.length === 0
               ? `Nothing fits “${answer.text}”.`
-              : `${answer.picks.length} ${answer.picks.length === 1 ? 'pick' : 'picks'} for “${answer.text}” from the top ${answer.considered} films in your feed, best match first.`}
+              : `${answer.picks.length} ${answer.picks.length === 1 ? 'pick' : 'picks'} for “${answer.text}” from the top ${answer.considered} films in your feed, recommended first.`}
           </span>
           <Button variant="ghost" className="px-3 py-1 text-xs" onClick={handleClearAnswer}>
             Back to the full feed
@@ -555,9 +555,10 @@ function Filters({
         value={sort}
         onChange={(e) => onSort(e.target.value as FeedSort)}
         aria-label="Order by"
-        className={selectClass(sort !== 'match')}
+        className={selectClass(sort !== 'recommended')}
       >
-        <option value="match">Order: Best match</option>
+        <option value="recommended">Order: Recommended</option>
+        <option value="match">Order: Highest match</option>
         <option value="rating">Order: Highest rated</option>
         <option value="newest">Order: Newest first</option>
         <option value="oldest">Order: Oldest first</option>

@@ -504,11 +504,24 @@ def test_feed_can_be_ordered_by_rating_year_or_runtime(
     def order(sort: str) -> list[int]:
         return [i["tmdb_id"] for i in feed(client, available_only=False, sort=sort)["items"]]
 
+    default_order = order("recommended")
+    assert default_order == [i["tmdb_id"] for i in feed(client, available_only=False)["items"]]
     assert order("rating") == [201, 301, 401, 302, 402]
     assert order("newest") == [201, 402, 401, 301, 302]
     assert order("oldest") == [302, 301, 401, 402, 201]
     # 402 has no runtime, so it goes last when sorting shortest first.
     assert order("shortest") == [302, 201, 401, 301, 402]
+
+    # Highest match sorts by score descending, breaking ties by rank, unlike
+    # recommended which follows feed diversity rank.
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        rec_last = session.get(Recommendation, (1, default_order[-1]))
+        assert rec_last is not None
+        rec_last.score = 0.99
+        session.commit()
+
+    assert order("recommended") == default_order
+    assert order("match")[0] == default_order[-1]
 
 
 def test_adult_feed_can_be_filtered_by_certificate_limit(client: TestClient) -> None:

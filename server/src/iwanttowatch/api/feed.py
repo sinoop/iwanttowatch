@@ -66,7 +66,7 @@ from iwanttowatch.tmdb import client_from_settings
 router = APIRouter(prefix="/api/v1")
 
 FeedStatus = Literal["none", "queued", "building", "ready", "failed"]
-FeedSort = Literal["match", "rating", "newest", "oldest", "shortest"]
+FeedSort = Literal["recommended", "match", "rating", "newest", "oldest", "shortest"]
 # "seen" marks the film watched (without a rating); the others are Feedback kinds.
 FeedbackKind = Literal["up", "down", "dismissed", "snoozed", "seen"]
 
@@ -117,6 +117,8 @@ class FeedPage(BaseModel):
 
 
 def _sort_key(sort: FeedSort, rec: Recommendation, title: Title) -> tuple[float | int, ...]:
+    if sort == "match":
+        return (-rec.score, rec.rank)
     if sort == "rating":
         public = (
             title.imdb_rating
@@ -153,7 +155,7 @@ def read_feed(
     hide_shortlisted: bool = False,
     # On a child profile, keep only films within their birth-year certificate limit.
     age_limit: bool = True,
-    sort: FeedSort = "match",
+    sort: FeedSort = "recommended",
     # Only these films, such as the AI's picks for a request.
     only: Annotated[list[int], Query(max_length=ASK_PICKS)] = [],  # noqa: B006
     offset: int = Query(0, ge=0),
@@ -245,7 +247,7 @@ def read_feed(
         and (genre is None or genre in title.genres)
         and allowed_for(title, user.region, cert_limit)
     ]
-    if sort != "match":
+    if sort != "recommended":
         matching.sort(key=lambda item: _sort_key(sort, item[0], item[1]))
     return FeedPage(
         status=cast(FeedStatus, state.status) if state and state.status else "none",
@@ -334,7 +336,7 @@ def ask_feed(
         shortlist,
         hide_shortlisted,
         age_limit,
-        sort="match",
+        sort="recommended",
         only=[],
         offset=0,
         limit=ASK_FILMS,
