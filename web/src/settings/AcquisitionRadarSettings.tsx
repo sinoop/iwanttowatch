@@ -9,7 +9,8 @@ import {
   useServerSettings,
 } from '../api'
 import TitleDialog, { Chips, DownloadIcon, ImdbBadge, MatchBadge } from '../TitleDialog'
-import { Button, ErrorText, Poster } from '../ui'
+import { segmentedBadgeClass, segmentedTabClass } from '../tabs'
+import { Button, ErrorText, Poster, SegmentedCapsule } from '../ui'
 
 export function RadarIcon({ className = 'size-4' }: { className?: string }) {
   return (
@@ -146,47 +147,45 @@ export function AcquisitionRadarSettings() {
 
         {/* Tab Switcher */}
         <div className="mt-6 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('missing')
-              setSelectedIds([])
-              setActionSuccess(null)
-            }}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
-              activeTab === 'missing'
-                ? 'bg-accent text-black font-semibold shadow-lg shadow-accent/25'
-                : 'text-white/60 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <span>📡 Missing from Streaming</span>
-            {missingQuery.data && (
-              <span className={`rounded-full px-1.5 py-0.2 text-xs tabular-nums ${activeTab === 'missing' ? 'bg-black/20 text-black' : 'bg-white/10 text-white/70'}`}>
-                {missingQuery.data.total_missing}
-              </span>
-            )}
-          </button>
+          <SegmentedCapsule role="tablist" aria-label="Radar categories">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'missing'}
+              onClick={() => {
+                setActiveTab('missing')
+                setSelectedIds([])
+                setActionSuccess(null)
+              }}
+              className={segmentedTabClass({ active: activeTab === 'missing' })}
+            >
+              <span>📡 Missing from Streaming</span>
+              {missingQuery.data && (
+                <span className={segmentedBadgeClass({ active: activeTab === 'missing' })}>
+                  {missingQuery.data.total_missing}
+                </span>
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('theatrical')
-              setSelectedIds([])
-              setActionSuccess(null)
-            }}
-            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all ${
-              activeTab === 'theatrical'
-                ? 'bg-accent text-black font-semibold shadow-lg shadow-accent/25'
-                : 'text-white/60 hover:bg-white/5 hover:text-white'
-            }`}
-          >
-            <span>🎬 Now in Theaters</span>
-            {theatricalQuery.data && (
-              <span className={`rounded-full px-1.5 py-0.2 text-xs tabular-nums ${activeTab === 'theatrical' ? 'bg-black/20 text-black' : 'bg-white/10 text-white/70'}`}>
-                {theatricalQuery.data.total_theatrical}
-              </span>
-            )}
-          </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'theatrical'}
+              onClick={() => {
+                setActiveTab('theatrical')
+                setSelectedIds([])
+                setActionSuccess(null)
+              }}
+              className={segmentedTabClass({ active: activeTab === 'theatrical' })}
+            >
+              <span>🎬 Now in Theaters</span>
+              {theatricalQuery.data && (
+                <span className={segmentedBadgeClass({ active: activeTab === 'theatrical' })}>
+                  {theatricalQuery.data.total_theatrical}
+                </span>
+              )}
+            </button>
+          </SegmentedCapsule>
         </div>
       </section>
 

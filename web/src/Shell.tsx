@@ -5,7 +5,8 @@ import { NavLink, Outlet } from 'react-router'
 import { api, useChildren, useServerSettings } from './api'
 import HeaderSearch from './Search'
 import { JustWatchCredit } from './Streaming'
-import { Button, Logo } from './ui'
+import { segmentedTabClass } from './tabs'
+import { Button, Logo, SegmentedCapsule } from './ui'
 
 const NAV = [
   { to: '/', label: 'Discover' },
@@ -68,21 +69,19 @@ export default function Shell({ me }: { me: Me }) {
     <div className="min-h-screen">
       <header className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-white/10 px-4 py-3 sm:px-6">
         <Logo />
-        <nav className="order-last flex w-full overflow-x-auto sm:order-none sm:w-auto sm:gap-1">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              className={({ isActive }) =>
-                `whitespace-nowrap rounded-lg px-2 py-1.5 text-sm transition-colors sm:px-3 ${
-                  isActive ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white'
-                }`
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
+        <nav className="order-last flex w-full overflow-x-auto pb-1 sm:order-none sm:w-auto sm:pb-0" aria-label="Main navigation">
+          <SegmentedCapsule>
+            {navItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === '/'}
+                className={({ isActive }) => segmentedTabClass({ active: isActive, size: 'sm' })}
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </SegmentedCapsule>
         </nav>
         <HeaderSearch />
         <div className={`flex items-center gap-2 text-sm sm:gap-3 ${settings.data?.tmdb_configured ? 'ml-auto sm:ml-0' : 'ml-auto'}`}>

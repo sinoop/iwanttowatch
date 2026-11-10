@@ -8,7 +8,8 @@ import PersonDialog, { HeartIcon } from './PersonDialog'
 import { FilmSearch } from './Search'
 import { WatchBadges } from './Streaming'
 import TitleDialog from './TitleDialog'
-import { Button, ErrorText, Poster } from './ui'
+import { segmentedBadgeClass, segmentedTabClass } from './tabs'
+import { Button, ErrorText, Poster, SegmentedCapsule } from './ui'
 
 const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
 const PAGE = 48
@@ -191,70 +192,48 @@ function Ratings({
     <section>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="max-w-full overflow-x-auto pb-1">
-          <div className="inline-flex items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.04] p-1.5 shadow-lg shadow-black/20 backdrop-blur-md">
+          <SegmentedCapsule role="tablist" aria-label="Taste views">
             <button
               type="button"
+              role="tab"
+              aria-selected={tab === 'all'}
               onClick={() => setTab('all')}
-              className={`flex cursor-pointer items-center gap-2.5 rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap transition-all ${
-                tab === 'all'
-                  ? 'border border-white/15 bg-white/15 text-white shadow-sm'
-                  : 'border border-transparent text-white/60 hover:bg-white/5 hover:text-white'
-              }`}
+              className={segmentedTabClass({ active: tab === 'all' })}
             >
               <span>Your ratings</span>
-              <span
-                className={`rounded-full px-2 py-0.5 text-[11px] font-bold leading-none transition-colors ${
-                  tab === 'all' ? 'bg-accent text-black' : 'bg-white/10 text-white/60'
-                }`}
-              >
+              <span className={segmentedBadgeClass({ active: tab === 'all' })}>
                 {first.total_unfiltered || first.total}
               </span>
             </button>
 
             <button
               type="button"
+              role="tab"
+              aria-selected={tab === 'divergent'}
               onClick={() => setTab('divergent')}
-              className={`flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap transition-all ${
-                tab === 'divergent'
-                  ? 'border border-white/15 bg-white/15 text-white shadow-sm'
-                  : 'border border-transparent text-white/60 hover:bg-white/5 hover:text-white'
-              }`}
+              className={segmentedTabClass({ active: tab === 'divergent' })}
             >
               <span>Against the grain</span>
-              <span
-                className={`rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none transition-colors ${
-                  tab === 'divergent'
-                    ? 'border-accent/50 bg-accent/25 font-semibold text-accent-strong'
-                    : 'border-accent/30 bg-accent/15 text-accent'
-                }`}
-              >
+              <span className={segmentedBadgeClass({ active: tab === 'divergent', variant: 'accent' })}>
                 Hot takes
               </span>
             </button>
 
             <button
               type="button"
+              role="tab"
+              aria-selected={tab === 'people'}
               onClick={() => setTab('people')}
-              className={`flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap transition-all ${
-                tab === 'people'
-                  ? 'border border-white/15 bg-white/15 text-white shadow-sm'
-                  : 'border border-transparent text-white/60 hover:bg-white/5 hover:text-white'
-              }`}
+              className={segmentedTabClass({ active: tab === 'people' })}
             >
               <span>Directors & Cast</span>
               {(peopleTaste.data?.favorites?.length ?? 0) > 0 && (
-                <span
-                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none transition-colors ${
-                    tab === 'people'
-                      ? 'border-red-500/50 bg-red-500/25 font-semibold text-red-300'
-                      : 'border-red-500/30 bg-red-500/15 text-red-400'
-                  }`}
-                >
+                <span className={segmentedBadgeClass({ active: tab === 'people', variant: 'danger' })}>
                   {peopleTaste.data?.favorites?.length} fav
                 </span>
               )}
             </button>
-          </div>
+          </SegmentedCapsule>
         </div>
         {tab === 'all' && first.languages.length > 0 && (
           <ul className="flex flex-wrap gap-2" aria-label="Languages you rated">

@@ -2,7 +2,8 @@ import type { Reaction } from '@iwanttowatch/api-client'
 import { useEffect, useRef, useState } from 'react'
 import { ratingToReaction, useFavoritePerson, usePerson } from './api'
 import { ReactionBadge } from './RateDialog'
-import { Button, ErrorText, Poster } from './ui'
+import { segmentedBadgeClass, segmentedTabClass } from './tabs'
+import { Button, ErrorText, Poster, SegmentedCapsule } from './ui'
 
 export function HeartIcon({ filled, className = 'size-4' }: { filled: boolean; className?: string }) {
   return (
@@ -203,31 +204,33 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
 
           {/* Filmography Section with Tabs */}
           <div className="mt-6">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <div className="flex gap-2">
+            <div className="flex items-center justify-between pb-3">
+              <SegmentedCapsule role="tablist" aria-label="Filmography tabs">
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={tab === 'available'}
                   onClick={() => setTab('available')}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    tab === 'available'
-                      ? 'bg-white/15 text-white'
-                      : 'text-white/60 hover:bg-white/5 hover:text-white'
-                  }`}
+                  className={segmentedTabClass({ active: tab === 'available', size: 'xs' })}
                 >
-                  Available to watch ({availableFilms.length})
+                  <span>Available to watch</span>
+                  <span className={segmentedBadgeClass({ active: tab === 'available', size: 'xs' })}>
+                    {availableFilms.length}
+                  </span>
                 </button>
                 <button
                   type="button"
+                  role="tab"
+                  aria-selected={tab === 'all'}
                   onClick={() => setTab('all')}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    tab === 'all'
-                      ? 'bg-white/15 text-white'
-                      : 'text-white/60 hover:bg-white/5 hover:text-white'
-                  }`}
+                  className={segmentedTabClass({ active: tab === 'all', size: 'xs' })}
                 >
-                  All filmography ({allFilms.length})
+                  <span>All filmography</span>
+                  <span className={segmentedBadgeClass({ active: tab === 'all', size: 'xs' })}>
+                    {allFilms.length}
+                  </span>
                 </button>
-              </div>
+              </SegmentedCapsule>
             </div>
 
             {displayedFilms.length === 0 ? (

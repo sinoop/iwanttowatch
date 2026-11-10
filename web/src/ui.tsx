@@ -90,3 +90,28 @@ export function Poster({ path, title, className = '' }: { path: string | null; t
     </div>
   )
 }
+
+/** Segmented capsule container for top menus, tab switches, and section navigators. */
+export function SegmentedCapsule({
+  children,
+  className = '',
+  role,
+  'aria-label': ariaLabel,
+}: {
+  children: ReactNode
+  className?: string
+  role?: string
+  'aria-label'?: string
+}) {
+  return (
+    <div
+      role={role}
+      aria-label={ariaLabel}
+      className={`inline-flex items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.04] p-1.5 shadow-lg shadow-black/20 backdrop-blur-md ${className}`}
+    >
+      {children}
+    </div>
+  )
+}
+
+

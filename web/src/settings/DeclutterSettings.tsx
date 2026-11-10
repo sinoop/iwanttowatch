@@ -9,7 +9,8 @@ import {
   useServerSettings,
 } from '../api'
 import TitleDialog from '../TitleDialog'
-import { Button, ErrorText, Poster } from '../ui'
+import { segmentedBadgeClass, segmentedTabClass } from '../tabs'
+import { Button, ErrorText, Poster, SegmentedCapsule } from '../ui'
 
 const CATEGORY_TABS = [
   { id: 'all', label: 'All Candidates' },
@@ -163,43 +164,39 @@ export function DeclutterSettings() {
 
       {/* Category Pills & Filters */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
-        <div className="flex flex-wrap gap-2">
-          {CATEGORY_TABS.map((tab) => {
-            const isActive = selectedCategory === tab.id
-            const count =
-              tab.id === 'all'
-                ? (data?.total_candidates ?? 0)
-                : (data?.categories_summary[tab.id]?.count ?? 0)
-            const formattedBytes =
-              tab.id !== 'all' ? data?.categories_summary[tab.id]?.formatted : null
+        <div className="max-w-full overflow-x-auto pb-1">
+          <SegmentedCapsule role="tablist" aria-label="Declutter categories">
+            {CATEGORY_TABS.map((tab) => {
+              const isActive = selectedCategory === tab.id
+              const count =
+                tab.id === 'all'
+                  ? (data?.total_candidates ?? 0)
+                  : (data?.categories_summary[tab.id]?.count ?? 0)
+              const formattedBytes =
+                tab.id !== 'all' ? data?.categories_summary[tab.id]?.formatted : null
 
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setSelectedCategory(tab.id)}
-                className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-all ${
-                  isActive
-                    ? 'border-accent bg-accent text-black font-semibold shadow-sm'
-                    : 'border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:text-white'
-                }`}
-              >
-                <span>{tab.label}</span>
-                <span
-                  className={`rounded-full px-1.5 py-0.2 text-[10px] ${
-                    isActive ? 'bg-black/20 text-black' : 'bg-white/10 text-white/60'
-                  }`}
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setSelectedCategory(tab.id)}
+                  className={segmentedTabClass({ active: isActive, size: 'xs' })}
                 >
-                  {count}
-                </span>
-                {formattedBytes && formattedBytes !== '0 B' && (
-                  <span className={`text-[10px] opacity-75 ${isActive ? 'text-black' : 'text-accent'}`}>
-                    ({formattedBytes})
+                  <span>{tab.label}</span>
+                  <span className={segmentedBadgeClass({ active: isActive, size: 'xs' })}>
+                    {count}
                   </span>
-                )}
-              </button>
-            )
-          })}
+                  {formattedBytes && formattedBytes !== '0 B' && (
+                    <span className={`text-[10px] ${isActive ? 'text-white/80' : 'text-accent'}`}>
+                      ({formattedBytes})
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </SegmentedCapsule>
         </div>
 
         <div className="flex items-center gap-3 text-xs text-white/60">

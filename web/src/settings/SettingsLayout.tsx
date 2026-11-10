@@ -2,6 +2,8 @@ import type { Me } from '@iwanttowatch/api-client'
 import { useEffect, type ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router'
 import { useServerSettings } from '../api'
+import { segmentedTabClass } from '../tabs'
+import { SegmentedCapsule } from '../ui'
 
 export function UserIcon({ className = 'size-4' }: { className?: string }) {
   return (
@@ -320,24 +322,26 @@ export function SettingsLayout({
   return (
     <div className="md:flex md:items-start md:gap-8 lg:gap-10">
       {/* Mobile horizontal tab rail */}
-      <div className="md:hidden -mx-4 mb-4 flex overflow-x-auto border-b border-white/10 px-4 pb-3 scrollbar-none gap-2">
-        {allVisibleItems.map((item) => (
-          <NavLink
-            key={item.id}
-            to={item.to}
-            className={({ isActive }) =>
-              `flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-accent text-black font-semibold shadow-sm'
-                  : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
-              }`
-            }
-          >
-            {item.icon}
-            <span>{item.label}</span>
-            {item.badge}
-          </NavLink>
-        ))}
+      <div className="md:hidden -mx-4 mb-4 overflow-x-auto px-4 pb-2 scrollbar-none">
+        <SegmentedCapsule role="tablist" aria-label="Settings sections">
+          {allVisibleItems.map((item) => (
+            <NavLink
+              key={item.id}
+              to={item.to}
+              className={({ isActive }) =>
+                segmentedTabClass({
+                  active: isActive,
+                  size: 'xs',
+                  className: 'shrink-0',
+                })
+              }
+            >
+              {item.icon}
+              <span>{item.label}</span>
+              {item.badge}
+            </NavLink>
+          ))}
+        </SegmentedCapsule>
       </div>
 
       {/* Mobile secondary sub-menu pill rail */}
