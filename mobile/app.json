@@ -14,6 +14,7 @@
     },
     "android": {
       "package": "io.iwanttowatch.mobile",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#0b1120",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -24,6 +25,16 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ]
   }
 }
