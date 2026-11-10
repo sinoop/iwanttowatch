@@ -2,7 +2,7 @@ import random
 from typing import Any
 
 from iwanttowatch.models import Title
-from iwanttowatch.recommender import Label, evaluate, percentiles, score
+from iwanttowatch.recommender import Label, evaluate, percentiles, score, score_rated
 
 # Three kinds of film. The user loves Malayalam family dramas by one director and
 # dislikes slashers, which are the most popular and best voted on TMDb, so ranking
@@ -147,3 +147,18 @@ def test_evaluation_compares_with_popularity() -> None:
     assert result.held_out == 15
     assert result.model_spearman > 0.7 > result.baseline_spearman
     assert result.model_ndcg > result.baseline_ndcg
+
+
+def test_score_rated_predicts_ratings_without_leakage() -> None:
+    titles, ratings = catalogue()
+    labels = [Label(i, p) for i, p in percentiles(ratings).items()]
+    scores = score_rated(titles, labels)
+    assert len(scores) == len(labels)
+    # The user loves dramas (high scores) and dislikes slashers (low scores)
+    drama_scores = [scores[i] for i in titles if i in scores and "Drama" in titles[i].genres]
+    slasher_scores = [scores[i] for i in titles if i in scores and "Horror" in titles[i].genres]
+    assert sum(drama_scores) / len(drama_scores) > sum(slasher_scores) / len(slasher_scores)
+    # Also works for small cold-start sample (< 15 ratings)
+    few_labels = labels[:5]
+    few_scores = score_rated(titles, few_labels)
+    assert len(few_scores) == 5

@@ -5,9 +5,10 @@ import { Link } from 'react-router'
 import { api, errorMessage, ratingToReaction, REACTIONS, TAG_LABELS, useAvailability, useImports, usePeopleTaste, useServerSettings } from './api'
 import { ReactionBadge, ReactionIcon } from './RateDialog'
 import PersonDialog, { HeartIcon } from './PersonDialog'
+import OutlierReviewDialog from './OutlierReviewDialog'
 import { FilmSearch } from './Search'
 import { WatchBadges } from './Streaming'
-import TitleDialog from './TitleDialog'
+import TitleDialog, { MatchBadge } from './TitleDialog'
 import { segmentedBadgeClass, segmentedTabClass } from './tabs'
 import { Button, ErrorText, Poster, SegmentedCapsule } from './ui'
 
@@ -69,7 +70,13 @@ function Ratings({
 }) {
   const [tab, setTab] = useState<'all' | 'divergent' | 'people'>('all')
   const [personDetailId, setPersonDetailId] = useState<number | null>(null)
+  const [reviewOutliersOpen, setReviewOutliersOpen] = useState(false)
   const peopleTaste = usePeopleTaste()
+
+  const outliers = useQuery({
+    queryKey: ['outlier-ratings'],
+    queryFn: async () => (await api.GET('/api/v1/ratings/outliers')).data ?? [],
+  })
 
   // Filter & sort states
   const [search, setSearch] = useState('')
@@ -235,6 +242,22 @@ function Ratings({
             </button>
           </SegmentedCapsule>
         </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setReviewOutliersOpen(true)}
+            className="flex cursor-pointer items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 px-3.5 py-2 text-sm font-semibold text-accent-strong hover:bg-accent/25 hover:border-accent transition-all shadow-sm"
+          >
+            <span>🎯 Review Outliers</span>
+            {(outliers.data?.length ?? 0) > 0 && (
+              <span className="rounded-full bg-accent text-black font-bold px-1.5 py-0.2 text-[11px] leading-none">
+                {outliers.data?.length}
+              </span>
+            )}
+          </button>
+        </div>
+
         {tab === 'all' && first.languages.length > 0 && (
           <ul className="flex flex-wrap gap-2" aria-label="Languages you rated">
             {first.languages.map((lang) => {
@@ -554,6 +577,11 @@ function Ratings({
       <PersonDialog
         personId={personDetailId}
         onClose={() => setPersonDetailId(null)}
+        onSelectFilm={onSelectFilm}
+      />
+      <OutlierReviewDialog
+        isOpen={reviewOutliersOpen}
+        onClose={() => setReviewOutliersOpen(false)}
         onSelectFilm={onSelectFilm}
       />
     </section>
@@ -972,11 +1000,16 @@ function RatingCard({
       <button
         type="button"
         onClick={() => onSelectFilm(item.tmdb_id)}
-        aria-label={`${item.title}${item.year ? `, ${item.year}` : ''}`}
+        aria-label={`${item.title}${item.year ? `, ${item.year}` : ''}${item.match != null ? `, ${item.match}% match` : ''}`}
         className="group block w-full rounded-lg text-left focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none cursor-pointer"
       >
         <div className="relative">
           <Poster path={item.poster_path} title={item.title} className="group-hover:ring-2 group-hover:ring-accent/70" />
+          {item.match !== null && item.match !== undefined && (
+            <div className="absolute top-1.5 left-1.5 z-10">
+              <MatchBadge match={item.match} className="scale-75 origin-top-left shadow-lg shadow-black/60" />
+            </div>
+          )}
           <span
             className={`absolute top-1.5 right-1.5 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold backdrop-blur-xs border ${
               reaction?.value === 'loved'

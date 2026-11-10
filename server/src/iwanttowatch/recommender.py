@@ -525,6 +525,79 @@ def _diversify(vectors: Vectors, candidates: Sequence[int], scores: Floats) -> l
     return picked + order[DIVERSIFY_TOP:]
 
 
+def score_rated(
+    titles: dict[int, Title],
+    labels: Sequence[Label],
+    birth_year: int | None = None,
+    favorite_people: Collection[int] = (),
+) -> dict[int, float]:
+    """Calculate leave-one-out / out-of-fold predicted scores (0.01–0.99) for rated films."""
+    explicit = [label for label in labels if label.explicit and label.tmdb_id in titles]
+    if len(explicit) < 2:
+        return {}
+    pool = [titles[label.tmdb_id] for label in labels if label.tmdb_id in titles]
+    vectors = Vectors(pool)
+    quality = _quality(pool)
+
+    targets = [label.tmdb_id for label in explicit]
+    predictions: dict[int, float] = {}
+
+    adjust = _favorite_person_bonus(titles, targets, favorite_people) - _era_penalty(
+        titles, labels, targets, birth_year
+    )
+
+    if len(explicit) < MIN_RATINGS_FOR_CV:
+        for idx, label in enumerate(explicit):
+            train = [
+                lbl for lbl in labels if lbl.tmdb_id != label.tmdb_id and lbl.tmdb_id in titles
+            ]
+            if not train:
+                continue
+            p = _predict(vectors, train, [label.tmdb_id])
+            cand_qual = quality[[vectors.rows[label.tmdb_id]]]
+            blended = np.column_stack([p.neighbours, p.ridge, cand_qual]) @ np.array(
+                COLD_START_BLEND
+            )
+            score = np.clip(blended[0] + adjust[idx], 0.01, 0.99)
+            predictions[label.tmdb_id] = float(score)
+        return predictions
+
+    order = list(explicit)
+    random.Random(0).shuffle(order)
+    actual: list[float] = []
+    parts: list[Floats] = []
+    fold_targets: list[list[int]] = []
+    for fold in range(FOLDS):
+        held_out = order[fold::FOLDS]
+        held_ids = {label.tmdb_id for label in held_out}
+        train = [
+            label for label in labels if label.tmdb_id not in held_ids and label.tmdb_id in titles
+        ]
+        t_ids = [label.tmdb_id for label in held_out]
+        fold_targets.append(t_ids)
+        p = _predict(vectors, train, t_ids)
+        q = quality[[vectors.rows[i] for i in t_ids]]
+        parts.append(np.column_stack([p.neighbours, p.ridge, q]))
+        actual.extend(label.value for label in held_out)
+
+    components, truth = np.vstack(parts), np.array(actual)
+    blend = max(BLENDS, key=lambda b: spearman(components @ np.array(b), truth))
+    predicted = components @ np.array(blend)
+    slope, intercept = np.polyfit(predicted, truth, 1) if predicted.std() > 0 else (1.0, 0.0)
+    if slope <= 0:
+        slope, intercept = 1.0, 0.0
+
+    all_held_ids = [t for ft in fold_targets for t in ft]
+    target_idx_map = {t: i for i, t in enumerate(targets)}
+    for row_idx, tmdb_id in enumerate(all_held_ids):
+        blended = float(predicted[row_idx])
+        own = intercept + slope * blended
+        adj = float(adjust[target_idx_map[tmdb_id]])
+        predictions[tmdb_id] = float(np.clip(own + adj, 0.01, 0.99))
+
+    return predictions
+
+
 @dataclass(frozen=True)
 class Evaluation:
     ratings: int

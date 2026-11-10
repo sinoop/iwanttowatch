@@ -1093,6 +1093,53 @@
         }
       }
     },
+    "/api/v1/ratings/outliers": {
+      "get": {
+        "summary": "List Outliers",
+        "description": "Films where the user's rating strongly diverged from the recommender's predicted match.",
+        "operationId": "list_outliers_api_v1_ratings_outliers_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OutlierTitle"
+                  },
+                  "title": "Response List Outliers Api V1 Ratings Outliers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/catalog/search": {
       "get": {
         "summary": "Search Catalog",
@@ -7277,6 +7324,127 @@
         ],
         "title": "Offer"
       },
+      "OutlierTitle": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "original_title": {
+            "type": "string",
+            "title": "Original Title"
+          },
+          "original_language": {
+            "type": "string",
+            "title": "Original Language"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "poster_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Path"
+          },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres"
+          },
+          "user_rating": {
+            "type": "number",
+            "title": "User Rating"
+          },
+          "reaction": {
+            "type": "string",
+            "title": "Reaction"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "predicted_match": {
+            "type": "integer",
+            "title": "Predicted Match"
+          },
+          "divergence": {
+            "type": "integer",
+            "title": "Divergence"
+          },
+          "outlier_type": {
+            "type": "string",
+            "title": "Outlier Type"
+          },
+          "liked_tags": {
+            "items": {
+              "$ref": "#/components/schemas/TagOption"
+            },
+            "type": "array",
+            "title": "Liked Tags"
+          },
+          "disliked_tags": {
+            "items": {
+              "$ref": "#/components/schemas/TagOption"
+            },
+            "type": "array",
+            "title": "Disliked Tags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "original_title",
+          "original_language",
+          "year",
+          "poster_path",
+          "genres",
+          "user_rating",
+          "reaction",
+          "tags",
+          "note",
+          "predicted_match",
+          "divergence",
+          "outlier_type",
+          "liked_tags",
+          "disliked_tags"
+        ],
+        "title": "OutlierTitle"
+      },
       "PeopleTasteOverview": {
         "properties": {
           "favorites": {
@@ -8592,6 +8760,17 @@
               }
             ],
             "title": "Note"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match"
           }
         },
         "type": "object",

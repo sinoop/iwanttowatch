@@ -7,17 +7,22 @@ from sqlalchemy import String, case, cast, func, or_, select
 
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.imports import Candidate
+from iwanttowatch.api.reactions import TagOption
 from iwanttowatch.catalog import search_movies
 from iwanttowatch.children import library_owners
+from iwanttowatch.feed import user_rated_matches
 from iwanttowatch.llm import LlmError, llm_order, provider_from_settings
 from iwanttowatch.models import Availability, LibraryItem, Persona, Title, UserTitle
+from iwanttowatch.tags import options_for
 from iwanttowatch.taste import (
     MIN_RATINGS_FOR_PERSONA,
+    REACTION_FALLBACK,
     effective_ratings,
     find_divergent_ratings,
     generate_persona,
     is_refreshing,
     rating_count,
+    rating_to_reaction,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -38,6 +43,7 @@ class RatedTitle(BaseModel):
     reaction: str | None
     tags: list[str]
     note: str | None = None
+    match: int | None = None
 
 
 class LanguageCount(BaseModel):
@@ -212,6 +218,7 @@ def list_ratings(
             select(UserTitle.tmdb_id).where(UserTitle.user_id == user.id, UserTitle.favorite)
         )
     )
+    matches = user_rated_matches(session, user)
 
     return RatingsPage(
         total=total,
@@ -231,6 +238,7 @@ def list_ratings(
                 reaction=row.reaction,
                 tags=row.tags or [],
                 note=row.note,
+                match=matches.get(row.Title.tmdb_id),
             )
             for row in rows
         ],
@@ -289,6 +297,110 @@ def list_divergent_ratings(
         )
         for item in items
     ]
+
+
+class OutlierTitle(BaseModel):
+    tmdb_id: int
+    title: str
+    original_title: str
+    original_language: str
+    year: int | None
+    poster_path: str | None
+    genres: list[str]
+    user_rating: float
+    reaction: str
+    tags: list[str]
+    note: str | None
+    predicted_match: int
+    divergence: int
+    outlier_type: str
+    liked_tags: list[TagOption]
+    disliked_tags: list[TagOption]
+
+
+@router.get("/ratings/outliers")
+def list_outliers(
+    user: CurrentUser,
+    session: DbSession,
+    limit: int = Query(50, ge=1, le=100),
+) -> list[OutlierTitle]:
+    """Films where the user's rating strongly diverged from the recommender's predicted match."""
+    effective = effective_ratings(user.id)
+    rows = session.execute(
+        select(effective, Title).join(Title, Title.tmdb_id == effective.c.tmdb_id)
+    ).all()
+    if not rows:
+        return []
+
+    matches = user_rated_matches(session, user)
+    if not matches:
+        return []
+
+    candidates: list[tuple[float, OutlierTitle]] = []
+    for r in rows:
+        t: Title = r.Title
+        pred = matches.get(t.tmdb_id)
+        if pred is None:
+            continue
+
+        user_rating = (
+            float(r.rating)
+            if r.rating is not None
+            else (REACTION_FALLBACK.get(r.reaction, 7.5) if r.reaction else 7.5)
+        )
+        rx = r.reaction or rating_to_reaction(user_rating)
+        tags = list(r.tags or [])
+
+        # Target percentile for reaction: Loved=95, Liked=70, Disliked=15
+        expected_pct = 95 if rx == "loved" else 70 if rx == "liked" else 15
+        diff = expected_pct - pred
+
+        outlier_type: str | None = None
+        if rx == "loved" and (pred <= 75 or not tags):
+            outlier_type = "loved_rewatch"
+        elif rx == "liked" and pred <= 45:
+            outlier_type = "predicted_dislike_user_liked"
+        elif rx == "disliked" and pred >= 65:
+            outlier_type = "predicted_like_user_disliked"
+        elif abs(diff) >= 30:
+            outlier_type = (
+                "predicted_dislike_user_liked" if diff > 0 else "predicted_like_user_disliked"
+            )
+
+        if outlier_type is None:
+            continue
+
+        priority = abs(diff) + (20 if not tags else 0) + (10 if rx == "loved" else 0)
+
+        liked_opts = [
+            TagOption(id=tag.id, label=tag.label, group=grp) for tag, grp in options_for(t, True)
+        ]
+        disliked_opts = [
+            TagOption(id=tag.id, label=tag.label, group=grp) for tag, grp in options_for(t, False)
+        ]
+
+        item = OutlierTitle(
+            tmdb_id=t.tmdb_id,
+            title=t.title,
+            original_title=t.original_title,
+            original_language=t.original_language,
+            year=t.year,
+            poster_path=t.poster_path,
+            genres=t.genres or [],
+            user_rating=user_rating,
+            reaction=rx,
+            tags=tags,
+            note=r.note,
+            predicted_match=pred,
+            divergence=diff,
+            outlier_type=outlier_type,
+            liked_tags=liked_opts,
+            disliked_tags=disliked_opts,
+        )
+        candidates.append((priority, item))
+
+    candidates.sort(key=lambda pair: pair[0], reverse=True)
+    return [item for _, item in candidates[:limit]]
 
 
 @router.get("/catalog/search")

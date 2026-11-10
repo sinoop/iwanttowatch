@@ -433,6 +433,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ratings/outliers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Outliers
+         * @description Films where the user's rating strongly diverged from the recommender's predicted match.
+         */
+        get: operations["list_outliers_api_v1_ratings_outliers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/search": {
         parameters: {
             query?: never;
@@ -2631,6 +2651,41 @@ export interface components {
             /** Kind */
             kind: string;
         };
+        /** OutlierTitle */
+        OutlierTitle: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Original Title */
+            original_title: string;
+            /** Original Language */
+            original_language: string;
+            /** Year */
+            year: number | null;
+            /** Poster Path */
+            poster_path: string | null;
+            /** Genres */
+            genres: string[];
+            /** User Rating */
+            user_rating: number;
+            /** Reaction */
+            reaction: string;
+            /** Tags */
+            tags: string[];
+            /** Note */
+            note: string | null;
+            /** Predicted Match */
+            predicted_match: number;
+            /** Divergence */
+            divergence: number;
+            /** Outlier Type */
+            outlier_type: string;
+            /** Liked Tags */
+            liked_tags: components["schemas"]["TagOption"][];
+            /** Disliked Tags */
+            disliked_tags: components["schemas"]["TagOption"][];
+        };
         /** PeopleTasteOverview */
         PeopleTasteOverview: {
             /** Favorites */
@@ -3068,6 +3123,8 @@ export interface components {
             tags: string[];
             /** Note */
             note?: string | null;
+            /** Match */
+            match?: number | null;
         };
         /** RatingsPage */
         RatingsPage: {
@@ -4213,6 +4270,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DivergentTitle"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_outliers_api_v1_ratings_outliers_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutlierTitle"][];
                 };
             };
             /** @description Validation Error */

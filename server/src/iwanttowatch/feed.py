@@ -44,7 +44,7 @@ from iwanttowatch.models import (
     UserTitle,
 )
 from iwanttowatch.moods import moods_for, tag_moods
-from iwanttowatch.recommender import Label, Scored, percentile_of, score
+from iwanttowatch.recommender import Label, Scored, percentile_of, score, score_rated
 from iwanttowatch.taste import (
     REACTION_PERCENTILES,
     effective_ratings,
@@ -886,6 +886,45 @@ def score_films(session: Session, user: User, ids: list[int]) -> list[Scored]:
         family_picks=family,
         favorite_people=fav_people,
     )
+
+
+_RATED_MATCHES_CACHE: dict[int, tuple[int, Any, dict[int, int]]] = {}
+
+
+def user_rated_matches(session: Session, user: User) -> dict[int, int]:
+    """Calculate predicted match percentages (0–100) for films rated by the user."""
+    stats = session.execute(
+        select(func.count(UserTitle.id), func.max(UserTitle.updated_at)).where(
+            UserTitle.user_id == user.id, UserTitle.rating.is_not(None)
+        )
+    ).one()
+    count, last_updated = stats[0], stats[1]
+    cached = _RATED_MATCHES_CACHE.get(user.id)
+    if cached is not None and cached[0] == count and cached[1] == last_updated:
+        return cached[2]
+
+    labels = user_labels(session, user.id)
+    explicit_ids = {label.tmdb_id for label in labels if label.explicit}
+    if not explicit_ids:
+        _RATED_MATCHES_CACHE[user.id] = (count, last_updated, {})
+        return {}
+
+    all_ids = {label.tmdb_id for label in labels}
+    titles = {
+        t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(all_ids)))
+    }
+    fav_people = set(
+        session.scalars(select(FavoritePerson.person_id).where(FavoritePerson.user_id == user.id))
+    )
+    scores = score_rated(
+        titles,
+        labels,
+        birth_year=user.birth_year,
+        favorite_people=fav_people,
+    )
+    matches = {tmdb_id: round(s * 100) for tmdb_id, s in scores.items()}
+    _RATED_MATCHES_CACHE[user.id] = (count, last_updated, matches)
+    return matches
 
 
 def _store(
