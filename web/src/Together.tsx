@@ -206,8 +206,6 @@ export default function Together({ me }: { me: Me }) {
         </ul>
       )}
 
-      {options.data && !me.is_child && <ShareTaste share={options.data.share} />}
-
       <TitleDialog tmdbId={open} onClose={() => setOpen(null)} />
     </>
   )
@@ -646,8 +644,8 @@ function AddFriend({ onAdded }: { onAdded: (guest: GuestProfile) => void }) {
   return (
     <form onSubmit={submit} className="mt-2 w-full max-w-xl space-y-3 rounded-xl border border-white/10 p-4">
       <p className="text-sm text-white/60">
-        Ask a friend on another iWantToWatch server to send their taste card or share link (Watch together → Share
-        your taste).
+        Ask a friend on another iWantToWatch server to send their taste card or share link (Settings → My Profile →
+        Share your taste).
       </p>
       <div className="flex gap-2" role="radiogroup" aria-label="How your friend shares">
         {(
@@ -707,82 +705,3 @@ function AddFriend({ onAdded }: { onAdded: (guest: GuestProfile) => void }) {
   )
 }
 
-function ShareTaste({ share }: { share: TogetherOptions['share'] }) {
-  const queryClient = useQueryClient()
-  const [copied, setCopied] = useState(false)
-  const done = () => {
-    setCopied(false)
-    queryClient.invalidateQueries({ queryKey: ['together', 'options'] })
-  }
-  const create = useMutation({ mutationFn: () => api.POST('/api/v1/me/share'), onSettled: done })
-  const revoke = useMutation({ mutationFn: () => api.DELETE('/api/v1/me/share'), onSettled: done })
-  const link = share.token ? `${window.location.origin}/api/v1/shared/${share.token}` : null
-
-  return (
-    <section className="mt-12 max-w-xl rounded-xl border border-white/10 p-5">
-      <h2 className="font-semibold">Share your taste</h2>
-      <p className="mt-2 text-sm text-white/60">
-        Friends on other iWantToWatch servers can add you to their group picks. Both ways share only which films
-        you’ve seen and how much you liked them, not your name or account.
-      </p>
-
-      <h3 className="mt-5 text-sm font-medium text-white/80">Taste card</h3>
-      <p className="mt-1 text-sm text-white/60">
-        A small file to send by WhatsApp or email. Works from any home network; send a new one when you’ve rated
-        more. Once sent, it can’t be revoked.
-      </p>
-      <a
-        href="/api/v1/me/taste-card"
-        download
-        className="mt-3 inline-block rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-black hover:bg-accent-strong focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
-      >
-        Download taste card
-      </a>
-
-      <h3 className="mt-6 text-sm font-medium text-white/80">Share link</h3>
-      <p className="mt-1 text-sm text-white/60">
-        Stays up to date and can be revoked any time, but your friend’s server must be able to reach this one, such
-        as through a domain or Tailscale.
-      </p>
-      {link ? (
-        <>
-          <div className="mt-3 flex gap-2">
-            <input
-              readOnly
-              value={link}
-              aria-label="Your share link"
-              onFocus={(e) => e.target.select()}
-              className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/80 outline-none focus:border-accent"
-            />
-            <Button
-              onClick={() => {
-                void copyToClipboard(link).then((ok) => {
-                  if (ok) setCopied(true)
-                })
-              }}
-            >
-              {copied ? 'Copied' : 'Copy'}
-            </Button>
-          </div>
-          <div className="mt-2 flex gap-2">
-            <Button variant="ghost" className="px-2" onClick={() => create.mutate()} disabled={create.isPending}>
-              New link
-            </Button>
-            <Button variant="ghost" className="px-2" onClick={() => revoke.mutate()} disabled={revoke.isPending}>
-              Revoke
-            </Button>
-          </div>
-        </>
-      ) : (
-        <Button
-          variant="ghost"
-          className="mt-3 border border-white/10"
-          onClick={() => create.mutate()}
-          disabled={create.isPending}
-        >
-          Create share link
-        </Button>
-      )}
-    </section>
-  )
-}

@@ -18,8 +18,8 @@ export default function Review() {
 
   return (
     <>
-      <Link to="/taste" className="text-sm text-white/55 hover:text-white">
-        ← My taste
+      <Link to="/settings/imports" className="text-sm text-white/55 hover:text-white">
+        ← Import & Export
       </Link>
       <h1 className="mt-3 text-2xl font-semibold">Review matches</h1>
       <p className="mt-2 max-w-prose text-white/60">

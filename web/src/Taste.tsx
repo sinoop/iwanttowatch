@@ -1,8 +1,8 @@
-import type { DivergentTitle, ImportJob, Me, RatedTitle, TitleAvailability } from '@iwanttowatch/api-client'
+import type { DivergentTitle, Me, RatedTitle, TitleAvailability } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router'
-import { api, errorMessage, REACTIONS, TAG_LABELS, useAvailability, useServerSettings } from './api'
+import { api, errorMessage, REACTIONS, TAG_LABELS, useAvailability, useImports, useServerSettings } from './api'
 import RateDialog, { ReactionIcon } from './RateDialog'
 import { FilmSearch } from './Search'
 import { WatchBadges } from './Streaming'
@@ -11,272 +11,73 @@ import { Button, ErrorText, Poster } from './ui'
 
 const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
 const PAGE = 48
-const SOURCE_NAMES: Record<string, string> = {
-  imdb: 'IMDb',
-  letterboxd: 'Letterboxd',
-  netflix: 'Netflix',
-}
 
 export default function Taste({ me }: { me: Me }) {
   const [rating, setRating] = useState<number | null>(null)
   const [detailId, setDetailId] = useState<number | null>(null)
   const isChild = me.is_child
+  const imports = useImports()
+
+  const runningJob = !isChild
+    ? imports.data?.find((job) => job.status === 'pending' || job.status === 'running')
+    : undefined
+  const reviewCount = !isChild
+    ? imports.data?.reduce(
+        (sum, job) => sum + (job.status !== 'pending' && job.status !== 'running' ? job.counts.review : 0),
+        0,
+      ) ?? 0
+    : 0
+
   return (
     <>
-      <h1 className="text-2xl font-semibold">My taste</h1>
-      <p className="mt-2 max-w-prose text-white/60">
-        {isChild
-          ? 'Everything iWantToWatch knows about what you like.'
-          : 'Everything iWantToWatch knows about what you like. Import your history from IMDb, Letterboxd, or Netflix; importing again later only adds what changed.'}
-      </p>
-      <PersonaCard />
-      {!isChild && <Imports />}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">My taste</h1>
+          <p className="mt-2 max-w-prose text-white/60">
+            {isChild
+              ? 'Everything iWantToWatch knows about what you like.'
+              : 'Everything iWantToWatch knows about what you like. Rate movies below or import your history from IMDb, Letterboxd, or Netflix in Settings.'}
+          </p>
+        </div>
+        {!isChild && (
+          <Link
+            to="/settings/imports"
+            className="rounded-lg border border-white/10 px-3.5 py-1.5 text-sm font-medium text-white/75 transition-colors hover:border-white/25 hover:bg-white/5 hover:text-white"
+          >
+            Import ratings
+          </Link>
+        )}
+      </div>
+
+      {runningJob && (
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent/10 p-4 text-sm">
+          <div className="flex items-center gap-2.5">
+            <span className="size-2 animate-pulse rounded-full bg-accent" />
+            <span className="text-white/90">
+              Matching ratings from <span className="font-medium text-white">{runningJob.source}</span> ({runningJob.filename}) in the background…
+            </span>
+          </div>
+          <Link to="/settings/imports" className="font-semibold text-accent hover:underline">
+            View progress →
+          </Link>
+        </div>
+      )}
+
+      {reviewCount > 0 && !runningJob && (
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-4 text-sm">
+          <span className="text-white/80">
+            You have <span className="font-medium text-white">{reviewCount}</span> imported {reviewCount === 1 ? 'rating' : 'ratings'} to review.
+          </span>
+          <Link to="/settings/imports" className="font-semibold text-accent hover:underline">
+            Review matches →
+          </Link>
+        </div>
+      )}
+
       <Ratings onRate={setRating} onSelectFilm={setDetailId} />
       <RateDialog tmdbId={rating} onClose={() => setRating(null)} />
       <TitleDialog tmdbId={detailId} onClose={() => setDetailId(null)} />
     </>
-  )
-}
-
-function PersonaCard() {
-  const queryClient = useQueryClient()
-  const persona = useQuery({
-    queryKey: ['persona'],
-    queryFn: async () => (await api.GET('/api/v1/me/persona')).data ?? null,
-    refetchInterval: (query) => (query.state.data?.refreshing ? 2000 : false),
-  })
-  const write = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await api.POST('/api/v1/me/persona')
-      if (error) throw new Error(errorMessage(error))
-      return data
-    },
-    onSuccess: (data) => queryClient.setQueryData(['persona'], data),
-  })
-  const p = persona.data
-  if (!p) return null
-  const writing = write.isPending || p.refreshing
-  const enough = p.current_ratings >= p.min_ratings
-  const newRatings = p.current_ratings - p.based_on_ratings
-
-  if (!p.text && p.refreshing) {
-    return (
-      <section className="mt-8 rounded-xl border border-dashed border-white/15 p-5 text-sm text-white/60">
-        Summing up your taste…
-      </section>
-    )
-  }
-
-  if (!p.text) {
-    return (
-      <section className="mt-8 rounded-xl border border-dashed border-white/15 p-5 text-sm text-white/60">
-        {!p.llm_configured ? (
-          <>
-            Connect Ollama or Gemini in{' '}
-            <Link to="/settings" className="text-accent underline-offset-2 hover:underline">
-              Settings
-            </Link>{' '}
-            to get a short AI-written summary of your taste.
-          </>
-        ) : !enough ? (
-          `Rate at least ${p.min_ratings} movies and iWantToWatch will sum up your taste.`
-        ) : (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span>Ready to sum up your taste.</span>
-            <Button onClick={() => write.mutate()} disabled={write.isPending}>
-              {write.isPending ? 'Writing…' : 'Sum up my taste'}
-            </Button>
-          </div>
-        )}
-        {write.error && (
-          <div className="mt-3">
-            <ErrorText>{write.error.message}</ErrorText>
-          </div>
-        )}
-      </section>
-    )
-  }
-
-  return (
-    <section className="mt-8 rounded-xl border border-accent/25 bg-gradient-to-br from-accent/10 to-transparent p-5 sm:p-6">
-      <p className="text-xs font-medium tracking-wide text-accent uppercase">Your taste in brief</p>
-      <p className={`mt-3 max-w-prose text-lg leading-relaxed ${writing ? 'opacity-50' : ''}`}>
-        {p.text}
-      </p>
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-white/50">
-        <span>
-          Based on {p.based_on_ratings} ratings
-          {newRatings > 0 && ` · ${newRatings} new since`}
-        </span>
-        {p.llm_configured && (
-          <Button variant="ghost" onClick={() => write.mutate()} disabled={writing}>
-            {writing ? 'Writing… a local model can take a minute' : 'Write a new one'}
-          </Button>
-        )}
-      </div>
-      {write.error && (
-        <div className="mt-3">
-          <ErrorText>{write.error.message}</ErrorText>
-        </div>
-      )}
-    </section>
-  )
-}
-
-function useImports() {
-  return useQuery({
-    queryKey: ['imports'],
-    queryFn: async () => (await api.GET('/api/v1/imports')).data ?? [],
-    refetchInterval: (query) =>
-      query.state.data?.some((job) => job.status === 'pending' || job.status === 'running')
-        ? 1500
-        : false,
-  })
-}
-
-function Imports() {
-  const queryClient = useQueryClient()
-  const settings = useServerSettings()
-  const imports = useImports()
-  const input = useRef<HTMLInputElement>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const upload = useMutation({
-    mutationFn: async (file: File) => {
-      const body = new FormData()
-      body.append('file', file)
-      // openapi-fetch sends FormData as-is, letting the browser set the multipart boundary.
-      const { data, error } = await api.POST('/api/v1/imports', {
-        body: body as unknown as { file: string },
-      })
-      if (error) throw new Error(errorMessage(error))
-      return data
-    },
-    onMutate: () => setError(null),
-    onError: (e) => setError(e.message),
-    onSettled: () => {
-      if (input.current) input.current.value = ''
-      queryClient.invalidateQueries({ queryKey: ['imports'] })
-    },
-  })
-
-  // When a job finishes or fails, refresh the ratings it added.
-  const statuses = (imports.data ?? []).map((job) => `${job.id}:${job.status}`).join()
-  useEffect(() => {
-    queryClient.invalidateQueries({ queryKey: ['ratings'] })
-    queryClient.invalidateQueries({ queryKey: ['persona'] })
-  }, [statuses, queryClient])
-
-  const ready = settings.data?.tmdb_configured
-
-  return (
-    <section className="mt-8 rounded-xl border border-white/10 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-prose text-sm text-white/60">
-          <h2 className="text-base font-semibold text-white">Import ratings</h2>
-          <ul className="mt-2 list-disc space-y-1 pl-5">
-            <li>
-              <span className="text-white/80">IMDb:</span> open Your Ratings, then use the menu to
-              export <code className="text-white/80">ratings.csv</code>.
-            </li>
-            <li>
-              <span className="text-white/80">Letterboxd:</span> Settings → Data → Export your data,
-              then upload the ZIP file as it is.
-            </li>
-            <li>
-              <span className="text-white/80">Netflix:</span> Account → Profiles → your profile →
-              Viewing activity, then Download all. It has no ratings, so films only count as
-              watched; series are skipped.
-            </li>
-          </ul>
-        </div>
-        <div>
-          <input
-            ref={input}
-            type="file"
-            accept=".csv,.zip"
-            className="hidden"
-            aria-label="Export file"
-            onChange={(e) => e.target.files?.[0] && upload.mutate(e.target.files[0])}
-          />
-          <Button
-            onClick={() => input.current?.click()}
-            disabled={!ready || upload.isPending}
-            title={ready ? undefined : 'Add a TMDb API key in Settings first'}
-          >
-            {upload.isPending ? 'Uploading…' : 'Choose file'}
-          </Button>
-        </div>
-      </div>
-      {!ready && settings.data && (
-        <p className="mt-4 text-sm text-amber-300">
-          Add a TMDb API key in <Link to="/settings" className="underline">Settings</Link> before
-          importing.
-        </p>
-      )}
-      {error && (
-        <div className="mt-4">
-          <ErrorText>{error}</ErrorText>
-        </div>
-      )}
-      {imports.data && imports.data.length > 0 && (
-        <ul className="mt-5 divide-y divide-white/5 border-t border-white/10">
-          {imports.data.map((job) => (
-            <ImportRow key={job.id} job={job} />
-          ))}
-        </ul>
-      )}
-    </section>
-  )
-}
-
-function ImportRow({ job }: { job: ImportJob }) {
-  const queryClient = useQueryClient()
-  const retry = useMutation({
-    mutationFn: () => api.POST('/api/v1/imports/{job_id}/retry', { params: { path: { job_id: job.id } } }),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['imports'] }),
-  })
-  const { pending, matched, review, skipped } = job.counts
-  const total = pending + matched + review + skipped
-  const done = total - pending
-  const active = job.status === 'pending' || job.status === 'running'
-
-  return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">
-          {SOURCE_NAMES[job.source] ?? job.source}{' '}
-          <span className="font-normal text-white/45">{job.filename}</span>
-        </p>
-        <p className="text-white/55">
-          {active
-            ? `Matching ${done} of ${total}…`
-            : `${matched} matched · ${review} to review · ${skipped} skipped`}
-        </p>
-        {active && (
-          <div className="mt-2 h-1 w-full max-w-xs overflow-hidden rounded bg-white/10">
-            <div
-              className="h-full bg-accent transition-[width]"
-              style={{ width: `${total ? (done / total) * 100 : 0}%` }}
-            />
-          </div>
-        )}
-        {job.status === 'failed' && <p className="mt-1 text-red-300">{job.error}</p>}
-      </div>
-      {job.status === 'failed' && (
-        <Button variant="ghost" onClick={() => retry.mutate()} disabled={retry.isPending}>
-          Retry
-        </Button>
-      )}
-      {review > 0 && !active && (
-        <Link
-          to={`/taste/imports/${job.id}`}
-          className="rounded-lg border border-accent/40 px-3 py-1.5 font-medium text-accent hover:bg-accent/10"
-        >
-          Review {review}
-        </Link>
-      )}
-    </li>
   )
 }
 

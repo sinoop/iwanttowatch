@@ -186,7 +186,7 @@ export default function Discover({ me }: { me: Me }) {
       </div>
 
       {tmdbMissing ? (
-        <NextStep to="/settings" action="Open Settings">
+        <NextStep to={me.is_admin ? '/settings/integrations' : '/settings/profile'} action="Open Settings">
           {me.is_admin
             ? 'First, add a free TMDb API key so iWantToWatch can look up movies.'
             : 'Ask your admin to add a TMDb API key so iWantToWatch can look up movies.'}
@@ -194,7 +194,7 @@ export default function Discover({ me }: { me: Me }) {
       ) : (
         ratings.data !== undefined &&
         ratings.data < FEW_RATINGS && (
-          <NextStep to="/taste" action="Import ratings">
+          <NextStep to="/settings/imports" action="Import ratings">
             {ratings.data === 0
               ? 'These picks are well-loved films, not yet yours. Import your IMDb or Letterboxd ratings to teach iWantToWatch your taste.'
               : `Only ${ratings.data} ratings so far. Import your IMDb or Letterboxd history for picks that match your taste.`}
@@ -660,7 +660,7 @@ function EmptyFeed({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span>
             None of your picks are on your Jellyfin server or your streaming services. Choose your services in{' '}
-            <Link to="/settings" className="text-accent underline-offset-2 hover:underline">
+            <Link to="/settings/streaming" className="text-accent underline-offset-2 hover:underline">
               Settings
             </Link>
             , or see every pick.

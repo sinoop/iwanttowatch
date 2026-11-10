@@ -75,6 +75,18 @@ export function useChildren(enabled = true) {
   })
 }
 
+/** The user's ratings import jobs. */
+export function useImports() {
+  return useQuery({
+    queryKey: ['imports'],
+    queryFn: async () => (await api.GET('/api/v1/imports')).data ?? [],
+    refetchInterval: (query) =>
+      query.state.data?.some((job) => job.status === 'pending' || job.status === 'running')
+        ? 1500
+        : false,
+  })
+}
+
 /** Assign a film to a child profile's shortlist, or take it off. */
 export function useAssignToChild() {
   const queryClient = useQueryClient()
