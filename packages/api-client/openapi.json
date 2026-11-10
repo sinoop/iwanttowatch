@@ -3911,6 +3911,11 @@
             "type": "array",
             "title": "Subscriptions"
           },
+          "show_rent_buy": {
+            "type": "boolean",
+            "title": "Show Rent Buy",
+            "default": false
+          },
           "birth_year": {
             "anyOf": [
               {
@@ -5405,6 +5410,11 @@
             "type": "array",
             "title": "Subscriptions"
           },
+          "show_rent_buy": {
+            "type": "boolean",
+            "title": "Show Rent Buy",
+            "default": false
+          },
           "birth_year": {
             "anyOf": [
               {
@@ -6209,6 +6219,11 @@
             "type": "array",
             "maxItems": 100,
             "title": "Subscriptions"
+          },
+          "show_rent_buy": {
+            "type": "boolean",
+            "title": "Show Rent Buy",
+            "default": false
           }
         },
         "type": "object",

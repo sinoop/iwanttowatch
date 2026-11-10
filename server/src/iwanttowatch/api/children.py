@@ -81,6 +81,7 @@ def create_child(
         region=adult.region,
         languages=list(adult.languages),
         subscriptions=list(adult.subscriptions),
+        show_rent_buy=adult.show_rent_buy,
     )
     if not refresh_limit(child, tmdb):
         child.max_certificate, child.allowed_certificates = "", []

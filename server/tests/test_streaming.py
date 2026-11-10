@@ -99,3 +99,24 @@ def test_details_list_what_the_user_cant_play_yet(client: TestClient) -> None:
     assert availability(client, 301)[301]["other_offers"] == []
     # What can be played now isn't repeated.
     assert client.get("/api/v1/titles/201").json()["availability"]["other_offers"] == []
+
+
+def test_streaming_settings_show_rent_buy_preference(client: TestClient) -> None:
+    me = client.get("/api/v1/me").json()
+    assert me["show_rent_buy"] is False
+
+    updated = client.put(
+        "/api/v1/me/streaming",
+        json={"region": "IN", "subscriptions": [8], "show_rent_buy": True},
+    ).json()
+    assert updated["show_rent_buy"] is True
+
+    # Persists on me
+    assert client.get("/api/v1/me").json()["show_rent_buy"] is True
+
+    # Can be turned back off
+    off = client.put(
+        "/api/v1/me/streaming",
+        json={"region": "IN", "subscriptions": [8], "show_rent_buy": False},
+    ).json()
+    assert off["show_rent_buy"] is False
