@@ -466,3 +466,18 @@ class LlmCall(Base):
     reply: Mapped[str | None] = mapped_column(Text)
     error: Mapped[str | None] = mapped_column(Text)
     duration_ms: Mapped[int]
+
+
+class FavoritePerson(Base):
+    """A person (actor, director, writer) the user has explicitly favorited."""
+
+    __tablename__ = "favorite_people"
+    __table_args__ = (UniqueConstraint("user_id", "person_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    person_id: Mapped[int] = mapped_column(index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    role: Mapped[str | None] = mapped_column(String(32))
+    profile_path: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

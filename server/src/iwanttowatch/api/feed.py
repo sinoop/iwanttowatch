@@ -531,6 +531,11 @@ class RadarrShortlistSyncResponse(BaseModel):
     items: list[RadarrShortlistItemStatus]
 
 
+class PersonRef(BaseModel):
+    id: int
+    name: str
+
+
 class TitleDetail(BaseModel):
     tmdb_id: int
     title: str
@@ -545,8 +550,8 @@ class TitleDetail(BaseModel):
     tagline: str
     genres: list[str]
     moods: list[str]
-    directors: list[str]
-    cast: list[str]
+    directors: list[PersonRef]
+    cast: list[PersonRef]
     # How well the film suits the user, scored like the feed's films; None once seen.
     match: int | None
     reasons: list[str]
@@ -627,8 +632,16 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
         tagline=title.tagline,
         genres=title.genres,
         moods=moods_for(title),
-        directors=[p["name"] for p in title.directors],
-        cast=[p["name"] for p in title.cast[:8]],
+        directors=[
+            PersonRef(id=p["id"], name=p["name"])
+            for p in title.directors
+            if isinstance(p, dict) and p.get("name") and p.get("id") is not None
+        ],
+        cast=[
+            PersonRef(id=p["id"], name=p["name"])
+            for p in title.cast[:8]
+            if isinstance(p, dict) and p.get("name") and p.get("id") is not None
+        ],
         match=match,
         reasons=reasons,
         seen=SeenStatus(rating=rated.rating, reaction=rated.reaction)

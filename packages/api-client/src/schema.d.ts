@@ -1530,6 +1530,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/people/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Favorites
+         * @description List all people favorited by the current user.
+         */
+        get: operations["get_favorites_api_v1_people_favorites_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/people/taste": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get People Taste
+         * @description The user's favorite people and top learned directors and actors from rating history.
+         */
+        get: operations["get_people_taste_api_v1_people_taste_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/people/{person_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Person
+         * @description Person biography, credits, and the user's personal taste affinity.
+         */
+        get: operations["get_person_api_v1_people__person_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/people/{person_id}/favorite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Add Favorite
+         * @description Add a person to the user's favorites.
+         */
+        put: operations["add_favorite_api_v1_people__person_id__favorite_put"];
+        post?: never;
+        /**
+         * Remove Favorite
+         * @description Remove a person from the user's favorites.
+         */
+        delete: operations["remove_favorite_api_v1_people__person_id__favorite_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1705,6 +1789,11 @@ export interface components {
              * @default []
              */
             shortlist: components["schemas"]["ExportedShortlistItem"][];
+            /**
+             * Favorite People
+             * @default []
+             */
+            favorite_people: components["schemas"]["ExportedFavoritePerson"][];
         };
         /** DeclutterCandidateItem */
         DeclutterCandidateItem: {
@@ -1881,6 +1970,22 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /** ExportedFavoritePerson */
+        ExportedFavoritePerson: {
+            /** Person Id */
+            person_id: number;
+            /** Name */
+            name: string;
+            /** Role */
+            role?: string | null;
+            /** Profile Path */
+            profile_path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** ExportedFeedback */
         ExportedFeedback: {
             /** Tmdb Id */
@@ -1933,6 +2038,31 @@ export interface components {
              * Format: date-time
              */
             added_at: string;
+        };
+        /** FavoritePersonItem */
+        FavoritePersonItem: {
+            /** Person Id */
+            person_id: number;
+            /** Name */
+            name: string;
+            /** Role */
+            role?: string | null;
+            /** Profile Path */
+            profile_path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** FavoriteToggleRequest */
+        FavoriteToggleRequest: {
+            /** Name */
+            name?: string | null;
+            /** Role */
+            role?: string | null;
+            /** Profile Path */
+            profile_path?: string | null;
         };
         /** FeedItem */
         FeedItem: {
@@ -2283,6 +2413,41 @@ export interface components {
             /** Count */
             count: number;
         };
+        /** LearnedPerson */
+        LearnedPerson: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Role */
+            role: string;
+            /** Rated Count */
+            rated_count: number;
+            /** Average Rating */
+            average_rating: number;
+            /**
+             * Loved Count
+             * @default 0
+             */
+            loved_count: number;
+            /**
+             * Liked Count
+             * @default 0
+             */
+            liked_count: number;
+            /**
+             * Disliked Count
+             * @default 0
+             */
+            disliked_count: number;
+            /**
+             * Is Favorite
+             * @default false
+             */
+            is_favorite: boolean;
+            /** Profile Path */
+            profile_path?: string | null;
+        };
         /** LlmActivity */
         LlmActivity: {
             /** Total */
@@ -2461,6 +2626,15 @@ export interface components {
             /** Kind */
             kind: string;
         };
+        /** PeopleTasteOverview */
+        PeopleTasteOverview: {
+            /** Favorites */
+            favorites?: components["schemas"]["FavoritePersonItem"][];
+            /** Top Directors */
+            top_directors?: components["schemas"]["LearnedPerson"][];
+            /** Top Actors */
+            top_actors?: components["schemas"]["LearnedPerson"][];
+        };
         /** Person */
         Person: {
             /** Id */
@@ -2469,6 +2643,106 @@ export interface components {
             name: string;
             /** Max Certificate */
             max_certificate?: string | null;
+        };
+        /** PersonAffinity */
+        PersonAffinity: {
+            /**
+             * Rated Count
+             * @default 0
+             */
+            rated_count: number;
+            /** Average Rating */
+            average_rating?: number | null;
+            /**
+             * Loved Count
+             * @default 0
+             */
+            loved_count: number;
+            /**
+             * Liked Count
+             * @default 0
+             */
+            liked_count: number;
+            /**
+             * Disliked Count
+             * @default 0
+             */
+            disliked_count: number;
+            /** Rated Films */
+            rated_films?: components["schemas"]["PersonCredit"][];
+        };
+        /** PersonCredit */
+        PersonCredit: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Original Title */
+            original_title: string;
+            /** Year */
+            year?: number | null;
+            /** Poster Path */
+            poster_path?: string | null;
+            /** Character */
+            character?: string | null;
+            /** Job */
+            job?: string | null;
+            /** Department */
+            department?: string | null;
+            /** Vote Average */
+            vote_average?: number | null;
+            /** Vote Count */
+            vote_count?: number | null;
+            /** User Rating */
+            user_rating?: number | null;
+            /** User Reaction */
+            user_reaction?: string | null;
+            /**
+             * Watched
+             * @default false
+             */
+            watched: boolean;
+            /**
+             * In Library
+             * @default false
+             */
+            in_library: boolean;
+            /** Streaming Services */
+            streaming_services?: string[];
+        };
+        /** PersonDetail */
+        PersonDetail: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Biography */
+            biography?: string | null;
+            /** Profile Path */
+            profile_path?: string | null;
+            /** Birthday */
+            birthday?: string | null;
+            /** Deathday */
+            deathday?: string | null;
+            /** Place Of Birth */
+            place_of_birth?: string | null;
+            /** Known For Department */
+            known_for_department?: string | null;
+            /**
+             * Is Favorite
+             * @default false
+             */
+            is_favorite: boolean;
+            affinity: components["schemas"]["PersonAffinity"];
+            /** Filmography */
+            filmography?: components["schemas"]["PersonCredit"][];
+        };
+        /** PersonRef */
+        PersonRef: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
         };
         /** PersonaOut */
         PersonaOut: {
@@ -3030,9 +3304,9 @@ export interface components {
             /** Moods */
             moods: string[];
             /** Directors */
-            directors: string[];
+            directors: components["schemas"]["PersonRef"][];
             /** Cast */
-            cast: string[];
+            cast: components["schemas"]["PersonRef"][];
             /** Match */
             match: number | null;
             /** Reasons */
@@ -5967,6 +6241,147 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RadarQueueResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_favorites_api_v1_people_favorites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FavoritePersonItem"][];
+                };
+            };
+        };
+    };
+    get_people_taste_api_v1_people_taste_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeopleTasteOverview"];
+                };
+            };
+        };
+    };
+    get_person_api_v1_people__person_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_favorite_api_v1_people__person_id__favorite_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FavoriteToggleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_favorite_api_v1_people__person_id__favorite_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

@@ -84,7 +84,9 @@ def test_feed_suggests_unseen_films_the_user_can_play(
 
     detail = client.get("/api/v1/titles/302").json()
     assert detail["match"] == by_id[302]["match"]
-    assert detail["directors"] == ["A Director"] and detail["jellyfin_url"] is None
+    assert (
+        detail["directors"] == [{"id": 9, "name": "A Director"}] and detail["jellyfin_url"] is None
+    )
 
 
 def test_imdb_ratings_reach_the_feed_once_an_admin_turns_them_on(

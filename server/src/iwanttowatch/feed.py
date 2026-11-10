@@ -33,6 +33,7 @@ from iwanttowatch.llm import LlmError, LlmProvider, llm_order, provider_from_set
 from iwanttowatch.models import (
     AiPick,
     Availability,
+    FavoritePerson,
     Feedback,
     FeedBuild,
     LibraryItem,
@@ -334,6 +335,7 @@ def _discover(
     genre_id: int | None = None,
     sort_by: str = "vote_average.desc",
     content_type: str = "movies",
+    with_people: int | None = None,
 ) -> dict[str, Any]:
     params: dict[str, Any] = {
         "sort_by": sort_by,
@@ -350,6 +352,9 @@ def _discover(
     elif content_type == "concerts":
         params["with_keywords"] = CONCERT_KEYWORD_IDS
 
+    if with_people is not None:
+        params["with_people"] = str(with_people)
+        params["vote_count.gte"] = 10
     if genre_id is not None:
         params["with_genres"] = str(genre_id)
         if genre_id == DOCUMENTARY_GENRE_ID:
@@ -469,6 +474,23 @@ def candidates(
     requests += [
         _discover(user.region, lang, [], content_type=content_type) for lang in languages or [None]
     ]
+    fav_people = list(
+        session.scalars(select(FavoritePerson.person_id).where(FavoritePerson.user_id == user.id))
+    )
+    for pid in fav_people[:5]:
+        if user.subscriptions:
+            requests.append(
+                _discover(
+                    user.region,
+                    None,
+                    user.subscriptions,
+                    with_people=pid,
+                    content_type=content_type,
+                )
+            )
+        requests.append(
+            _discover(user.region, None, [], with_people=pid, content_type=content_type)
+        )
 
     def fetch(request: dict[str, Any] | int) -> list[int]:
         if isinstance(request, int):
@@ -759,6 +781,11 @@ def build_feed(
 
             def rank(ids: list[int]) -> Sequence[Scored]:
                 picks = stored_picks(session, user_id)
+                fav_people = set(
+                    session.scalars(
+                        select(FavoritePerson.person_id).where(FavoritePerson.user_id == user_id)
+                    )
+                )
                 scored = score(
                     titles,
                     labels,
@@ -767,6 +794,7 @@ def build_feed(
                     ai_percentiles(session, user_id, picks),
                     child=user.is_child,
                     family_picks=family,
+                    favorite_people=fav_people,
                 )
                 _store(session, user_id, scored, picks)
                 return scored
@@ -845,6 +873,9 @@ def score_films(session: Session, user: User, ids: list[int]) -> list[Scored]:
     titles = {t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(wanted)))}
     active_content_type = getattr(user, "default_content_type", "movies") or "movies"
     ids = [i for i in ids if i in titles and matches_content_type(titles[i], active_content_type)]
+    fav_people = set(
+        session.scalars(select(FavoritePerson.person_id).where(FavoritePerson.user_id == user.id))
+    )
     return score(
         titles,
         labels,
@@ -853,6 +884,7 @@ def score_films(session: Session, user: User, ids: list[int]) -> list[Scored]:
         ai_percentiles(session, user.id, stored_picks(session, user.id)),
         child=user.is_child,
         family_picks=family,
+        favorite_people=fav_people,
     )
 
 

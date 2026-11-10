@@ -2,8 +2,9 @@ import type { DivergentTitle, Me, RatedTitle, TitleAvailability } from '@iwantto
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { api, errorMessage, REACTIONS, TAG_LABELS, useAvailability, useImports, useServerSettings } from './api'
+import { api, errorMessage, REACTIONS, TAG_LABELS, useAvailability, useImports, usePeopleTaste, useServerSettings } from './api'
 import RateDialog, { ReactionIcon } from './RateDialog'
+import PersonDialog, { HeartIcon } from './PersonDialog'
 import { FilmSearch } from './Search'
 import { WatchBadges } from './Streaming'
 import TitleDialog from './TitleDialog'
@@ -88,7 +89,9 @@ function Ratings({
   onRate: (tmdbId: number) => void
   onSelectFilm: (tmdbId: number) => void
 }) {
-  const [tab, setTab] = useState<'all' | 'divergent'>('all')
+  const [tab, setTab] = useState<'all' | 'divergent' | 'people'>('all')
+  const [personDetailId, setPersonDetailId] = useState<number | null>(null)
+  const peopleTaste = usePeopleTaste()
   const ratings = useInfiniteQuery({
     queryKey: ['ratings'],
     initialPageParam: 0,
@@ -130,6 +133,21 @@ function Ratings({
             <span>Against the grain</span>
             <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs text-accent">Hot takes</span>
           </button>
+          <span className="text-white/20">|</span>
+          <button
+            type="button"
+            onClick={() => setTab('people')}
+            className={`cursor-pointer text-lg font-semibold transition-colors flex items-center gap-1.5 ${
+              tab === 'people' ? 'text-accent-strong' : 'text-white/40 hover:text-white/70'
+            }`}
+          >
+            <span>Directors & Cast</span>
+            {(peopleTaste.data?.favorites?.length ?? 0) > 0 && (
+              <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs text-red-400 font-medium">
+                {peopleTaste.data?.favorites?.length} fav
+              </span>
+            )}
+          </button>
         </div>
         {tab === 'all' && first.languages.length > 0 && (
           <ul className="flex flex-wrap gap-2" aria-label="Languages you rated">
@@ -145,6 +163,8 @@ function Ratings({
 
       {tab === 'divergent' ? (
         <DivergentSection onRate={onRate} onSelectFilm={onSelectFilm} />
+      ) : tab === 'people' ? (
+        <PeopleSection onSelectPerson={(id) => setPersonDetailId(id)} />
       ) : (
         <>
           <div className="mt-5">
@@ -175,7 +195,179 @@ function Ratings({
           )}
         </>
       )}
+      <PersonDialog
+        personId={personDetailId}
+        onClose={() => setPersonDetailId(null)}
+        onSelectFilm={onSelectFilm}
+      />
     </section>
+  )
+}
+
+function PeopleSection({ onSelectPerson }: { onSelectPerson: (id: number) => void }) {
+  const people = usePeopleTaste()
+
+  if (people.isLoading) {
+    return (
+      <div className="mt-12 flex items-center justify-center py-12">
+        <span className="size-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+      </div>
+    )
+  }
+
+  if (people.error) {
+    return (
+      <div className="mt-6">
+        <ErrorText>{people.error.message}</ErrorText>
+      </div>
+    )
+  }
+
+  const favorites = people.data?.favorites ?? []
+  const top_directors = people.data?.top_directors ?? []
+  const top_actors = people.data?.top_actors ?? []
+
+  const hasAny = favorites.length > 0 || top_directors.length > 0 || top_actors.length > 0
+
+  if (!hasAny) {
+    return (
+      <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
+        <span className="mx-auto block text-3xl">🎬</span>
+        <h3 className="mt-3 text-base font-semibold text-white">No people data yet</h3>
+        <p className="mt-1.5 text-sm text-white/50 max-w-md mx-auto">
+          As you rate films, iWantToWatch will discover your favourite directors and lead actors. You can also favorite any person directly from movie details.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-6 space-y-8">
+      {favorites.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold tracking-wide uppercase text-accent flex items-center gap-2">
+              <HeartIcon filled className="size-4 text-red-400" />
+              <span>Favorited People ({favorites.length})</span>
+            </h3>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+            {favorites.map((fav) => (
+              <button
+                key={fav.person_id}
+                type="button"
+                onClick={() => onSelectPerson(fav.person_id)}
+                className="group flex flex-col items-center rounded-xl border border-white/10 bg-white/[0.03] p-3 text-center transition-all hover:border-accent/40 hover:bg-white/[0.06]"
+              >
+                <div className="size-16 overflow-hidden rounded-full border border-white/10 bg-white/5 mb-2.5 shrink-0">
+                  {fav.profile_path ? (
+                    <img
+                      src={`https://image.tmdb.org/t/p/w185${fav.profile_path}`}
+                      alt={fav.name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-sm font-bold text-white/30">
+                      {fav.name.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+                <span className="font-semibold text-sm text-white group-hover:text-accent transition-colors line-clamp-1">
+                  {fav.name}
+                </span>
+                {fav.role && <span className="mt-0.5 text-xs text-white/40">{fav.role}</span>}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {top_directors.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-semibold tracking-wide uppercase text-white/80">Top Directors</h3>
+              <p className="text-xs text-white/40">Learned from your ratings (minimum 2 films)</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {top_directors.map((dir) => (
+              <button
+                key={dir.id}
+                type="button"
+                onClick={() => onSelectPerson(dir.id)}
+                className="group flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left transition-all hover:border-accent/40 hover:bg-white/[0.06]"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-sm text-white group-hover:text-accent transition-colors truncate">
+                      {dir.name}
+                    </span>
+                    {dir.is_favorite && <HeartIcon filled className="size-3 text-red-400 shrink-0" />}
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-white/50">
+                    <span>{dir.rated_count} films rated</span>
+                  </div>
+                </div>
+                <div className="shrink-0 flex flex-col items-end gap-1">
+                  <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-400">
+                    ★ {dir.average_rating}
+                  </span>
+                  {(dir.loved_count > 0 || dir.liked_count > 0) && (
+                    <span className="text-[11px] text-white/40">
+                      {dir.loved_count > 0 ? `${dir.loved_count} loved` : `${dir.liked_count} liked`}
+                    </span>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {top_actors.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-semibold tracking-wide uppercase text-white/80">Top Lead Cast</h3>
+              <p className="text-xs text-white/40">Learned from your ratings (minimum 3 films)</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {top_actors.map((actor) => (
+              <button
+                key={actor.id}
+                type="button"
+                onClick={() => onSelectPerson(actor.id)}
+                className="group flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left transition-all hover:border-accent/40 hover:bg-white/[0.06]"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-sm text-white group-hover:text-accent transition-colors truncate">
+                      {actor.name}
+                    </span>
+                    {actor.is_favorite && <HeartIcon filled className="size-3 text-red-400 shrink-0" />}
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-white/50">
+                    <span>{actor.rated_count} films rated</span>
+                  </div>
+                </div>
+                <div className="shrink-0 flex flex-col items-end gap-1">
+                  <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-400">
+                    ★ {actor.average_rating}
+                  </span>
+                  {(actor.loved_count > 0 || actor.liked_count > 0) && (
+                    <span className="text-[11px] text-white/40">
+                      {actor.loved_count > 0 ? `${actor.loved_count} loved` : `${actor.liked_count} liked`}
+                    </span>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
   )
 }
 

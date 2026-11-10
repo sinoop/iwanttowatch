@@ -316,6 +316,7 @@ def score(
     ai: Mapping[int, float] = {},  # noqa: B006 (read-only)
     child: bool = False,
     family_picks: Collection[int] = (),
+    favorite_people: Collection[int] = (),
 ) -> list[Scored]:
     """Score candidates for a user, most promising first, diversified at the top. `ai`
     holds the LLM's predictions as percentiles of the user's ratings."""
@@ -328,8 +329,10 @@ def score(
     quality = _quality(pool)
     candidate_quality = quality[[vectors.rows[i] for i in candidates]]
     # Applied after the LLM's share is blended in, which knows nothing of either.
-    adjust = (_family_bonus(titles, candidates, family_picks) if child else 0.0) - _era_penalty(
-        titles, labels, candidates, birth_year
+    adjust = (
+        (_family_bonus(titles, candidates, family_picks) if child else 0.0)
+        + _favorite_person_bonus(titles, candidates, favorite_people)
+        - _era_penalty(titles, labels, candidates, birth_year)
     )
     weight = np.array([AI_WEIGHT if i in ai else 0.0 for i in candidates])
     predicted = np.array([ai.get(i, 0.0) for i in candidates])
@@ -349,10 +352,32 @@ def score(
     scores = np.clip((1 - weight) * own + weight * predicted + adjust, 0.01, 0.99)
     reasons = [
         [*family[i], *own][:MAX_REASONS]
-        for i, own in enumerate(_reasons(vectors, labels, titles, candidates, p))
+        for i, own in enumerate(_reasons(vectors, labels, titles, candidates, p, favorite_people))
     ]
     order = _diversify(vectors, candidates, scores)
     return [Scored(candidates[i], float(scores[i]), reasons[i]) for i in order]
+
+
+FAVORITE_PERSON_BONUS = 0.05
+
+
+def _favorite_person_bonus(
+    titles: dict[int, Title], candidates: Sequence[int], favorite_people: Collection[int]
+) -> Floats:
+    """Extra match for films featuring the user's explicitly favorited directors and stars."""
+    if not favorite_people:
+        return np.zeros(len(candidates))
+    out = np.zeros(len(candidates))
+    fav_set = set(favorite_people)
+    for n, tmdb_id in enumerate(candidates):
+        t = titles.get(tmdb_id)
+        if not t:
+            continue
+        pids = {p["id"] for p in t.directors if isinstance(p, dict) and "id" in p}
+        pids |= {p["id"] for p in t.cast[:5] if isinstance(p, dict) and "id" in p}
+        if pids & fav_set:
+            out[n] = FAVORITE_PERSON_BONUS
+    return out
 
 
 def _family_bonus(
@@ -426,27 +451,44 @@ def _reasons(
     titles: dict[int, Title],
     candidates: Sequence[int],
     p: _Prediction,
+    favorite_people: Collection[int] = (),
 ) -> list[list[str]]:
     rated = vectors.matrix[[vectors.rows[label.tmdb_id] for label in labels]] > 0
     liked = np.array([label.explicit and label.value >= 0.6 for label in labels])
-    # People the user has rated well at least twice.
+    fav_set = set(favorite_people)
+    # People the user explicitly favorited or has rated well at least twice.
     favourite_people = {
         key
         for key, column in vectors.index.items()
-        if key.split(":")[0] in PERSON_VERBS and (rated[:, column] & liked).sum() >= 2
+        if key.split(":")[0] in PERSON_VERBS
+        and (
+            (len(key.split(":")) > 1 and int(key.split(":")[1]) in fav_set)
+            or (rated[:, column] & liked).sum() >= 2
+        )
     }
     out = []
     for n, tmdb_id in enumerate(candidates):
         x = vectors.matrix[vectors.rows[tmdb_id]]
         reasons = []
         people = [
-            (float(x[vectors.index[key]] * p.coef[vectors.index[key]]), key)
+            (
+                float(x[vectors.index[key]] * p.coef[vectors.index[key]])
+                + (
+                    10.0 if (len(key.split(":")) > 1 and int(key.split(":")[1]) in fav_set) else 0.0
+                ),
+                key,
+            )
             for key in favourite_people
             if x[vectors.index[key]] > 0
         ]
         for contribution, key in sorted(people, reverse=True)[:1]:
-            if contribution > 0:
-                kind = key.split(":")[0]
+            kind = key.split(":")[0]
+            pid_str = key.split(":")[1] if len(key.split(":")) > 1 else ""
+            is_explicit = int(pid_str) in fav_set if pid_str.isdigit() else False
+            if is_explicit:
+                verb = PERSON_VERBS[kind].capitalize()
+                reasons.append(f"{verb} your favourite {vectors.names[key]}")
+            elif contribution > 0:
                 reasons.append(f"You like films {PERSON_VERBS[kind]} {vectors.names[key]}")
         close = sorted(
             (

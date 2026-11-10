@@ -355,6 +355,24 @@ Proposed 2026-11-10: balance smart media acquisition and library decluttering us
   - **Storage Reclaim Metrics & Safety Controls:** reads file sizes directly from Radarr (`sizeOnDisk`), displays total gigabytes reclaimable, category breakdowns, and provides one-click or batch deletion via Radarr API (`DELETE /api/v3/movie/{id}?deleteFiles=true`) with ignore/keep whitelist actions and confirmation modals.
   - **Web UI:** Dedicated "Declutter Assistant" section in Server Settings (admin-only) with category filters, reclaimed space gauges, safety badges, and bulk actions (2026-11-10).
 
+### Phase 5g — People: Cast & Director Affinity, Filmography, and Favourites
+
+Proposed 2026-11-10: make cast and crew interactive with personal affinity scores derived from past ratings, filmographies with streaming availability, and explicit favoriting that powers candidate discovery and recommendations.
+
+- [x] **Phase 1 — Interactive People & Person Dialog:**
+  - Expose person IDs in title credits (`PersonRef` with `id` and `name` for `directors` and `cast` in `TitleDetail`).
+  - Interactive director and cast pills/chips in `TitleDialog` opening a `PersonDialog` modal with back navigation to keep browsing state intact.
+  - Person details API (`GET /api/v1/people/{id}`): TMDb `/person/{id}` profile (name, bio, photo, known for) and `/person/{id}/movie_credits` cached in `api_cache`.
+  - User affinity stats: calculate user's past ratings/reactions on films featuring this person (rated count, average score, Loved/Liked/Disliked breakdown, films seen with user ratings).
+  - Filmography list in `PersonDialog`: tabs for "In library / Streaming" vs "All films", with user watch/rating status and quick title detail popups (2026-11-10).
+- [x] **Phase 2 — Person Favourites & Recommender Discovery:**
+  - `FavoritePerson` model (`user_id`, `person_id`, `name`, `role`, `profile_path`, `created_at`) with `PUT/DELETE /api/v1/people/{id}/favorite` endpoints.
+  - Interactive Favorite (❤️) button in `PersonDialog`.
+  - Recommender candidate discovery: include favorited people in candidate generation (`with_people={id}`).
+  - Feed reasons: surface explicit favorite signals (e.g. "Directed by your favourite Christopher Nolan") (2026-11-10).
+- [x] **Phase 3 — My Taste: People Section:**
+  - Dedicated "Directors & Cast" tab in `Taste.tsx` displaying favorited directors and actors, alongside top-rated directors (minimum 2 films rated) and actors (minimum 3 films rated) learned from ratings history (2026-11-10).
+
 ### Phase 6 — Optional integrations and polish
 
 - [ ] Trakt (device flow, history/ratings pull, export-file import)

@@ -5,6 +5,7 @@ import { api, errorMessage, facts, REACTIONS, useAssignToChild, useChildren, use
 import { RatePicker } from './RateDialog'
 import { JellyfinLogo, JustWatchCredit, ProviderLogo } from './Streaming'
 import { Button, ErrorText, Poster } from './ui'
+import PersonDialog from './PersonDialog'
 
 /** A film's details: why it was suggested, who made it, and where to watch it. */
 export default function TitleDialog({ tmdbId, onClose }: { tmdbId: number | null; onClose: () => void }) {
@@ -13,6 +14,7 @@ export default function TitleDialog({ tmdbId, onClose }: { tmdbId: number | null
   const [activeId, setActiveId] = useState<number | null>(tmdbId)
   const [prevTmdbId, setPrevTmdbId] = useState<number | null>(tmdbId)
   const [searchingTitle, setSearchingTitle] = useState<string | null>(null)
+  const [personId, setPersonId] = useState<number | null>(null)
 
   if (tmdbId !== prevTmdbId) {
     setPrevTmdbId(tmdbId)
@@ -60,24 +62,38 @@ export default function TitleDialog({ tmdbId, onClose }: { tmdbId: number | null
   }
 
   return (
-    <dialog
-      ref={dialog}
-      onClose={onClose}
-      onClick={(e) => e.target === dialog.current && dialog.current.close()}
-      aria-label="Film details"
-      className="m-auto max-h-[calc(100dvh-2rem)] w-[min(40rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#11141b] p-0 text-[#e7e9ee] shadow-2xl backdrop:bg-black/70"
-    >
-      {activeId !== null && (
-        <Details
-          key={activeId}
-          tmdbId={activeId}
-          onClose={() => dialog.current?.close()}
-          onSelectFilm={handleSelectFilm}
-          onBack={history.length > 0 ? handleBack : undefined}
-          searchingTitle={searchingTitle}
-        />
-      )}
-    </dialog>
+    <>
+      <dialog
+        ref={dialog}
+        onClose={onClose}
+        onClick={(e) => e.target === dialog.current && dialog.current.close()}
+        aria-label="Film details"
+        className="m-auto max-h-[calc(100dvh-2rem)] w-[min(40rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#11141b] p-0 text-[#e7e9ee] shadow-2xl backdrop:bg-black/70"
+      >
+        {activeId !== null && (
+          <Details
+            key={activeId}
+            tmdbId={activeId}
+            onClose={() => dialog.current?.close()}
+            onSelectFilm={handleSelectFilm}
+            onSelectPerson={(pid) => setPersonId(pid)}
+            onBack={history.length > 0 ? handleBack : undefined}
+            searchingTitle={searchingTitle}
+          />
+        )}
+      </dialog>
+      <PersonDialog
+        personId={personId}
+        onClose={() => setPersonId(null)}
+        onSelectFilm={(newTmdbId) => {
+          setPersonId(null)
+          if (activeId !== null) {
+            setHistory((prev) => [...prev, activeId])
+          }
+          setActiveId(newTmdbId)
+        }}
+      />
+    </>
   )
 }
 
@@ -85,12 +101,14 @@ function Details({
   tmdbId,
   onClose,
   onSelectFilm,
+  onSelectPerson,
   onBack,
   searchingTitle,
 }: {
   tmdbId: number
   onClose: () => void
   onSelectFilm?: (title: string) => void
+  onSelectPerson?: (personId: number) => void
   onBack?: () => void
   searchingTitle?: string | null
 }) {
@@ -160,17 +178,39 @@ function Details({
 
       {film.overview && <p className="mt-5 text-sm leading-relaxed text-white/75">{film.overview}</p>}
 
-      <dl className="mt-4 space-y-1 text-sm">
+      <dl className="mt-4 space-y-2 text-sm">
         {film.directors.length > 0 && (
-          <div>
-            <dt className="inline text-white/45">Directed by </dt>
-            <dd className="inline">{film.directors.join(', ')}</dd>
+          <div className="flex flex-wrap items-baseline gap-1.5">
+            <dt className="text-white/45">Directed by</dt>
+            <dd className="flex flex-wrap gap-1.5">
+              {film.directors.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => onSelectPerson?.(p.id)}
+                  className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-white/90 hover:border-accent/40 hover:bg-accent/10 hover:text-accent transition-colors"
+                >
+                  {p.name}
+                </button>
+              ))}
+            </dd>
           </div>
         )}
         {film.cast.length > 0 && (
-          <div>
-            <dt className="inline text-white/45">Starring </dt>
-            <dd className="inline">{film.cast.join(', ')}</dd>
+          <div className="flex flex-wrap items-baseline gap-1.5">
+            <dt className="text-white/45">Starring</dt>
+            <dd className="flex flex-wrap gap-1.5">
+              {film.cast.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => onSelectPerson?.(p.id)}
+                  className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-white/90 hover:border-accent/40 hover:bg-accent/10 hover:text-accent transition-colors"
+                >
+                  {p.name}
+                </button>
+              ))}
+            </dd>
           </div>
         )}
       </dl>

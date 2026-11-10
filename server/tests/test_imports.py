@@ -58,6 +58,82 @@ WATCH: dict[int, dict[str, dict[str, list[dict[str, Any]]]]] = {
     101: {"US": {"flatrate": [NETFLIX]}, "IN": {"ads": [MX], "buy": [APPLE]}},
 }
 
+PEOPLE: dict[int, dict[str, Any]] = {
+    525: {
+        "id": 525,
+        "name": "Christopher Nolan",
+        "biography": "British-American filmmaker.",
+        "profile_path": "/nolan.jpg",
+        "birthday": "1970-07-30",
+        "deathday": None,
+        "place_of_birth": "London, England",
+        "known_for_department": "Directing",
+        "movie_credits": {
+            "cast": [],
+            "crew": [
+                {
+                    "id": 157336,
+                    "title": "Interstellar",
+                    "original_title": "Interstellar",
+                    "release_date": "2014-11-05",
+                    "poster_path": "/interstellar.jpg",
+                    "job": "Director",
+                    "department": "Directing",
+                    "vote_average": 8.4,
+                    "vote_count": 35000,
+                },
+                {
+                    "id": 27205,
+                    "title": "Inception",
+                    "original_title": "Inception",
+                    "release_date": "2010-07-15",
+                    "poster_path": "/inception.jpg",
+                    "job": "Director",
+                    "department": "Directing",
+                    "vote_average": 8.3,
+                    "vote_count": 36000,
+                },
+                {
+                    "id": 77,
+                    "title": "Memento",
+                    "original_title": "Memento",
+                    "release_date": "2000-10-11",
+                    "poster_path": "/memento.jpg",
+                    "job": "Director",
+                    "department": "Directing",
+                    "vote_average": 8.2,
+                    "vote_count": 14000,
+                },
+            ],
+        },
+    },
+    287: {
+        "id": 287,
+        "name": "Brad Pitt",
+        "biography": "American actor and producer.",
+        "profile_path": "/pitt.jpg",
+        "birthday": "1963-12-18",
+        "deathday": None,
+        "place_of_birth": "Shawnee, Oklahoma, USA",
+        "known_for_department": "Acting",
+        "movie_credits": {
+            "cast": [
+                {
+                    "id": 550,
+                    "title": "Fight Club",
+                    "original_title": "Fight Club",
+                    "release_date": "1999-10-15",
+                    "poster_path": "/fightclub.jpg",
+                    "character": "Tyler Durden",
+                    "vote_average": 8.4,
+                    "vote_count": 28000,
+                }
+            ],
+            "crew": [],
+        },
+    },
+}
+
 
 def _summary(tmdb_id: int) -> dict[str, Any]:
     m = MOVIES[tmdb_id]
@@ -213,6 +289,10 @@ def fake_tmdb(request: httpx.Request) -> httpx.Response:
             for region, offers in WATCH.get(tmdb_id, {}).items()
         }  # fmt: skip
         return httpx.Response(200, json={"id": tmdb_id, "results": results})
+    if path.startswith("/person/"):
+        person_id = int(path.removeprefix("/person/"))
+        if person_id in PEOPLE:
+            return httpx.Response(200, json=PEOPLE[person_id])
     if path.startswith("/movie/"):
         tmdb_id = int(path.removeprefix("/movie/"))
         if tmdb_id in MOVIES:

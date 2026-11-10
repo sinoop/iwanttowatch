@@ -3919,6 +3919,195 @@
           }
         }
       }
+    },
+    "/api/v1/people/favorites": {
+      "get": {
+        "tags": [
+          "people"
+        ],
+        "summary": "Get Favorites",
+        "description": "List all people favorited by the current user.",
+        "operationId": "get_favorites_api_v1_people_favorites_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FavoritePersonItem"
+                  },
+                  "type": "array",
+                  "title": "Response Get Favorites Api V1 People Favorites Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/taste": {
+      "get": {
+        "tags": [
+          "people"
+        ],
+        "summary": "Get People Taste",
+        "description": "The user's favorite people and top learned directors and actors from rating history.",
+        "operationId": "get_people_taste_api_v1_people_taste_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PeopleTasteOverview"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{person_id}": {
+      "get": {
+        "tags": [
+          "people"
+        ],
+        "summary": "Get Person",
+        "description": "Person biography, credits, and the user's personal taste affinity.",
+        "operationId": "get_person_api_v1_people__person_id__get",
+        "parameters": [
+          {
+            "name": "person_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Person Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/people/{person_id}/favorite": {
+      "put": {
+        "tags": [
+          "people"
+        ],
+        "summary": "Add Favorite",
+        "description": "Add a person to the user's favorites.",
+        "operationId": "add_favorite_api_v1_people__person_id__favorite_put",
+        "parameters": [
+          {
+            "name": "person_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Person Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteToggleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Add Favorite Api V1 People  Person Id  Favorite Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "people"
+        ],
+        "summary": "Remove Favorite",
+        "description": "Remove a person from the user's favorites.",
+        "operationId": "remove_favorite_api_v1_people__person_id__favorite_delete",
+        "parameters": [
+          {
+            "name": "person_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Person Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Remove Favorite Api V1 People  Person Id  Favorite Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4383,6 +4572,14 @@
             },
             "type": "array",
             "title": "Shortlist",
+            "default": []
+          },
+          "favorite_people": {
+            "items": {
+              "$ref": "#/components/schemas/ExportedFavoritePerson"
+            },
+            "type": "array",
+            "title": "Favorite People",
             "default": []
           }
         },
@@ -4936,6 +5133,52 @@
         ],
         "title": "ExportedEntry"
       },
+      "ExportedFavoritePerson": {
+        "properties": {
+          "person_id": {
+            "type": "integer",
+            "title": "Person Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "profile_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Path"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "person_id",
+          "name",
+          "created_at"
+        ],
+        "title": "ExportedFavoritePerson"
+      },
       "ExportedFeedback": {
         "properties": {
           "tmdb_id": {
@@ -5056,6 +5299,91 @@
           "added_at"
         ],
         "title": "ExportedShortlistItem"
+      },
+      "FavoritePersonItem": {
+        "properties": {
+          "person_id": {
+            "type": "integer",
+            "title": "Person Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "profile_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Path"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "person_id",
+          "name",
+          "created_at"
+        ],
+        "title": "FavoritePersonItem"
+      },
+      "FavoriteToggleRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "profile_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Path"
+          }
+        },
+        "type": "object",
+        "title": "FavoriteToggleRequest"
       },
       "FeedItem": {
         "properties": {
@@ -6183,6 +6511,70 @@
         ],
         "title": "LanguageCount"
       },
+      "LearnedPerson": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "rated_count": {
+            "type": "integer",
+            "title": "Rated Count"
+          },
+          "average_rating": {
+            "type": "number",
+            "title": "Average Rating"
+          },
+          "loved_count": {
+            "type": "integer",
+            "title": "Loved Count",
+            "default": 0
+          },
+          "liked_count": {
+            "type": "integer",
+            "title": "Liked Count",
+            "default": 0
+          },
+          "disliked_count": {
+            "type": "integer",
+            "title": "Disliked Count",
+            "default": 0
+          },
+          "is_favorite": {
+            "type": "boolean",
+            "title": "Is Favorite",
+            "default": false
+          },
+          "profile_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "role",
+          "rated_count",
+          "average_rating"
+        ],
+        "title": "LearnedPerson"
+      },
       "LlmActivity": {
         "properties": {
           "total": {
@@ -6710,6 +7102,33 @@
         ],
         "title": "Offer"
       },
+      "PeopleTasteOverview": {
+        "properties": {
+          "favorites": {
+            "items": {
+              "$ref": "#/components/schemas/FavoritePersonItem"
+            },
+            "type": "array",
+            "title": "Favorites"
+          },
+          "top_directors": {
+            "items": {
+              "$ref": "#/components/schemas/LearnedPerson"
+            },
+            "type": "array",
+            "title": "Top Directors"
+          },
+          "top_actors": {
+            "items": {
+              "$ref": "#/components/schemas/LearnedPerson"
+            },
+            "type": "array",
+            "title": "Top Actors"
+          }
+        },
+        "type": "object",
+        "title": "PeopleTasteOverview"
+      },
       "Person": {
         "properties": {
           "id": {
@@ -6738,6 +7157,307 @@
           "name"
         ],
         "title": "Person"
+      },
+      "PersonAffinity": {
+        "properties": {
+          "rated_count": {
+            "type": "integer",
+            "title": "Rated Count",
+            "default": 0
+          },
+          "average_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Rating"
+          },
+          "loved_count": {
+            "type": "integer",
+            "title": "Loved Count",
+            "default": 0
+          },
+          "liked_count": {
+            "type": "integer",
+            "title": "Liked Count",
+            "default": 0
+          },
+          "disliked_count": {
+            "type": "integer",
+            "title": "Disliked Count",
+            "default": 0
+          },
+          "rated_films": {
+            "items": {
+              "$ref": "#/components/schemas/PersonCredit"
+            },
+            "type": "array",
+            "title": "Rated Films"
+          }
+        },
+        "type": "object",
+        "title": "PersonAffinity"
+      },
+      "PersonCredit": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "original_title": {
+            "type": "string",
+            "title": "Original Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "poster_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Path"
+          },
+          "character": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job"
+          },
+          "department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Department"
+          },
+          "vote_average": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vote Average"
+          },
+          "vote_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vote Count"
+          },
+          "user_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Rating"
+          },
+          "user_reaction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Reaction"
+          },
+          "watched": {
+            "type": "boolean",
+            "title": "Watched",
+            "default": false
+          },
+          "in_library": {
+            "type": "boolean",
+            "title": "In Library",
+            "default": false
+          },
+          "streaming_services": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Streaming Services"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "original_title"
+        ],
+        "title": "PersonCredit"
+      },
+      "PersonDetail": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "biography": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Biography"
+          },
+          "profile_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Path"
+          },
+          "birthday": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birthday"
+          },
+          "deathday": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deathday"
+          },
+          "place_of_birth": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place Of Birth"
+          },
+          "known_for_department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Known For Department"
+          },
+          "is_favorite": {
+            "type": "boolean",
+            "title": "Is Favorite",
+            "default": false
+          },
+          "affinity": {
+            "$ref": "#/components/schemas/PersonAffinity"
+          },
+          "filmography": {
+            "items": {
+              "$ref": "#/components/schemas/PersonCredit"
+            },
+            "type": "array",
+            "title": "Filmography"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "affinity"
+        ],
+        "title": "PersonDetail"
+      },
+      "PersonRef": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "PersonRef"
       },
       "PersonaOut": {
         "properties": {
@@ -8457,14 +9177,14 @@
           },
           "directors": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PersonRef"
             },
             "type": "array",
             "title": "Directors"
           },
           "cast": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PersonRef"
             },
             "type": "array",
             "title": "Cast"

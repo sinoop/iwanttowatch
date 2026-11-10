@@ -19,7 +19,7 @@ from iwanttowatch.api.reactions import Reaction
 from iwanttowatch.api.schemas import BirthYear, LanguageCode
 from iwanttowatch.catalog import ensure_titles
 from iwanttowatch.db import utcnow
-from iwanttowatch.models import Feedback, ShortlistItem, Title, UserTitle
+from iwanttowatch.models import FavoritePerson, Feedback, ShortlistItem, Title, UserTitle
 from iwanttowatch.tags import BY_ID, MAX_NOTE, MAX_TAGS
 from iwanttowatch.taste import refresh_reaction_ratings
 
@@ -74,6 +74,14 @@ class ExportedShortlistItem(BaseModel):
     added_at: datetime
 
 
+class ExportedFavoritePerson(BaseModel):
+    person_id: int
+    name: str
+    role: str | None = None
+    profile_path: str | None = None
+    created_at: datetime
+
+
 class DataExport(BaseModel):
     format: Literal["iwanttowatch"] = "iwanttowatch"
     version: Literal[1] = 1
@@ -83,6 +91,8 @@ class DataExport(BaseModel):
     feedback: list[ExportedFeedback]
     # Missing from exports made before shortlists.
     shortlist: list[ExportedShortlistItem] = []
+    # Missing from exports made before favorite people.
+    favorite_people: list[ExportedFavoritePerson] = []
 
 
 class RestoreSummary(BaseModel):
@@ -153,6 +163,20 @@ def export_data(user: AdultUser, session: DbSession, response: Response) -> Data
             ExportedShortlistItem(tmdb_id=s.tmdb_id, title=t.title, added_at=s.added_at)
             for s, t in shortlist
         ],
+        favorite_people=[
+            ExportedFavoritePerson(
+                person_id=fp.person_id,
+                name=fp.name,
+                role=fp.role,
+                profile_path=fp.profile_path,
+                created_at=fp.created_at,
+            )
+            for fp in session.scalars(
+                select(FavoritePerson)
+                .where(FavoritePerson.user_id == user.id)
+                .order_by(FavoritePerson.created_at)
+            )
+        ],
     )
     name = f"iwanttowatch-{user.username}-{data.exported_at:%Y-%m-%d}.json"
     response.headers["Content-Disposition"] = f'attachment; filename="{name}"'
@@ -213,6 +237,17 @@ def restore_data(
             session.merge(
                 ShortlistItem(user_id=user.id, tmdb_id=saved.tmdb_id, added_at=saved.added_at)
             )
+    for fav in data.favorite_people:
+        session.merge(
+            FavoritePerson(
+                user_id=user.id,
+                person_id=fav.person_id,
+                name=fav.name,
+                role=fav.role,
+                profile_path=fav.profile_path,
+                created_at=fav.created_at,
+            )
+        )
     refresh_reaction_ratings(session, user.id)
     user.region = data.profile.region
     user.languages = data.profile.languages

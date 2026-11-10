@@ -455,3 +455,74 @@ export function useRadarQueue() {
     },
   })
 }
+
+/** A person's biography, credits, and affinity. */
+export function usePerson(personId: number | null) {
+  return useQuery({
+    queryKey: ['person', personId],
+    queryFn: async () => {
+      if (!personId) return null
+      const { data, error } = await api.GET('/api/v1/people/{person_id}', {
+        params: { path: { person_id: personId } },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    enabled: personId !== null,
+  })
+}
+
+/** Toggle favorite status for a person. */
+export function useFavoritePerson() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      personId,
+      favorite,
+      name,
+      role,
+      profilePath,
+    }: {
+      personId: number
+      favorite: boolean
+      name?: string
+      role?: string
+      profilePath?: string | null
+    }) => {
+      const params = { params: { path: { person_id: personId } } }
+      const { error } = favorite
+        ? await api.PUT('/api/v1/people/{person_id}/favorite', {
+            ...params,
+            body: { name, role, profile_path: profilePath },
+          })
+        : await api.DELETE('/api/v1/people/{person_id}/favorite', params)
+      if (error) throw new Error(errorMessage(error))
+    },
+    onSettled: (_, __, { personId }) => {
+      queryClient.invalidateQueries({ queryKey: ['person', personId] })
+      queryClient.invalidateQueries({ queryKey: ['people', 'favorites'] })
+      queryClient.invalidateQueries({ queryKey: ['people', 'taste'] })
+    },
+  })
+}
+
+/** The user's favorited people. */
+export function useFavoritePeople() {
+  return useQuery({
+    queryKey: ['people', 'favorites'],
+    queryFn: async () => (await api.GET('/api/v1/people/favorites')).data ?? [],
+  })
+}
+
+/** The user's people taste overview: favorites + top learned directors and actors. */
+export function usePeopleTaste() {
+  return useQuery({
+    queryKey: ['people', 'taste'],
+    queryFn: async () =>
+      (await api.GET('/api/v1/people/taste')).data ?? {
+        favorites: [],
+        top_directors: [],
+        top_actors: [],
+      },
+  })
+}
