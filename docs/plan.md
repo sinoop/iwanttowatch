@@ -364,7 +364,7 @@ Proposed 2026-11-10: make cast and crew interactive with personal affinity score
   - Interactive director and cast pills/chips in `TitleDialog` opening a `PersonDialog` modal with back navigation to keep browsing state intact.
   - Person details API (`GET /api/v1/people/{id}`): TMDb `/person/{id}` profile (name, bio, photo, known for) and `/person/{id}/movie_credits` cached in `api_cache`.
   - User affinity stats: calculate user's past ratings/reactions on films featuring this person (rated count, average score, Loved/Liked/Disliked breakdown, films seen with user ratings).
-  - Filmography list in `PersonDialog`: tabs for "In library / Streaming" vs "All films", with user watch/rating status and quick title detail popups (2026-11-10).
+  - Filmography list in `PersonDialog`: scrollable lists with independent tabs for "Available to watch" vs "All filmography", with user watch/rating status and quick title detail popups (2026-11-10).
 - [x] **Phase 2 — Person Favourites & Recommender Discovery:**
   - `FavoritePerson` model (`user_id`, `person_id`, `name`, `role`, `profile_path`, `created_at`) with `PUT/DELETE /api/v1/people/{id}/favorite` endpoints.
   - Interactive Favorite (❤️) button in `PersonDialog`.

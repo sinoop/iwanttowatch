@@ -264,7 +264,10 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                 )}
               </div>
             ) : (
-              <div className="mt-3 divide-y divide-white/5">
+              <div
+                key={tab}
+                className="mt-3 max-h-80 sm:max-h-96 overflow-y-auto overscroll-contain divide-y divide-white/5 pr-1.5"
+              >
                 {displayedFilms.map((film) => (
                   <button
                     key={film.tmdb_id}
