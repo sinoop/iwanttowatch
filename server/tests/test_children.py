@@ -165,7 +165,11 @@ def test_themes_note_is_written_by_the_llm_and_cached_per_film(
         if "themes and values" not in body["systemInstruction"]["parts"][0]["text"]:
             return gemini_reply("OK")
         prompts.append(body["contents"][0]["parts"][0]["text"])
-        return gemini_reply("Warm brotherhood and kindness carry four brothers through hardship.")
+        return gemini_reply(
+            "- Values: Brotherhood, kindness, forgiveness\n"
+            "- Remake: No, original film.\n"
+            "- Other famous films: None (directorial debut)."
+        )
 
     mock.post(GEMINI).mock(side_effect=gemini)
     assert client.post("/api/v1/titles/201/themes").status_code == 409
@@ -176,10 +180,12 @@ def test_themes_note_is_written_by_the_llm_and_cached_per_film(
     detail = client.get("/api/v1/titles/201").json()
     assert detail["certificate"] == "U/A 7+"
     assert (
-        detail["themes_note"]
-        == "Warm brotherhood and kindness carry four brothers through hardship."
+        detail["themes_note"] == "- Values: Brotherhood, kindness, forgiveness\n"
+        "- Remake: No, original film.\n"
+        "- Other famous films: None (directorial debut)."
     )
     assert len(prompts) == 1 and "Kumbalangi Nights" in prompts[0]
+    assert "Films I watched already" in prompts[0]
     assert "riya" not in prompts[0].lower() and "kabir" not in prompts[0].lower()
 
     # The note is stored on the title, so reading or requesting it again needs no LLM call.
@@ -187,6 +193,17 @@ def test_themes_note_is_written_by_the_llm_and_cached_per_film(
     assert client.get("/api/v1/titles/201").json()["themes_note"] == detail["themes_note"]
     assert client.post("/api/v1/titles/201/themes").json()["themes_note"] == detail["themes_note"]
     assert len(prompts) == 1
+
+    # Forcing a write regenerates the themes note.
+    forced = client.post("/api/v1/titles/201/themes?force=true").json()
+    assert forced["themes_note"] == detail["themes_note"]
+    assert len(prompts) == 2
+
+    # When the user has watched films, they are included in the prompt for the LLM.
+    client.put("/api/v1/titles/101/reaction", json={"reaction": "loved"})
+    client.post("/api/v1/titles/301/themes")
+    assert len(prompts) == 3
+    assert "Films I watched already: Léon: The Professional" in prompts[2]
 
 
 def test_any_adult_in_the_household_can_manage_switch_to_and_assign_films_to_children(

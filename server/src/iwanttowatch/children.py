@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from iwanttowatch.llm import LlmError, LlmProvider, provider_from_settings
@@ -18,13 +18,21 @@ CERTIFICATIONS_CACHE = timedelta(days=30)
 UNRATED = frozenset({"", "NR", "UNRATED", "NOT RATED", "N/A"})
 
 THEMES_SYSTEM = """\
-You write brief, balanced "themes and values" notes for parents choosing a film for \
-their family. You get a film's title, year, genres, keywords, and overview. In two or \
-three short sentences (at most 60 words), describe the main themes, positive values or \
-character qualities (such as friendship, courage, kindness, honesty, or perseverance), \
-and any intense, scary, or mature elements a parent should know about. Be factual and \
-specific to this film, never preachy. Plain text only: no lists, no headings, no \
-markdown, no quotation marks around the answer."""
+You write brief, structured "themes and values" notes for films in bullet point format. \
+Answer with exactly three bullet points (each starting with a hyphen "- "), answering \
+these questions in order:
+- What values does this film show ? (provide maximum of 3 or 4 keywords)
+- Is this a remake of any of the films I watched already or any other popular movies from \
+another language ? (answer under 15 words)
+- What are the famous other films by the same director / writer (answer under 20 words)
+
+Format the three bullet points as:
+- Values: <maximum of 3 or 4 keywords>
+- Remake: <answer under 15 words>
+- Other famous films: <answer under 20 words>
+
+Be factual, concise, and specific. Plain text only: exactly three bullet points starting \
+with "- ", no markdown headings, no intro or outro."""
 
 
 @dataclass(frozen=True)
@@ -250,17 +258,68 @@ def library_owners(session: Session, user: User) -> list[int]:
     return list(session.scalars(select(User.id).where(User.is_child.is_(False))))
 
 
-def generate_themes_note(session: Session, title: Title, llm: LlmProvider) -> str:
+def user_watched_titles(session: Session, user_id: int, limit: int = 50) -> list[str]:
+    """Films the user has watched or rated, most recent first."""
+    rows = session.scalars(
+        select(Title.title)
+        .join(UserTitle, UserTitle.tmdb_id == Title.tmdb_id)
+        .where(
+            UserTitle.user_id == user_id,
+            or_(
+                UserTitle.watched.is_(True),
+                UserTitle.rating.is_not(None),
+                UserTitle.reaction.is_not(None),
+            ),
+        )
+        .order_by(UserTitle.updated_at.desc())
+        .limit(limit)
+    )
+    seen_titles: set[str] = set()
+    result: list[str] = []
+    for t in rows:
+        if t and t not in seen_titles:
+            seen_titles.add(t)
+            result.append(t)
+    return result
+
+
+def generate_themes_note(
+    session: Session,
+    title: Title,
+    llm: LlmProvider,
+    user_id: int | None = None,
+    force: bool = False,
+) -> str:
     """Write and store an LLM 'themes and values' note for a film, or return the cached one."""
-    if title.themes_note:
+    if title.themes_note and not force:
         return title.themes_note
     lines = [f"Title: {title.title}" + (f" ({title.year})" if title.year else "")]
+    if title.original_title and title.original_title != title.title:
+        lines.append(f"Original title: {title.original_title}")
+    if title.original_language:
+        lines.append(f"Original language: {title.original_language}")
     if title.genres:
         lines.append("Genres: " + ", ".join(title.genres))
     if title.keywords:
         lines.append("Keywords: " + ", ".join(title.keywords[:20]))
     if title.overview:
         lines.append(f"Overview: {title.overview}")
+    if title.directors:
+        directors = [d["name"] for d in title.directors if isinstance(d, dict) and d.get("name")]
+        if directors:
+            lines.append(f"Director: {', '.join(directors[:3])}")
+    if title.writers:
+        writers = [w["name"] for w in title.writers if isinstance(w, dict) and w.get("name")]
+        if writers:
+            lines.append(f"Writer: {', '.join(writers[:3])}")
+    if user_id is not None:
+        watched = user_watched_titles(session, user_id)
+        if watched:
+            lines.append(f"Films I watched already: {', '.join(watched)}")
+        else:
+            lines.append("Films I watched already: None")
+    else:
+        lines.append("Films I watched already: None")
     text = llm.generate(THEMES_SYSTEM, "\n".join(lines)).strip().strip('"“”').strip()
     if not text:
         raise LlmError("The LLM returned an empty answer")
@@ -276,6 +335,6 @@ def ensure_themes_note_quietly(session: Session, title: Title, user_id: int) -> 
     try:
         llm = provider_from_settings(session, "themes", user_id)
         if llm is not None:
-            generate_themes_note(session, title, llm)
+            generate_themes_note(session, title, llm, user_id=user_id)
     except LlmError:
         log.warning("Couldn't write themes note for title %s", title.tmdb_id, exc_info=True)

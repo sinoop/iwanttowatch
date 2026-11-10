@@ -579,7 +579,12 @@ def read_title(
 
 @router.post("/titles/{tmdb_id}/themes")
 def write_title_themes(
-    tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
+    tmdb_id: int,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+    tmdb: Tmdb,
+    force: bool = False,
 ) -> TitleDetail:
     """Ask the configured LLM to write a 'themes and values' note for this film."""
     title = load_title(session, request, tmdb_id)
@@ -587,7 +592,7 @@ def write_title_themes(
     if llm is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Connect Ollama or Gemini in Settings first")
     try:
-        generate_themes_note(session, title, llm)
+        generate_themes_note(session, title, llm, user_id=user.id, force=force)
     except LlmError as error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
     return _title_detail(session, user, tmdb, title)

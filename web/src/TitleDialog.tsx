@@ -208,14 +208,45 @@ function WhySection({ film }: { film: TitleDetail }) {
   )
 }
 
+function renderThemesNote(note: string) {
+  const lines = note
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  const isBulletList = lines.some((l) => /^[•\-*]\s+/.test(l))
+  if (isBulletList) {
+    return (
+      <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-white/70">
+        {lines.map((line, idx) => {
+          const content = line.replace(/^[•\-*]\s+/, '')
+          const match = content.match(/^(\*\*[^*]+?\*\*|[^:]+?:)\s*(.*)$/)
+          if (match) {
+            const label = match[1].replace(/^\*\*|\*\*$/g, '')
+            return (
+              <li key={idx}>
+                <span className="font-medium text-white/90">{label}</span> {match[2]}
+              </li>
+            )
+          }
+          return <li key={idx}>{content}</li>
+        })}
+      </ul>
+    )
+  }
+  return <p className="mt-1.5 text-sm leading-relaxed text-white/70 whitespace-pre-line">{note}</p>
+}
+
 function ThemesSection({ film }: { film: TitleDetail }) {
   const queryClient = useQueryClient()
   const settings = useServerSettings()
   const llmConfigured = (settings.data?.llm.order.length ?? 0) > 0
   const write = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (opts?: { force?: boolean }) => {
       const { data, error } = await api.POST('/api/v1/titles/{tmdb_id}/themes', {
-        params: { path: { tmdb_id: film.tmdb_id } },
+        params: {
+          path: { tmdb_id: film.tmdb_id },
+          query: opts?.force ? { force: true } : undefined,
+        },
       })
       if (error) throw new Error(errorMessage(error))
       return data
@@ -229,12 +260,33 @@ function ThemesSection({ film }: { film: TitleDetail }) {
     <section className="mt-4 rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium text-white/80">Themes and values</h3>
-        <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-strong">
-          AI-written
-        </span>
+        <div className="flex items-center gap-2">
+          {film.themes_note && llmConfigured && (
+            <button
+              type="button"
+              className="text-xs text-white/40 hover:text-white transition-colors cursor-pointer"
+              onClick={() => write.mutate({ force: true })}
+              disabled={write.isPending}
+            >
+              {write.isPending ? 'Rewriting…' : 'Rewrite'}
+            </button>
+          )}
+          <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-strong">
+            AI-written
+          </span>
+        </div>
       </div>
       {film.themes_note ? (
-        <p className="mt-1.5 text-sm leading-relaxed text-white/70">{film.themes_note}</p>
+        <>
+          <div className={write.isPending ? 'opacity-50 transition-opacity' : undefined}>
+            {renderThemesNote(film.themes_note)}
+          </div>
+          {write.error && (
+            <div className="mt-2">
+              <ErrorText>{write.error.message}</ErrorText>
+            </div>
+          )}
+        </>
       ) : (
         <div className="mt-2">
           <Button variant="ghost" className="border border-white/10 px-3 py-1 text-xs" onClick={() => write.mutate()} disabled={write.isPending}>

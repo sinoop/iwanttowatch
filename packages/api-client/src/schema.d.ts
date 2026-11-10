@@ -3783,7 +3783,9 @@ export interface operations {
     };
     write_title_themes_api_v1_titles__tmdb_id__themes_post: {
         parameters: {
-            query?: never;
+            query?: {
+                force?: boolean;
+            };
             header?: never;
             path: {
                 tmdb_id: number;
