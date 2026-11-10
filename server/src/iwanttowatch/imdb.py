@@ -37,6 +37,52 @@ def ratings_file(data_dir: Path) -> Path:
     return data_dir / "imdb-title-ratings.tsv.gz"
 
 
+def lookup_rating(data_dir: Path, imdb_id: str) -> tuple[float, int] | None:
+    """Look up a single title's rating and votes from the local IMDb ratings dataset."""
+    path = ratings_file(data_dir)
+    if not path.exists():
+        return None
+    prefix = (imdb_id + "\t").encode("ascii")
+    try:
+        with gzip.open(path, "rb") as lines:
+            for line in lines:
+                if line.startswith(prefix):
+                    parts = line.rstrip(b"\r\n").split(b"\t")
+                    if len(parts) >= 3:
+                        return float(parts[1]), int(parts[2])
+                    break
+    except (OSError, ValueError) as error:
+        log.warning("Reading IMDb ratings file failed for %s: %s", imdb_id, error)
+    return None
+
+
+def ensure_title_rating(session: Session, data_dir: Path, title: Title) -> None:
+    """If IMDb ratings are enabled and this title has an imdb_id but no rating yet,
+    look it up in the dataset and store it on the title."""
+    if (
+        not enabled(session)
+        or not title.imdb_id
+        or title.imdb_rating is not None
+        or title.imdb_votes is not None
+    ):
+        return
+    path = ratings_file(data_dir)
+    if not path.exists():
+        try:
+            _download(path)
+        except (httpx.HTTPError, OSError) as error:
+            log.warning("Downloading IMDb ratings failed: %s", error)
+            return
+    rating_info = lookup_rating(data_dir, title.imdb_id)
+    if rating_info is not None:
+        title.imdb_rating, title.imdb_votes = rating_info
+        session.commit()
+    else:
+        # Mark as checked (0 votes) so we don't scan repeatedly for missing films.
+        title.imdb_votes = 0
+        session.commit()
+
+
 def update_ratings(session: Session, data_dir: Path) -> None:
     """Download IMDb's ratings when the local copy is old, then copy the rating and
     vote count of every film in the catalogue onto its title."""

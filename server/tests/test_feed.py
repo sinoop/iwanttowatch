@@ -117,6 +117,20 @@ def test_imdb_ratings_reach_the_feed_once_an_admin_turns_them_on(
     assert client.get("/api/v1/settings").json()["imdb"]["rated_films"] == 0
 
 
+def test_searched_title_populates_imdb_rating_on_demand_when_enabled(
+    client: TestClient, mock: respx.MockRouter
+) -> None:
+    ratings = "tconst\taverageRating\tnumVotes\ntt0110413\t8.5\t1100000\n"
+    mock.get(imdb.RATINGS_URL).respond(content=gzip.compress(ratings.encode()))
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    client.put("/api/v1/settings/imdb", json={"enabled": True})
+    idle(client)
+
+    # Film 101 (Léon) has never been loaded or added to the feed yet.
+    detail = client.get("/api/v1/titles/101").json()
+    assert detail["imdb"] == {"id": "tt0110413", "rating": 8.5, "votes": 1100000}
+
+
 def test_the_ai_reviews_the_feed_and_its_ratings_join_the_match(
     client: TestClient, mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from iwanttowatch import imdb
 from iwanttowatch.api.deps import CurrentUser, DbSession
 from iwanttowatch.catalog import ensure_title
 from iwanttowatch.models import Title, User, UserTitle
@@ -54,6 +55,7 @@ def load_title(session: DbSession, request: Request, tmdb_id: int) -> Title:
     """The title, fetched from TMDb if it isn't stored yet."""
     title = session.get(Title, tmdb_id)
     if title is not None:
+        imdb.ensure_title_rating(session, request.app.state.data_dir, title)
         return title
     tmdb = client_from_settings(session, request.app.state.engine, request.app.state.tmdb_base_url)
     if tmdb is None:
@@ -62,6 +64,7 @@ def load_title(session: DbSession, request: Request, tmdb_id: int) -> Title:
         title = ensure_title(session, tmdb, tmdb_id)
     except TmdbError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Movie not found on TMDb") from error
+    imdb.ensure_title_rating(session, request.app.state.data_dir, title)
     session.commit()
     return title
 
