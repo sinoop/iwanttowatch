@@ -4,6 +4,7 @@ Communicates with Radarr v3 API using an API key to inspect movie status and
 queue unstreamable movie downloads.
 """
 
+import json
 import logging
 from typing import Any
 
@@ -18,6 +19,7 @@ URL_SETTING = "radarr_url"
 API_KEY_SETTING = "radarr_api_key"
 QUALITY_PROFILE_SETTING = "radarr_quality_profile_id"
 ROOT_FOLDER_SETTING = "radarr_root_folder_path"
+LANGUAGE_ROOT_FOLDERS_SETTING = "radarr_language_root_folders"
 MIN_AVAILABILITY_SETTING = "radarr_minimum_availability"
 DEFAULT_MIN_AVAILABILITY = "announced"
 TIMEOUT_SECONDS = 5.0
@@ -234,6 +236,30 @@ def movie_status(session: Session, tmdb_id: int) -> dict[str, Any]:
     }
 
 
+def get_language_root_folders(session: Session) -> dict[str, str]:
+    """Stored mapping from ISO 639-1 language code to Radarr root folder path."""
+    raw = get_setting(session, LANGUAGE_ROOT_FOLDERS_SETTING)
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return {str(k).lower().strip(): str(v).strip() for k, v in data.items() if k and v}
+    except Exception:
+        pass
+    return {}
+
+
+def resolve_root_folder(session: Session, language: str | None, default_folder: str) -> str:
+    """Resolve the Radarr root folder for a given movie language, falling back to default."""
+    if language:
+        mapping = get_language_root_folders(session)
+        folder = mapping.get(language.lower().strip())
+        if folder:
+            return folder
+    return default_folder
+
+
 def save_settings(
     session: Session,
     url: str,
@@ -241,6 +267,7 @@ def save_settings(
     quality_profile_id: int | None = None,
     root_folder_path: str | None = None,
     minimum_availability: str = DEFAULT_MIN_AVAILABILITY,
+    language_root_folders: dict[str, str] | None = None,
 ) -> None:
     """Store Radarr settings in the database."""
     set_setting(session, URL_SETTING, url.rstrip("/"))
@@ -251,6 +278,13 @@ def save_settings(
     if root_folder_path is not None:
         set_setting(session, ROOT_FOLDER_SETTING, root_folder_path)
     set_setting(session, MIN_AVAILABILITY_SETTING, minimum_availability)
+    if language_root_folders is not None:
+        cleaned = {
+            str(k).lower().strip(): str(v).strip()
+            for k, v in language_root_folders.items()
+            if k and v
+        }
+        set_setting(session, LANGUAGE_ROOT_FOLDERS_SETTING, json.dumps(cleaned))
 
 
 def clear_settings(session: Session) -> None:
@@ -259,4 +293,5 @@ def clear_settings(session: Session) -> None:
     set_setting(session, API_KEY_SETTING, None)
     set_setting(session, QUALITY_PROFILE_SETTING, None)
     set_setting(session, ROOT_FOLDER_SETTING, None)
+    set_setting(session, LANGUAGE_ROOT_FOLDERS_SETTING, None)
     set_setting(session, MIN_AVAILABILITY_SETTING, None)

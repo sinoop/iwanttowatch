@@ -333,7 +333,7 @@ Proposed 2026-11-08 from the ideas review: decide faster between films you'd wat
 
 Proposed 2026-11-09: bridge recommendation discovery and media acquisition for films not playable on the user's streaming platforms or Jellyfin.
 
-- [x] **Phase 1 — Radarr connector & manual trigger:** Connect to Radarr with URL and API key in Settings; fetch quality profiles and root folders with test connection; view Radarr status (downloading, monitored, downloaded) and trigger on-demand downloads ("Download via Radarr") directly from the title details dialog for unstreamable films (2026-11-09)
+- [x] **Phase 1 — Radarr connector & manual trigger:** Connect to Radarr with URL and API key in Settings; fetch quality profiles and root folders with test connection; support language-specific root folder routing (e.g. Malayalam, Tamil, Hindi, English) with auto-detection from folder names; view Radarr status (downloading, monitored, downloaded) and trigger on-demand downloads ("Download via Radarr") directly from the title details dialog for unstreamable films (2026-11-09)
 - [ ] **Phase 2 — Shortlist sync & trigger:** Automatic or one-click batch request to Radarr for shortlisted titles not available on current streaming platforms or Jellyfin.
 - [ ] **Phase 3 — Background auto-downloader:** Autonomous downloader for top recommendations scoring $\ge 85\%$ match that are not available on any streaming platform or Jellyfin, safeguarded by strict controls (weekly download caps, minimum vote floors, and physical/digital release availability filters).
 

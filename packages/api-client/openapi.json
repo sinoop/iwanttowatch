@@ -6007,6 +6007,13 @@
             "type": "array",
             "title": "Root Folders"
           },
+          "language_root_folders": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Language Root Folders"
+          },
           "error": {
             "anyOf": [
               {
@@ -6071,6 +6078,13 @@
             "type": "string",
             "title": "Minimum Availability",
             "default": "announced"
+          },
+          "language_root_folders": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Language Root Folders"
           }
         },
         "type": "object",

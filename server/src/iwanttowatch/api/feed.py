@@ -674,11 +674,12 @@ def download_via_radarr(
         root_folder = root_folders[0]["path"]
 
     title = load_title(session, request, tmdb_id)
+    target_root_folder = radarr.resolve_root_folder(session, title.original_language, root_folder)
     try:
         client.add_or_search(
             tmdb_id=tmdb_id,
             quality_profile_id=profile_id,
-            root_folder_path=root_folder,
+            root_folder_path=target_root_folder,
             minimum_availability=min_avail,
             search=True,
             title=title.title,

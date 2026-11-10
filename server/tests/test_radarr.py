@@ -42,7 +42,8 @@ class FakeRadarr:
             return httpx.Response(
                 200,
                 json=[
-                    {"id": 1, "path": "/data/movies", "freeSpace": 50000000000},
+                    {"id": 1, "path": "/data/movies/english", "freeSpace": 50000000000},
+                    {"id": 2, "path": "/data/movies/malayalam", "freeSpace": 20000000000},
                 ],
             )
 
@@ -73,6 +74,7 @@ class FakeRadarr:
                 "tmdbId": tmdb_id,
                 "year": data.get("year", 2024),
                 "titleSlug": data.get("titleSlug", f"movie-{tmdb_id}"),
+                "rootFolderPath": data.get("rootFolderPath"),
                 "hasFile": False,
                 "monitored": data.get("monitored", True),
                 "isAvailable": True,
@@ -111,8 +113,9 @@ def test_radarr_client(fake_radarr: FakeRadarr) -> None:
     assert profiles[0]["name"] == "HD - 1080p"
 
     folders = client.root_folders()
-    assert len(folders) == 1
-    assert folders[0]["path"] == "/data/movies"
+    assert len(folders) == 2
+    assert folders[0]["path"] == "/data/movies/english"
+    assert folders[1]["path"] == "/data/movies/malayalam"
 
     # Not found yet
     assert client.get_movie_by_tmdb(496243) is None
@@ -152,19 +155,25 @@ def test_radarr_settings_flow(client: TestClient, fake_radarr: FakeRadarr) -> No
     bad = client.put("/api/v1/settings/radarr", json={"url": RADARR, "api_key": "bad-key"})
     assert bad.status_code == 400
 
-    # Connect with valid credentials
+    # Connect with valid credentials including language root folder mappings
     ok = client.put(
         "/api/v1/settings/radarr",
-        json={"url": RADARR, "api_key": API_KEY, "minimum_availability": "announced"},
+        json={
+            "url": RADARR,
+            "api_key": API_KEY,
+            "minimum_availability": "announced",
+            "language_root_folders": {"ml": "/data/movies/malayalam"},
+        },
     )
     assert ok.status_code == 200
     radarr_data = ok.json()["radarr"]
     assert radarr_data["configured"] is True
     assert radarr_data["url"] == RADARR
     assert radarr_data["quality_profile_id"] == 1
-    assert radarr_data["root_folder_path"] == "/data/movies"
+    assert radarr_data["root_folder_path"] == "/data/movies/english"
+    assert radarr_data["language_root_folders"] == {"ml": "/data/movies/malayalam"}
     assert len(radarr_data["profiles"]) == 2
-    assert len(radarr_data["root_folders"]) == 1
+    assert len(radarr_data["root_folders"]) == 2
 
     # Disconnect
     del_res = client.delete("/api/v1/settings/radarr")
@@ -173,11 +182,19 @@ def test_radarr_settings_flow(client: TestClient, fake_radarr: FakeRadarr) -> No
 
 
 def test_title_radarr_trigger(client: TestClient, fake_radarr: FakeRadarr) -> None:
-    # Configure TMDb and Radarr
+    # Configure TMDb and Radarr with language root folders
     client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
-    client.put("/api/v1/settings/radarr", json={"url": RADARR, "api_key": API_KEY})
+    client.put(
+        "/api/v1/settings/radarr",
+        json={
+            "url": RADARR,
+            "api_key": API_KEY,
+            "root_folder_path": "/data/movies/english",
+            "language_root_folders": {"ml": "/data/movies/malayalam"},
+        },
+    )
 
-    # Kumbalangi Nights tmdb_id = 201
+    # Kumbalangi Nights (tmdb_id = 201) has original_language = "ml"
     tmdb_id = 201
     title_res = client.get(f"/api/v1/titles/{tmdb_id}")
     assert title_res.status_code == 200
@@ -195,6 +212,14 @@ def test_title_radarr_trigger(client: TestClient, fake_radarr: FakeRadarr) -> No
     assert data["status"] == "downloading"
     assert data["monitored"] is True
     assert data["has_file"] is False
+
+    # Check that FakeRadarr received the language-specific root folder path!
+    assert fake_radarr.movies[tmdb_id]["rootFolderPath"] == "/data/movies/malayalam"
+
+    # Léon: The Professional (tmdb_id = 101) has original_language = "fr", not mapped
+    # so it must fall back to the default root folder
+    client.post("/api/v1/titles/101/radarr")
+    assert fake_radarr.movies[101]["rootFolderPath"] == "/data/movies/english"
 
     # Re-checking title now reflects downloading status
     title_after = client.get(f"/api/v1/titles/{tmdb_id}").json()

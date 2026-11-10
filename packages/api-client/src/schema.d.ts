@@ -2223,6 +2223,10 @@ export interface components {
             profiles?: components["schemas"]["RadarrProfile"][];
             /** Root Folders */
             root_folders?: components["schemas"]["RadarrRootFolder"][];
+            /** Language Root Folders */
+            language_root_folders?: {
+                [key: string]: string;
+            };
             /** Error */
             error?: string | null;
         };
@@ -2241,6 +2245,10 @@ export interface components {
              * @default announced
              */
             minimum_availability: string;
+            /** Language Root Folders */
+            language_root_folders?: {
+                [key: string]: string;
+            };
         };
         /** RatedTitle */
         RatedTitle: {
