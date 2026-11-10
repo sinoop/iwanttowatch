@@ -1,36 +1,70 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="amberGlow" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#fbbf24"/>
-      <stop offset="100%" stop-color="#f59e0b"/>
-    </linearGradient>
-    <radialGradient id="pupilGlow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#fef3c7"/>
-      <stop offset="40%" stop-color="#f5a524"/>
+    <linearGradient id="goldRim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde047"/>
+      <stop offset="50%" stop-color="#f5a524"/>
       <stop offset="100%" stop-color="#d97706"/>
-    </radialGradient>
+    </linearGradient>
+    <linearGradient id="amberPlay" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a"/>
+      <stop offset="50%" stop-color="#f5a524"/>
+      <stop offset="100%" stop-color="#ea580c"/>
+    </linearGradient>
+    <linearGradient id="slateGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#182234"/>
+      <stop offset="100%" stop-color="#0f1624"/>
+    </linearGradient>
+    <clipPath id="topStickClip">
+      <rect x="12" y="15" width="40" height="7" rx="2.5"/>
+    </clipPath>
+    <clipPath id="midStickClip">
+      <rect x="12" y="24" width="40" height="6.5" rx="2"/>
+    </clipPath>
   </defs>
 
-  <!-- Dark Squircle Background -->
-  <rect width="64" height="64" rx="14" fill="#0b1120"/>
-  <rect x="1" y="1" width="62" height="62" rx="13" fill="none" stroke="#f5a524" stroke-opacity="0.25" stroke-width="1"/>
+  <!-- Squircle Base with Luminous Gold Border for High Contrast -->
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14" fill="#0b1120" stroke="url(#goldRim)" stroke-width="2.5"/>
 
-  <!-- Outer Stylized Eye Contour -->
-  <path d="M 7 32 C 16 17, 48 17, 57 32 C 48 47, 16 47, 7 32 Z" fill="#131d31" stroke="url(#amberGlow)" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- Lower Slate Body -->
+  <rect x="12" y="31.5" width="40" height="21" rx="3" fill="url(#slateGrad)" stroke="#223049" stroke-width="1.2"/>
 
-  <!-- Cinema Film Reel Outer Ring -->
-  <circle cx="32" cy="32" r="13" fill="#0f172a" stroke="url(#amberGlow)" stroke-width="2"/>
+  <!-- Slate Horizontal Production Lines -->
+  <line x1="16" y1="36" x2="25" y2="36" stroke="#f5a524" stroke-opacity="0.45" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="16" y1="40" x2="23" y2="40" stroke="#f5a524" stroke-opacity="0.45" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="16" y1="44" x2="25" y2="44" stroke="#f5a524" stroke-opacity="0.45" stroke-width="1.2" stroke-linecap="round"/>
 
-  <!-- Spool Cutout Holes -->
-  <circle cx="32.00" cy="23.80" r="2.2" fill="#0b1120" stroke="#f5a524" stroke-width="1.2"/>
-  <circle cx="39.80" cy="29.47" r="2.2" fill="#0b1120" stroke="#f5a524" stroke-width="1.2"/>
-  <circle cx="36.82" cy="38.63" r="2.2" fill="#0b1120" stroke="#f5a524" stroke-width="1.2"/>
-  <circle cx="27.18" cy="38.63" r="2.2" fill="#0b1120" stroke="#f5a524" stroke-width="1.2"/>
-  <circle cx="24.20" cy="29.47" r="2.2" fill="#0b1120" stroke="#f5a524" stroke-width="1.2"/>
+  <!-- Glowing Slate Play Button -->
+  <circle cx="37" cy="42" r="7.5" fill="#0b1120" stroke="url(#amberPlay)" stroke-width="1.5"/>
+  <path d="M 35 38.5 L 41 42 L 35 45.5 Z" fill="url(#amberPlay)"/>
 
-  <!-- Glowing Iris / Hub -->
-  <circle cx="32" cy="32" r="4.6" fill="url(#pupilGlow)"/>
+  <!-- Rating Star Accent on Slate -->
+  <path d="M 46 34.5 L 46.8 36.2 L 48.7 36.4 L 47.3 37.7 L 47.7 39.5 L 46 38.5 L 44.3 39.5 L 44.7 37.7 L 43.3 36.4 L 45.2 36.2 Z" fill="#fde047" opacity="0.8"/>
 
-  <!-- Center Play Button in Iris -->
-  <path d="M 30.5 29.5 L 34.8 32 L 30.5 34.5 Z" fill="#0b1120"/>
+  <!-- Middle Stick (Fixed to Lower Slate) -->
+  <g clip-path="url(#midStickClip)">
+    <rect x="12" y="24" width="40" height="6.5" fill="#0b1120"/>
+    <!-- Diagonal Amber Stripes -->
+    <polygon points="12,24 16,24 10,31 6,31" fill="#f5a524"/>
+    <polygon points="21,24 26,24 19,31 14,31" fill="#f5a524"/>
+    <polygon points="31,24 36,24 29,31 24,31" fill="#f5a524"/>
+    <polygon points="41,24 46,24 39,31 34,31" fill="#f5a524"/>
+    <polygon points="51,24 53,24 49,31 44,31" fill="#f5a524"/>
+  </g>
+  <rect x="12" y="24" width="40" height="6.5" rx="2" fill="none" stroke="#f5a524" stroke-opacity="0.4" stroke-width="1"/>
+
+  <!-- Top Clapper Stick (Angled Upwards at 14 degrees) -->
+  <g transform="rotate(-14 13 24)">
+    <g clip-path="url(#topStickClip)">
+      <rect x="12" y="15" width="40" height="7" fill="#0b1120"/>
+      <!-- Diagonal Amber Stripes on Top Stick -->
+      <polygon points="14,15 19,15 13,22 8,22" fill="#f5a524"/>
+      <polygon points="24,15 29,15 23,22 18,22" fill="#f5a524"/>
+      <polygon points="34,15 39,15 33,22 28,22" fill="#f5a524"/>
+      <polygon points="44,15 49,15 43,22 38,22" fill="#f5a524"/>
+    </g>
+    <rect x="12" y="15" width="40" height="7" rx="2.5" fill="none" stroke="#f5a524" stroke-width="1.2"/>
+  </g>
+
+  <!-- Left Hinge Bolt -->
+  <circle cx="14" cy="24" r="2.2" fill="#fde047" stroke="#0b1120" stroke-width="0.8"/>
 </svg>
