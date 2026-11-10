@@ -29,9 +29,6 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
@@ -44,14 +41,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Accept Android SDK licenses
+        run: |
+          yes | sdkmanager --licenses 2>/dev/null || true
+
       - name: Generate native Android project
         run: |
           cd mobile
-          pnpm dlx expo prebuild --platform android --clean
+          pnpm expo prebuild --platform android --clean
 
       - name: Build Release APK
         run: |
           cd mobile/android
+          chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
       - name: Rename APK for clarity
