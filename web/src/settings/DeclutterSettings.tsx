@@ -36,6 +36,10 @@ export function DeclutterSettings() {
   const items = data?.items ?? []
   const radarrConfigured = settings.data?.radarr.configured ?? false
 
+  const nonProtected = items.filter((i) => !i.is_protected).map((i) => i.tmdb_id)
+  const allSafeSelected =
+    nonProtected.length > 0 && nonProtected.every((id) => selectedIds.includes(id))
+
   const toggleSelect = (tmdbId: number) => {
     setSelectedIds((prev) =>
       prev.includes(tmdbId) ? prev.filter((id) => id !== tmdbId) : [...prev, tmdbId],
@@ -43,16 +47,11 @@ export function DeclutterSettings() {
   }
 
   const handleSelectAll = () => {
-    if (selectedIds.length === items.length) {
+    if (selectedIds.length > 0) {
       setSelectedIds([])
     } else {
-      // Select non-protected by default, or all if all unprotected are already selected
-      const nonProtected = items.filter((i) => !i.is_protected).map((i) => i.tmdb_id)
-      if (nonProtected.length > 0 && selectedIds.length < nonProtected.length) {
-        setSelectedIds(nonProtected)
-      } else {
-        setSelectedIds(items.map((i) => i.tmdb_id))
-      }
+      // Strictly select ONLY safe, non-protected items. Protected items must be explicitly checked individually.
+      setSelectedIds(nonProtected)
     }
   }
 
@@ -220,18 +219,32 @@ export function DeclutterSettings() {
           <div className="flex items-center gap-3 text-sm">
             <input
               type="checkbox"
-              checked={selectedIds.length > 0 && selectedIds.length === items.length}
+              checked={allSafeSelected}
               onChange={handleSelectAll}
+              disabled={nonProtected.length === 0}
               className="size-4 rounded border-white/20 bg-black/40 text-accent focus:ring-accent/40"
+              title={allSafeSelected ? 'Clear selection' : 'Select all safe (unprotected) candidates'}
             />
             <span className="text-white/80">
               {selectedIds.length > 0 ? (
                 <>
                   <strong className="text-white">{selectedIds.length}</strong> selected (
                   <span className="text-accent font-semibold">{selectedFormatted}</span>)
+                  {selectedItems.some((i) => i.is_protected) && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300 border border-amber-500/30">
+                      ⚠️ Includes protected
+                    </span>
+                  )}
                 </>
               ) : (
-                'Select candidates to clean'
+                <>
+                  Select safe candidates to clean{' '}
+                  {items.some((i) => i.is_protected) && (
+                    <span className="text-xs text-white/40">
+                      ({nonProtected.length} safe, {items.length - nonProtected.length} protected excluded)
+                    </span>
+                  )}
+                </>
               )}
             </span>
           </div>
