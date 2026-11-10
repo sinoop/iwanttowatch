@@ -402,7 +402,7 @@ export interface paths {
         };
         /**
          * List Ratings
-         * @description The user's ratings, newest first; when sources disagree the latest rating wins.
+         * @description The user's ratings with rich filtering and sorting.
          */
         get: operations["list_ratings_api_v1_ratings_get"];
         put?: never;
@@ -3061,15 +3061,54 @@ export interface components {
             reaction: string | null;
             /** Tags */
             tags: string[];
+            /** Note */
+            note?: string | null;
         };
         /** RatingsPage */
         RatingsPage: {
             /** Total */
             total: number;
+            /**
+             * Total Unfiltered
+             * @default 0
+             */
+            total_unfiltered: number;
             /** Items */
             items: components["schemas"]["RatedTitle"][];
             /** Languages */
             languages: components["schemas"]["LanguageCount"][];
+            /**
+             * Genres
+             * @default []
+             */
+            genres: string[];
+            /**
+             * Decades
+             * @default []
+             */
+            decades: number[];
+            /**
+             * Tags
+             * @default []
+             */
+            tags: string[];
+            /**
+             * Reactions
+             * @default {}
+             */
+            reactions: {
+                [key: string]: number;
+            };
+            /**
+             * Top People
+             * @default []
+             */
+            top_people: string[];
+            /**
+             * Has Notes Count
+             * @default 0
+             */
+            has_notes_count: number;
         };
         /** ReactionUpdate */
         ReactionUpdate: {
@@ -4112,6 +4151,17 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                query?: string | null;
+                reaction?: string | null;
+                language?: string | null;
+                genre?: string | null;
+                person?: string | null;
+                tag?: string | null;
+                decade?: number | null;
+                watch_on?: string | null;
+                has_note?: boolean | null;
+                favorite?: boolean | null;
+                sort?: string;
             };
             header?: never;
             path?: never;

@@ -180,3 +180,154 @@ def test_reactions_do_not_join_the_pool_they_are_scored_against(client: TestClie
     assert all(after[i] == before[i] for i in before)
     # ...and each receives the discrete liked label weight (0.70).
     assert all(after[i] == 0.70 for i in range(500, 520))
+
+
+def test_ratings_filtering_and_sorting(client: TestClient) -> None:
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        session.add(
+            Title(
+                tmdb_id=601,
+                title="Inception",
+                original_title="Inception",
+                original_language="en",
+                year=2010,
+                genres=["Action", "Sci-Fi"],
+                directors=[{"id": 1, "name": "Christopher Nolan"}],
+                cast=[{"id": 2, "name": "Leonardo DiCaprio"}],
+            )
+        )
+        session.add(
+            Title(
+                tmdb_id=602,
+                title="Parasite",
+                original_title="Gisaengchung",
+                original_language="ko",
+                year=2019,
+                genres=["Thriller", "Drama"],
+                directors=[{"id": 3, "name": "Bong Joon-ho"}],
+                cast=[{"id": 4, "name": "Song Kang-ho"}],
+            )
+        )
+        session.add(
+            Title(
+                tmdb_id=603,
+                title="The Room",
+                original_title="The Room",
+                original_language="en",
+                year=2003,
+                genres=["Drama"],
+                directors=[{"id": 5, "name": "Tommy Wiseau"}],
+                cast=[{"id": 5, "name": "Tommy Wiseau"}],
+            )
+        )
+        session.add(
+            Title(
+                tmdb_id=604,
+                title="Spirited Away",
+                original_title="Sen to Chihiro no Kamikakushi",
+                original_language="ja",
+                year=2001,
+                genres=["Animation", "Fantasy"],
+                directors=[{"id": 6, "name": "Hayao Miyazaki"}],
+                cast=[],
+            )
+        )
+        session.commit()
+
+    # Rate them
+    client.put(
+        "/api/v1/titles/601/reaction",
+        json={"reaction": "loved", "tags": ["mind_bending"], "note": "Masterpiece"},
+    )
+    client.put(
+        "/api/v1/titles/602/reaction",
+        json={"reaction": "loved", "tags": ["clever_twist"]},
+    )
+    client.put(
+        "/api/v1/titles/603/reaction",
+        json={"reaction": "disliked", "tags": ["unconvincing_acting"], "note": "Hilariously bad"},
+    )
+    client.put(
+        "/api/v1/titles/604/reaction",
+        json={"reaction": "liked", "tags": ["beautiful_visuals"]},
+    )
+
+    # 1. Unfiltered page & facets
+    res = client.get("/api/v1/ratings").json()
+    assert res["total"] == 4
+    assert res["total_unfiltered"] == 4
+    assert set(res["genres"]) >= {"Action", "Sci-Fi", "Thriller", "Drama", "Animation", "Fantasy"}
+    assert set(res["decades"]) == {2010, 2000}
+    assert res["reactions"] == {"loved": 2, "disliked": 1, "liked": 1}
+    assert res["has_notes_count"] == 2
+    assert set(res["tags"]) >= {
+        "mind_bending",
+        "clever_twist",
+        "unconvincing_acting",
+        "beautiful_visuals",
+    }
+    lang_map = {item["language"]: item["count"] for item in res["languages"]}
+    assert lang_map["en"] == 2 and lang_map["ko"] == 1 and lang_map["ja"] == 1
+
+    # 2. Text search (English title or original title)
+    assert [
+        i["tmdb_id"]
+        for i in client.get("/api/v1/ratings", params={"query": "incept"}).json()["items"]
+    ] == [601]
+    assert [
+        i["tmdb_id"]
+        for i in client.get("/api/v1/ratings", params={"query": "kamikakushi"}).json()["items"]
+    ] == [604]
+
+    # 3. Filter by reaction
+    loved = client.get("/api/v1/ratings", params={"reaction": "loved"}).json()
+    assert loved["total"] == 2
+    assert {i["tmdb_id"] for i in loved["items"]} == {601, 602}
+
+    disliked = client.get("/api/v1/ratings", params={"reaction": "disliked"}).json()
+    assert disliked["total"] == 1
+    assert disliked["items"][0]["tmdb_id"] == 603
+
+    # 4. Filter by language
+    ko = client.get("/api/v1/ratings", params={"language": "ko"}).json()
+    assert [i["tmdb_id"] for i in ko["items"]] == [602]
+
+    # 5. Filter by genre
+    scifi = client.get("/api/v1/ratings", params={"genre": "Sci-Fi"}).json()
+    assert [i["tmdb_id"] for i in scifi["items"]] == [601]
+
+    # 6. Filter by person (director or cast)
+    nolan = client.get("/api/v1/ratings", params={"person": "nolan"}).json()
+    assert [i["tmdb_id"] for i in nolan["items"]] == [601]
+
+    song = client.get("/api/v1/ratings", params={"person": "song kang"}).json()
+    assert [i["tmdb_id"] for i in song["items"]] == [602]
+
+    # 7. Filter by tag
+    twist = client.get("/api/v1/ratings", params={"tag": "clever_twist"}).json()
+    assert [i["tmdb_id"] for i in twist["items"]] == [602]
+
+    # 8. Filter by decade
+    d2000s = client.get("/api/v1/ratings", params={"decade": 2000}).json()
+    assert {i["tmdb_id"] for i in d2000s["items"]} == {603, 604}
+
+    # 9. Filter by has_note
+    notes = client.get("/api/v1/ratings", params={"has_note": True}).json()
+    assert {i["tmdb_id"] for i in notes["items"]} == {601, 603}
+    assert any(i["note"] == "Masterpiece" for i in notes["items"])
+
+    # 10. Sorting
+    by_react = client.get("/api/v1/ratings", params={"sort": "reaction"}).json()
+    react_ids = [i["tmdb_id"] for i in by_react["items"]]
+    assert react_ids[0] in {601, 602} and react_ids[1] in {601, 602}
+    assert react_ids[2] == 604  # liked
+    assert react_ids[3] == 603  # disliked
+
+    by_year_desc = client.get("/api/v1/ratings", params={"sort": "year_desc"}).json()
+    assert [i["tmdb_id"] for i in by_year_desc["items"]] == [602, 601, 603, 604]
+
+    by_year_asc = client.get("/api/v1/ratings", params={"sort": "year_asc"}).json()
+    assert [i["tmdb_id"] for i in by_year_asc["items"]] == [604, 603, 601, 602]
+
+    by_title = client.get("/api/v1/ratings", params={"sort": "title_asc"}).json()
+    assert [i["tmdb_id"] for i in by_title["items"]] == [601, 602, 604, 603]

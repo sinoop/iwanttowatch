@@ -813,7 +813,7 @@
     "/api/v1/ratings": {
       "get": {
         "summary": "List Ratings",
-        "description": "The user's ratings, newest first; when sources disagree the latest rating wins.",
+        "description": "The user's ratings with rich filtering and sorting.",
         "operationId": "list_ratings_api_v1_ratings_get",
         "parameters": [
           {
@@ -824,7 +824,7 @@
               "type": "integer",
               "maximum": 200,
               "minimum": 1,
-              "default": 50,
+              "default": 48,
               "title": "Limit"
             }
           },
@@ -837,6 +837,176 @@
               "minimum": 0,
               "default": 0,
               "title": "Offset"
+            }
+          },
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Query"
+            }
+          },
+          {
+            "name": "reaction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Reaction"
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Language"
+            }
+          },
+          {
+            "name": "genre",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Genre"
+            }
+          },
+          {
+            "name": "person",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Person"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tag"
+            }
+          },
+          {
+            "name": "decade",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decade"
+            }
+          },
+          {
+            "name": "watch_on",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Watch On"
+            }
+          },
+          {
+            "name": "has_note",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Note"
+            }
+          },
+          {
+            "name": "favorite",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Favorite"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "newest",
+              "title": "Sort"
             }
           }
         ],
@@ -8406,6 +8576,17 @@
             },
             "type": "array",
             "title": "Tags"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
           }
         },
         "type": "object",
@@ -8431,6 +8612,11 @@
             "type": "integer",
             "title": "Total"
           },
+          "total_unfiltered": {
+            "type": "integer",
+            "title": "Total Unfiltered",
+            "default": 0
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/RatedTitle"
@@ -8444,6 +8630,51 @@
             },
             "type": "array",
             "title": "Languages"
+          },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres",
+            "default": []
+          },
+          "decades": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Decades",
+            "default": []
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags",
+            "default": []
+          },
+          "reactions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Reactions",
+            "default": {}
+          },
+          "top_people": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Top People",
+            "default": []
+          },
+          "has_notes_count": {
+            "type": "integer",
+            "title": "Has Notes Count",
+            "default": 0
           }
         },
         "type": "object",

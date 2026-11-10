@@ -1,6 +1,6 @@
 import type { DivergentTitle, Me, RatedTitle, TitleAvailability } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { api, errorMessage, REACTIONS, TAG_LABELS, useAvailability, useImports, usePeopleTaste, useServerSettings } from './api'
 import RateDialog, { ReactionIcon } from './RateDialog'
@@ -92,12 +92,113 @@ function Ratings({
   const [tab, setTab] = useState<'all' | 'divergent' | 'people'>('all')
   const [personDetailId, setPersonDetailId] = useState<number | null>(null)
   const peopleTaste = usePeopleTaste()
+
+  // Filter & sort states
+  const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [reactionFilter, setReactionFilter] = useState<string | null>(null)
+  const [languageFilter, setLanguageFilter] = useState<string | null>(null)
+  const [genreFilter, setGenreFilter] = useState<string | null>(null)
+  const [decadeFilter, setDecadeFilter] = useState<number | null>(null)
+  const [tagFilter, setTagFilter] = useState<string | null>(null)
+  const [personFilter, setPersonFilter] = useState('')
+  const [debouncedPerson, setDebouncedPerson] = useState('')
+  const [watchOnFilter, setWatchOnFilter] = useState<string | null>(null)
+  const [hasNoteFilter, setHasNoteFilter] = useState(false)
+  const [sortOrder, setSortOrder] = useState<string>('newest')
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 250)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedPerson(personFilter), 250)
+    return () => clearTimeout(timer)
+  }, [personFilter])
+
+  const isFiltered = Boolean(
+    search.trim() ||
+      reactionFilter ||
+      languageFilter ||
+      genreFilter ||
+      decadeFilter !== null ||
+      tagFilter ||
+      personFilter.trim() ||
+      watchOnFilter ||
+      hasNoteFilter ||
+      sortOrder !== 'newest',
+  )
+
+  const clearFilters = () => {
+    setSearch('')
+    setDebouncedSearch('')
+    setReactionFilter(null)
+    setLanguageFilter(null)
+    setGenreFilter(null)
+    setDecadeFilter(null)
+    setTagFilter(null)
+    setPersonFilter('')
+    setDebouncedPerson('')
+    setWatchOnFilter(null)
+    setHasNoteFilter(false)
+    setSortOrder('newest')
+  }
+
+  const selectClass = (active: boolean) =>
+    `rounded-lg border px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30 ${
+      active
+        ? 'border-accent/60 bg-accent/10 text-accent-strong'
+        : 'border-white/10 bg-black/30 text-white/80 hover:border-white/25 hover:text-white'
+    }`
+
   const ratings = useInfiniteQuery({
-    queryKey: ['ratings'],
+    queryKey: [
+      'ratings',
+      debouncedSearch,
+      reactionFilter,
+      languageFilter,
+      genreFilter,
+      decadeFilter,
+      tagFilter,
+      debouncedPerson,
+      watchOnFilter,
+      hasNoteFilter,
+      sortOrder,
+    ],
     initialPageParam: 0,
     queryFn: async ({ pageParam }) =>
-      (await api.GET('/api/v1/ratings', { params: { query: { limit: PAGE, offset: pageParam } } }))
-        .data ?? { total: 0, items: [], languages: [] },
+      (
+        await api.GET('/api/v1/ratings', {
+          params: {
+            query: {
+              limit: PAGE,
+              offset: pageParam,
+              query: debouncedSearch.trim() || undefined,
+              reaction: reactionFilter || undefined,
+              language: languageFilter || undefined,
+              genre: genreFilter || undefined,
+              decade: decadeFilter ?? undefined,
+              tag: tagFilter || undefined,
+              person: debouncedPerson.trim() || undefined,
+              watch_on: watchOnFilter || undefined,
+              has_note: hasNoteFilter || undefined,
+              sort: sortOrder,
+            },
+          },
+        })
+      ).data ?? {
+        total: 0,
+        total_unfiltered: 0,
+        items: [],
+        languages: [],
+        genres: [],
+        decades: [],
+        tags: [],
+        reactions: {},
+        top_people: [],
+        has_notes_count: 0,
+      },
     getNextPageParam: (last, pages) => {
       const loaded = pages.reduce((sum, page) => sum + page.items.length, 0)
       return loaded < last.total ? loaded : undefined
@@ -120,7 +221,7 @@ function Ratings({
               tab === 'all' ? 'text-white' : 'text-white/40 hover:text-white/70'
             }`}
           >
-            Your ratings <span className="font-normal text-white/45">{first.total}</span>
+            Your ratings <span className="font-normal text-white/45">{first.total_unfiltered || first.total}</span>
           </button>
           <span className="text-white/20">|</span>
           <button
@@ -151,12 +252,25 @@ function Ratings({
         </div>
         {tab === 'all' && first.languages.length > 0 && (
           <ul className="flex flex-wrap gap-2" aria-label="Languages you rated">
-            {first.languages.map((lang) => (
-              <li key={lang.language} className="rounded-full bg-white/5 px-3 py-1 text-xs text-white/70">
-                {languageName.of(lang.language) ?? lang.language}{' '}
-                <span className="text-white/40">{lang.count}</span>
-              </li>
-            ))}
+            {first.languages.map((lang) => {
+              const active = languageFilter === lang.language
+              return (
+                <li key={lang.language}>
+                  <button
+                    type="button"
+                    onClick={() => setLanguageFilter(active ? null : lang.language)}
+                    className={`cursor-pointer rounded-full px-3 py-1 text-xs transition-colors ${
+                      active
+                        ? 'border border-accent/60 bg-accent/20 text-accent font-semibold'
+                        : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    {languageName.of(lang.language) ?? lang.language}{' '}
+                    <span className={active ? 'text-accent/80' : 'text-white/40'}>{lang.count}</span>
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         )}
       </div>
@@ -175,10 +289,267 @@ function Ratings({
               onPick={onRate}
             />
           </div>
+
+          {/* Filter & Sort Controls */}
+          {first.total_unfiltered > 0 && (
+            <div className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+              {/* Row 1: Reaction pills & quick toggles */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setReactionFilter(null)}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                      reactionFilter === null
+                        ? 'bg-white text-black font-semibold'
+                        : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    All
+                    <span className={reactionFilter === null ? 'text-black/60' : 'text-white/40'}>
+                      {first.total_unfiltered}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReactionFilter(reactionFilter === 'loved' ? null : 'loved')}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                      reactionFilter === 'loved'
+                        ? 'bg-accent text-black font-semibold ring-2 ring-accent/50'
+                        : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <ReactionIcon reaction="loved" className="h-3.5" />
+                    <span>Loved</span>
+                    <span className={reactionFilter === 'loved' ? 'text-black/60' : 'text-white/40'}>
+                      {first.reactions?.loved ?? 0}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReactionFilter(reactionFilter === 'liked' ? null : 'liked')}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                      reactionFilter === 'liked'
+                        ? 'bg-accent text-black font-semibold ring-2 ring-accent/50'
+                        : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <ReactionIcon reaction="liked" className="h-3.5" />
+                    <span>Liked</span>
+                    <span className={reactionFilter === 'liked' ? 'text-black/60' : 'text-white/40'}>
+                      {first.reactions?.liked ?? 0}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReactionFilter(reactionFilter === 'disliked' ? null : 'disliked')}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                      reactionFilter === 'disliked'
+                        ? 'bg-white text-black font-semibold ring-2 ring-white/50'
+                        : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <ReactionIcon reaction="disliked" className="h-3.5" />
+                    <span>Didn’t like</span>
+                    <span className={reactionFilter === 'disliked' ? 'text-black/60' : 'text-white/40'}>
+                      {first.reactions?.disliked ?? 0}
+                    </span>
+                  </button>
+
+                  {first.has_notes_count > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setHasNoteFilter(!hasNoteFilter)}
+                      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors cursor-pointer ${
+                        hasNoteFilter
+                          ? 'border border-amber-400/50 bg-amber-400/20 text-amber-300'
+                          : 'bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      <span>📝 With notes</span>
+                      <span className={hasNoteFilter ? 'text-amber-200' : 'text-white/40'}>
+                        {first.has_notes_count}
+                      </span>
+                    </button>
+                  )}
+                </div>
+
+                {isFiltered && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-white/50">
+                      Showing {first.total} of {first.total_unfiltered}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={clearFilters}
+                      className="cursor-pointer text-xs font-semibold text-accent hover:underline"
+                    >
+                      Reset filters
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Row 2: Search, Person, Genre, Language, Decade, Tag, Watch on, Sort */}
+              <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                {/* Search title */}
+                <div className="relative min-w-[160px] flex-1 sm:max-w-xs">
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Filter by title…"
+                    aria-label="Filter rated films by title"
+                    className="w-full rounded-lg border border-white/10 bg-black/30 pl-7 pr-7 py-1.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-accent focus:ring-2 focus:ring-accent/30"
+                  />
+                  <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-white/40">
+                    🔍
+                  </span>
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => setSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-white/40 hover:text-white cursor-pointer"
+                      title="Clear search"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* Director / Actor */}
+                <div className="relative min-w-[150px] flex-1 sm:max-w-xs">
+                  <input
+                    type="text"
+                    list="taste-top-people"
+                    value={personFilter}
+                    onChange={(e) => setPersonFilter(e.target.value)}
+                    placeholder="Director or actor…"
+                    aria-label="Filter by director or actor"
+                    className={`w-full rounded-lg border pl-3 pr-7 py-1.5 text-sm outline-none placeholder:text-white/30 transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30 ${
+                      personFilter
+                        ? 'border-accent/60 bg-accent/10 text-accent-strong'
+                        : 'border-white/10 bg-black/30 text-white/80 hover:border-white/25 hover:text-white'
+                    }`}
+                  />
+                  {first.top_people.length > 0 && (
+                    <datalist id="taste-top-people">
+                      {first.top_people.map((name) => (
+                        <option key={name} value={name} />
+                      ))}
+                    </datalist>
+                  )}
+                  {personFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setPersonFilter('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-white/40 hover:text-white cursor-pointer"
+                      title="Clear person filter"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* Genre */}
+                {first.genres.length > 0 && (
+                  <select
+                    value={genreFilter ?? ''}
+                    onChange={(e) => setGenreFilter(e.target.value || null)}
+                    aria-label="Filter by genre"
+                    className={selectClass(genreFilter !== null)}
+                  >
+                    <option value="">All genres</option>
+                    {first.genres.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {/* Decade */}
+                {first.decades.length > 0 && (
+                  <select
+                    value={decadeFilter ?? ''}
+                    onChange={(e) => setDecadeFilter(e.target.value ? Number(e.target.value) : null)}
+                    aria-label="Filter by decade"
+                    className={selectClass(decadeFilter !== null)}
+                  >
+                    <option value="">All eras</option>
+                    {first.decades.map((dec) => (
+                      <option key={dec} value={dec}>
+                        {dec}s
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {/* Tag ("What I liked") */}
+                {first.tags.length > 0 && (
+                  <select
+                    value={tagFilter ?? ''}
+                    onChange={(e) => setTagFilter(e.target.value || null)}
+                    aria-label="Filter by tag"
+                    className={selectClass(tagFilter !== null)}
+                  >
+                    <option value="">All reaction tags</option>
+                    {first.tags.map((t) => (
+                      <option key={t} value={t}>
+                        {TAG_LABELS[t] ?? t}
+                      </option>
+                    ))}
+                  </select>
+                )}
+
+                {/* Availability */}
+                <select
+                  value={watchOnFilter ?? ''}
+                  onChange={(e) => setWatchOnFilter(e.target.value || null)}
+                  aria-label="Watch availability"
+                  className={selectClass(watchOnFilter !== null)}
+                >
+                  <option value="">Any availability</option>
+                  <option value="jellyfin">In Jellyfin</option>
+                  <option value="streamable">Streamable (Jellyfin / Subscriptions)</option>
+                </select>
+
+                {/* Sort Order */}
+                <select
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value)}
+                  aria-label="Sort order"
+                  className={selectClass(sortOrder !== 'newest')}
+                >
+                  <option value="newest">Recently rated</option>
+                  <option value="reaction">Loved first</option>
+                  <option value="year_desc">Release year: Newest</option>
+                  <option value="year_asc">Release year: Oldest</option>
+                  <option value="title_asc">Title: A–Z</option>
+                </select>
+              </div>
+            </div>
+          )}
+
           {items.length === 0 ? (
-            <p className="mt-4 text-sm text-white/50">
-              No ratings yet. Import a file above, or search for a film you’ve seen.
-            </p>
+            isFiltered ? (
+              <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-center">
+                <span className="mx-auto block text-3xl">🔍</span>
+                <h3 className="mt-3 text-base font-semibold text-white">No ratings match your filters</h3>
+                <p className="mt-1.5 text-sm text-white/50 max-w-md mx-auto">
+                  Try clearing some of your search or filter choices to see your rated movies.
+                </p>
+                <div className="mt-4">
+                  <Button variant="ghost" onClick={clearFilters}>
+                    Reset all filters
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-white/50">
+                No ratings yet. Import a file above, or search for a film you’ve seen.
+              </p>
+            )
           ) : (
             <ul className="mt-5 grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-6">
               {items.map((item) => (
@@ -661,6 +1032,11 @@ function RatingCard({
               </li>
             ))}
           </ul>
+        )}
+        {item.note && (
+          <p className="mt-1.5 line-clamp-2 text-xs italic text-white/60" title={item.note}>
+            "{item.note}"
+          </p>
         )}
       </button>
       <WatchBadges availability={where} />

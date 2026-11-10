@@ -1,14 +1,16 @@
+from collections import Counter
 from datetime import date, datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import String, case, cast, func, or_, select
 
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.imports import Candidate
 from iwanttowatch.catalog import search_movies
+from iwanttowatch.children import library_owners
 from iwanttowatch.llm import LlmError, llm_order, provider_from_settings
-from iwanttowatch.models import Persona, Title, UserTitle
+from iwanttowatch.models import Availability, LibraryItem, Persona, Title, UserTitle
 from iwanttowatch.taste import (
     MIN_RATINGS_FOR_PERSONA,
     effective_ratings,
@@ -35,6 +37,7 @@ class RatedTitle(BaseModel):
     # Set when the effective rating was given in iWantToWatch.
     reaction: str | None
     tags: list[str]
+    note: str | None = None
 
 
 class LanguageCount(BaseModel):
@@ -44,41 +47,175 @@ class LanguageCount(BaseModel):
 
 class RatingsPage(BaseModel):
     total: int
+    total_unfiltered: int = 0
     items: list[RatedTitle]
     languages: list[LanguageCount]
+    genres: list[str] = []
+    decades: list[int] = []
+    tags: list[str] = []
+    reactions: dict[str, int] = {}
+    top_people: list[str] = []
+    has_notes_count: int = 0
 
 
 @router.get("/ratings")
 def list_ratings(
     user: CurrentUser,
     session: DbSession,
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(48, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    query: str | None = None,
+    reaction: str | None = None,
+    language: str | None = None,
+    genre: str | None = None,
+    person: str | None = None,
+    tag: str | None = None,
+    decade: int | None = None,
+    watch_on: str | None = None,
+    has_note: bool | None = None,
+    favorite: bool | None = None,
+    sort: str = "newest",
 ) -> RatingsPage:
-    """The user's ratings, newest first; when sources disagree the latest rating wins."""
+    """The user's ratings with rich filtering and sorting."""
     effective = effective_ratings(user.id)
-    total = session.scalar(select(func.count()).select_from(effective)) or 0
-    rows = session.execute(
-        select(effective, Title)
-        .join(Title, Title.tmdb_id == effective.c.tmdb_id)
-        .order_by(effective.c.rated_at.desc().nulls_last(), effective.c.id.desc())
-        .limit(limit)
-        .offset(offset)
+
+    # 1. Gather all unfiltered rated titles to extract user-specific filter facets
+    all_rated = session.execute(
+        select(
+            Title.original_language,
+            Title.genres,
+            Title.year,
+            Title.directors,
+            Title.cast,
+            effective.c.reaction,
+            effective.c.tags,
+            effective.c.note,
+        ).join(Title, Title.tmdb_id == effective.c.tmdb_id)
     ).all()
+
+    total_unfiltered = len(all_rated)
+    lang_counter: Counter[str] = Counter()
+    genre_set: set[str] = set()
+    decade_set: set[int] = set()
+    tag_set: set[str] = set()
+    reaction_counter: Counter[str] = Counter()
+    people_counter: Counter[str] = Counter()
+    has_notes_count = 0
+
+    for row in all_rated:
+        if row.original_language:
+            lang_counter[row.original_language] += 1
+        if row.genres:
+            genre_set.update(row.genres)
+        if row.year:
+            decade_set.add((row.year // 10) * 10)
+        if row.reaction:
+            reaction_counter[row.reaction] += 1
+        if row.tags:
+            tag_set.update(row.tags)
+        if row.note and row.note.strip():
+            has_notes_count += 1
+        if row.directors:
+            for p in row.directors:
+                if isinstance(p, dict) and p.get("name"):
+                    people_counter[p["name"]] += 1
+        if row.cast:
+            for p in row.cast[:4]:
+                if isinstance(p, dict) and p.get("name"):
+                    people_counter[p["name"]] += 1
+
+    languages = [
+        LanguageCount(language=lang, count=count) for lang, count in lang_counter.most_common()
+    ]
+    genres = sorted(genre_set)
+    decades = sorted(decade_set, reverse=True)
+    tags = sorted(tag_set)
+    top_people = [name for name, count in people_counter.most_common(30) if count >= 2]
+
+    # 2. Build filtered query
+    stmt = select(effective, Title).join(Title, Title.tmdb_id == effective.c.tmdb_id)
+
+    if query and query.strip():
+        pattern = f"%{query.strip().lower()}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(Title.title).like(pattern),
+                func.lower(Title.original_title).like(pattern),
+            )
+        )
+    if reaction:
+        stmt = stmt.where(effective.c.reaction == reaction)
+    if language:
+        stmt = stmt.where(Title.original_language == language)
+    if genre:
+        stmt = stmt.where(cast(Title.genres, String).like(f'%"{genre}"%'))
+    if person and person.strip():
+        person_pattern = f"%{person.strip().lower()}%"
+        stmt = stmt.where(
+            or_(
+                func.lower(cast(Title.directors, String)).like(person_pattern),
+                func.lower(cast(Title.cast, String)).like(person_pattern),
+            )
+        )
+    if tag:
+        stmt = stmt.where(cast(effective.c.tags, String).like(f'%"{tag}"%'))
+    if decade is not None:
+        stmt = stmt.where(Title.year >= decade, Title.year < decade + 10)
+    if has_note:
+        stmt = stmt.where(effective.c.note.is_not(None), effective.c.note != "")
+    if favorite:
+        stmt = stmt.where(effective.c.favorite.is_(True))
+
+    if watch_on == "jellyfin":
+        owners = library_owners(session, user)
+        jellyfin_ids = select(LibraryItem.tmdb_id).where(LibraryItem.user_id.in_(owners))
+        stmt = stmt.where(Title.tmdb_id.in_(jellyfin_ids))
+    elif watch_on == "streamable":
+        owners = library_owners(session, user)
+        jellyfin_ids = select(LibraryItem.tmdb_id).where(LibraryItem.user_id.in_(owners))
+        conditions = [
+            cast(Availability.offers, String).like('%"kind": "free"%'),
+            cast(Availability.offers, String).like('%"kind": "ads"%'),
+        ]
+        for pid in user.subscriptions or []:
+            conditions.append(cast(Availability.offers, String).like(f'%"provider_id": {pid}%'))
+        streamable_subq = select(Availability.tmdb_id).where(
+            Availability.region == user.region, or_(*conditions)
+        )
+        stmt = stmt.where(or_(Title.tmdb_id.in_(jellyfin_ids), Title.tmdb_id.in_(streamable_subq)))
+
+    # 3. Sort order
+    if sort == "reaction":
+        stmt = stmt.order_by(
+            case(
+                (effective.c.reaction == "loved", 3),
+                (effective.c.reaction == "liked", 2),
+                (effective.c.reaction == "disliked", 1),
+                else_=0,
+            ).desc(),
+            effective.c.rated_at.desc().nulls_last(),
+            effective.c.id.desc(),
+        )
+    elif sort == "year_desc":
+        stmt = stmt.order_by(Title.year.desc().nulls_last(), Title.title.asc())
+    elif sort == "year_asc":
+        stmt = stmt.order_by(Title.year.asc().nulls_last(), Title.title.asc())
+    elif sort == "title_asc":
+        stmt = stmt.order_by(Title.title.asc())
+    else:  # "newest" or default
+        stmt = stmt.order_by(effective.c.rated_at.desc().nulls_last(), effective.c.id.desc())
+
+    total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = session.execute(stmt.limit(limit).offset(offset)).all()
     favorites = set(
         session.scalars(
             select(UserTitle.tmdb_id).where(UserTitle.user_id == user.id, UserTitle.favorite)
         )
     )
-    languages = session.execute(
-        select(Title.original_language, func.count())
-        .join(effective, Title.tmdb_id == effective.c.tmdb_id)
-        .group_by(Title.original_language)
-        .order_by(func.count().desc())
-        .limit(8)
-    ).all()
+
     return RatingsPage(
         total=total,
+        total_unfiltered=total_unfiltered,
         items=[
             RatedTitle(
                 tmdb_id=row.Title.tmdb_id,
@@ -87,16 +224,23 @@ def list_ratings(
                 original_language=row.Title.original_language,
                 year=row.Title.year,
                 poster_path=row.Title.poster_path,
-                rating=row.rating,
+                rating=row.rating if row.rating is not None else 0.0,
                 rated_at=row.rated_at,
                 source=row.source,
                 favorite=row.Title.tmdb_id in favorites,
                 reaction=row.reaction,
                 tags=row.tags or [],
+                note=row.note,
             )
             for row in rows
         ],
-        languages=[LanguageCount(language=lang, count=n) for lang, n in languages],
+        languages=languages,
+        genres=genres,
+        decades=decades,
+        tags=tags,
+        reactions=dict(reaction_counter),
+        top_people=top_people,
+        has_notes_count=has_notes_count,
     )
 
 
