@@ -84,8 +84,8 @@ export default function Shell({ me }: { me: Me }) {
             </NavLink>
           ))}
         </nav>
-        <div className="ml-auto flex flex-wrap items-center gap-2 text-sm sm:gap-3">
-          <HeaderSearch />
+        <HeaderSearch />
+        <div className={`flex items-center gap-2 text-sm sm:gap-3 ${settings.data?.tmdb_configured ? 'ml-auto sm:ml-0' : 'ml-auto'}`}>
           {canSwitch ? (
             <div ref={menuRef} className="relative">
               <button

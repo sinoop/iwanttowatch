@@ -1,7 +1,7 @@
 import type { AskAnswer, ChildProfile, FeedItem, FeedPage, FeedSort, Me, RadarrShortlistStatus, Reaction } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState, type ReactNode } from 'react'
-import { Link } from 'react-router'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Link, useSearchParams } from 'react-router'
 import { api, errorMessage, facts, useChildren, useQuickRate, useRadarrBatchSync, useRadarrShortlist, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
 import RateDialog, { QuickTags, ReactionIcon } from './RateDialog'
 import { PlatformFilter, WatchBadges } from './Streaming'
@@ -91,7 +91,12 @@ export default function Discover({ me }: { me: Me }) {
     hide_shortlisted: shortlistFilter === 'hide' || undefined,
     age_limit: me.max_certificate ? ageLimit : undefined,
   }
+  const [searchParams, setSearchParams] = useSearchParams()
+  const askParam = searchParams.get('ask')
+  const lastAskedRef = useRef<string | null>(null)
+
   const ask = useMutation({
+    mutationKey: ['feed', 'ask'],
     mutationFn: async (text: string) => {
       const { data, error } = await api.POST('/api/v1/feed/ask', { params: { query: filters }, body: { text } })
       if (error) throw new Error(errorMessage(error))
@@ -135,8 +140,40 @@ export default function Discover({ me }: { me: Me }) {
   const nothingFits = answer?.picks.length === 0
   const items = nothingFits ? [] : (feed.data?.pages.flatMap((p) => p.items) ?? [])
   const tmdbMissing = settings.data && !settings.data.tmdb_configured
-  const llmConfigured = (settings.data?.llm.order.length ?? 0) > 0
   const whyFor = new Map(answer?.picks.map((p) => [p.tmdb_id, p.why]))
+
+  useEffect(() => {
+    const text = askParam?.trim()
+    if (!text || !first || first.status !== 'ready') return
+    if (lastAskedRef.current === text) return
+    lastAskedRef.current = text
+    ask.mutate(text)
+  }, [askParam, first, ask])
+
+  useEffect(() => {
+    const onAskAi = (e: Event) => {
+      const customEvent = e as CustomEvent<{ text: string }>
+      const text = customEvent.detail?.text?.trim()
+      if (text && first?.status === 'ready') {
+        lastAskedRef.current = text
+        ask.mutate(text)
+      }
+    }
+    window.addEventListener('iwanttowatch:ask-ai', onAskAi)
+    return () => window.removeEventListener('iwanttowatch:ask-ai', onAskAi)
+  }, [ask, first])
+
+  const handleClearAnswer = () => {
+    lastAskedRef.current = null
+    ask.reset()
+    setAnswer(null)
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete('ask')
+      return next
+    })
+    window.dispatchEvent(new CustomEvent('iwanttowatch:clear-ask-ai'))
+  }
 
   return (
     <>
@@ -165,17 +202,34 @@ export default function Discover({ me }: { me: Me }) {
         )
       )}
 
-      {first?.status === 'ready' && llmConfigured && (
-        <AskBox
-          answer={answer}
-          asking={ask.isPending}
-          error={ask.error?.message}
-          onAsk={(text) => ask.mutate(text)}
-          onClear={() => {
-            ask.reset()
-            setAnswer(null)
-          }}
-        />
+      {ask.isPending && (
+        <div
+          role="status"
+          className="mt-6 flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs text-white/70"
+        >
+          <span className="size-3.5 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-accent" aria-hidden />
+          <span>The AI is choosing from the top of your feed…</span>
+        </div>
+      )}
+      {ask.error && (
+        <div className="mt-6">
+          <ErrorText>{ask.error.message}</ErrorText>
+        </div>
+      )}
+      {answer && !ask.isPending && (
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs text-white/55">
+          <span>
+            <span className="mr-1.5 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-strong">
+              AI-chosen
+            </span>
+            {answer.picks.length === 0
+              ? `Nothing fits “${answer.text}”.`
+              : `${answer.picks.length} ${answer.picks.length === 1 ? 'pick' : 'picks'} for “${answer.text}” from the top ${answer.considered} films in your feed, best match first.`}
+          </span>
+          <Button variant="ghost" className="px-3 py-1 text-xs" onClick={handleClearAnswer}>
+            Back to the full feed
+          </Button>
+        </div>
       )}
 
       {first && (
@@ -534,76 +588,6 @@ function Filters({
         </div>
       )}
     </div>
-  )
-}
-
-const EXAMPLE_REQUEST = 'a light Malayalam comedy under 2 hours'
-
-/** A request in the user's own words, which the AI answers from the top of the feed. */
-function AskBox({
-  answer,
-  asking,
-  error,
-  onAsk,
-  onClear,
-}: {
-  answer: Answer | null
-  asking: boolean
-  error?: string
-  onAsk: (text: string) => void
-  onClear: () => void
-}) {
-  const [text, setText] = useState('')
-  return (
-    <section className="mt-6 rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
-      <form
-        className="flex flex-wrap gap-2"
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (text.trim()) onAsk(text.trim())
-        }}
-      >
-        <label htmlFor="ask" className="sr-only">
-          Ask for something
-        </label>
-        <input
-          id="ask"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          maxLength={200}
-          placeholder={`What are you in the mood for? Try “${EXAMPLE_REQUEST}”`}
-          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none placeholder:text-white/35 focus:border-accent focus:ring-2 focus:ring-accent/30"
-        />
-        <Button type="submit" disabled={asking || !text.trim()}>
-          {asking ? 'Asking…' : 'Ask'}
-        </Button>
-      </form>
-      {asking && (
-        <p role="status" className="mt-2 text-xs text-white/50">
-          The AI is choosing from the top of your feed…
-        </p>
-      )}
-      {error && (
-        <div className="mt-2">
-          <ErrorText>{error}</ErrorText>
-        </div>
-      )}
-      {answer && !asking && (
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-white/55">
-          <span>
-            <span className="mr-1.5 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-strong">
-              AI-chosen
-            </span>
-            {answer.picks.length === 0
-              ? `Nothing fits “${answer.text}”.`
-              : `${answer.picks.length} ${answer.picks.length === 1 ? 'pick' : 'picks'} for “${answer.text}” from the top ${answer.considered} films in your feed, best match first.`}
-          </span>
-          <Button variant="ghost" className="px-3 py-1 text-xs" onClick={onClear}>
-            Back to the full feed
-          </Button>
-        </div>
-      )}
-    </section>
   )
 }
 
