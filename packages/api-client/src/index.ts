@@ -38,6 +38,10 @@ export type RadarrShortlistSyncResponse = Schemas['RadarrShortlistSyncResponse']
 export type DeclutterCandidateItem = Schemas['DeclutterCandidateItem']
 export type DeclutterInspection = Schemas['DeclutterInspection']
 export type DeclutterDeleteResponse = Schemas['DeclutterDeleteResponse']
+export type RadarItem = Schemas['RadarItem']
+export type MissingCandidatesResponse = Schemas['MissingCandidatesResponse']
+export type TheatricalRadarResponse = Schemas['TheatricalRadarResponse']
+export type RadarQueueResponse = Schemas['RadarQueueResponse']
 export type FeedSort = NonNullable<NonNullable<paths['/api/v1/feed']['get']['parameters']['query']>['sort']>
 
 /**

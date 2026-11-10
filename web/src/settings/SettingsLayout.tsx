@@ -74,6 +74,17 @@ export function ServerIcon({ className = 'size-4' }: { className?: string }) {
   )
 }
 
+export function RadarIcon({ className = 'size-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19.07 4.93a10 10 0 0 0-14.14 0" />
+      <path d="M16.24 7.76a6 6 0 0 0-8.49 0" />
+      <circle cx="12" cy="12" r="2" />
+      <path d="m13.41 10.59 5.66-5.66" />
+    </svg>
+  )
+}
+
 export function TrashIcon({ className = 'size-4' }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -272,6 +283,12 @@ export function SettingsLayout({
         },
         { id: 'ai-activity', label: 'AI Activity', href: '/settings/ai#ai-activity' },
       ],
+    },
+    {
+      id: 'radar',
+      to: '/settings/radar',
+      label: 'Acquisition Radar',
+      icon: <RadarIcon />,
     },
     {
       id: 'declutter',

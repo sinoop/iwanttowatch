@@ -387,3 +387,71 @@ export function useIgnoreDeclutterCandidate() {
     },
   })
 }
+
+/** Radar: inspect unwatched high-match recommendations missing from streaming. */
+export function useRadarMissing(minMatch = 70, scope: 'user' | 'group' = 'user', enabled = true) {
+  return useQuery({
+    queryKey: ['radar', 'missing', minMatch, scope],
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/v1/library/radar/missing', {
+        params: {
+          query: {
+            min_match: minMatch,
+            scope,
+          },
+        },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    enabled,
+  })
+}
+
+/** Radar: discover high-taste theatrical releases and check Radarr tracking status. */
+export function useRadarTheatrical(minMatch = 50, region?: string, enabled = true) {
+  return useQuery({
+    queryKey: ['radar', 'theatrical', minMatch, region],
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/v1/library/radar/theatrical', {
+        params: {
+          query: {
+            min_match: minMatch,
+            region: region || undefined,
+          },
+        },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    enabled,
+  })
+}
+
+/** Radar: queue or track titles in Radarr. */
+export function useRadarQueue() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      tmdbIds,
+      minimumAvailability,
+    }: {
+      tmdbIds: number[]
+      minimumAvailability?: string
+    }) => {
+      const { data, error } = await api.POST('/api/v1/library/radar/queue', {
+        body: {
+          tmdb_ids: tmdbIds,
+          minimum_availability: minimumAvailability,
+        },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['radar'] })
+      queryClient.invalidateQueries({ queryKey: ['radarr'] })
+      queryClient.invalidateQueries({ queryKey: ['title'] })
+    },
+  })
+}

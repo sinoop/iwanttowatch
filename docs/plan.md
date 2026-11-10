@@ -341,9 +341,10 @@ Proposed 2026-11-09: bridge recommendation discovery and media acquisition for f
 
 Proposed 2026-11-10: balance smart media acquisition and library decluttering using taste models, streaming availability, and multi-user household awareness.
 
-- [ ] **Acquisition Radar & Theatrical Tracking:**
+- [x] **Acquisition Radar & Theatrical Tracking:**
   - High-value "Missing from Streaming" acquisition queue: unwatched high-match recommendations not available on any subscribed streaming platform or Jellyfin.
   - "Now in Theaters" early tracking: discover high-taste theatrical releases using TMDb's theatrical discovery (`with_release_type=2|3`, `now_playing`) and queue them in Radarr monitored with `minimumAvailability="released"` so digital/physical releases are acquired automatically without pulling CAM/telesync rips.
+  - Dedicated "Acquisition Radar" view in Server Settings with tabbed queues, match percentage thresholds, batch queuing, and direct Radarr integration (2026-11-10).
 - [x] **Library Declutter Assistant:**
   - Taste-driven prune candidate detection across Jellyfin & Radarr:
     - **Watched & Disliked:** user or household member rated $\le 4.0/10$, reacted "disliked", or marked thumbs down.

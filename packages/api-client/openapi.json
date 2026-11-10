@@ -3703,6 +3703,174 @@
           }
         }
       }
+    },
+    "/api/v1/library/radar/missing": {
+      "get": {
+        "tags": [
+          "radar"
+        ],
+        "summary": "Get Missing Candidates",
+        "description": "Inspect unwatched high-match recommendations not available on streaming or Jellyfin.",
+        "operationId": "get_missing_candidates_api_v1_library_radar_missing_get",
+        "parameters": [
+          {
+            "name": "min_match",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Minimum predicted match percentage",
+              "default": 70,
+              "title": "Min Match"
+            },
+            "description": "Minimum predicted match percentage"
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Scope: 'user' or 'group'",
+              "default": "user",
+              "title": "Scope"
+            },
+            "description": "Scope: 'user' or 'group'"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissingCandidatesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/library/radar/theatrical": {
+      "get": {
+        "tags": [
+          "radar"
+        ],
+        "summary": "Get Theatrical Candidates",
+        "description": "Discover high-taste theatrical releases and check Radarr monitoring status.",
+        "operationId": "get_theatrical_candidates_api_v1_library_radar_theatrical_get",
+        "parameters": [
+          {
+            "name": "min_match",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Minimum predicted match percentage",
+              "default": 50,
+              "title": "Min Match"
+            },
+            "description": "Minimum predicted match percentage"
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ISO 3166-1 country code (defaults to user region)",
+              "title": "Region"
+            },
+            "description": "ISO 3166-1 country code (defaults to user region)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TheatricalRadarResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/library/radar/queue": {
+      "post": {
+        "tags": [
+          "radar"
+        ],
+        "summary": "Queue Candidates",
+        "description": "Queue or track radar candidate titles in Radarr.",
+        "operationId": "queue_candidates_api_v1_library_radar_queue_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RadarQueueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadarQueueResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6373,6 +6541,57 @@
         ],
         "title": "MemberMatch"
       },
+      "MissingCandidatesResponse": {
+        "properties": {
+          "radarr_configured": {
+            "type": "boolean",
+            "title": "Radarr Configured"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "min_match": {
+            "type": "integer",
+            "title": "Min Match"
+          },
+          "total_missing": {
+            "type": "integer",
+            "title": "Total Missing"
+          },
+          "to_request_count": {
+            "type": "integer",
+            "title": "To Request Count"
+          },
+          "downloading_count": {
+            "type": "integer",
+            "title": "Downloading Count"
+          },
+          "downloaded_count": {
+            "type": "integer",
+            "title": "Downloaded Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RadarItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "radarr_configured",
+          "scope",
+          "min_match",
+          "total_missing",
+          "to_request_count",
+          "downloading_count",
+          "downloaded_count",
+          "items"
+        ],
+        "title": "MissingCandidatesResponse"
+      },
       "NewAccount": {
         "properties": {
           "username": {
@@ -6616,6 +6835,233 @@
           "logo_path"
         ],
         "title": "Provider"
+      },
+      "RadarItem": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "original_title": {
+            "type": "string",
+            "title": "Original Title"
+          },
+          "original_language": {
+            "type": "string",
+            "title": "Original Language"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime"
+          },
+          "poster_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Path"
+          },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres"
+          },
+          "match_pct": {
+            "type": "integer",
+            "title": "Match Pct"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "imdb": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImdbScore"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "radarr_status": {
+            "type": "string",
+            "title": "Radarr Status"
+          },
+          "radarr_movie_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radarr Movie Id"
+          },
+          "radarr_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radarr Url"
+          },
+          "is_theatrical": {
+            "type": "boolean",
+            "title": "Is Theatrical",
+            "default": false
+          },
+          "theatrical_release_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theatrical Release Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "original_title",
+          "original_language",
+          "year",
+          "runtime",
+          "poster_path",
+          "genres",
+          "match_pct",
+          "reasons",
+          "imdb",
+          "radarr_status",
+          "radarr_movie_id",
+          "radarr_url"
+        ],
+        "title": "RadarItem"
+      },
+      "RadarQueueItemResult": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "status",
+          "detail"
+        ],
+        "title": "RadarQueueItemResult"
+      },
+      "RadarQueueRequest": {
+        "properties": {
+          "tmdb_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Tmdb Ids"
+          },
+          "minimum_availability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Availability"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_ids"
+        ],
+        "title": "RadarQueueRequest"
+      },
+      "RadarQueueResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "requested_count": {
+            "type": "integer",
+            "title": "Requested Count"
+          },
+          "failed_count": {
+            "type": "integer",
+            "title": "Failed Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RadarQueueItemResult"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "requested_count",
+          "failed_count",
+          "items"
+        ],
+        "title": "RadarQueueResponse"
       },
       "RadarrMovieStatus": {
         "properties": {
@@ -7754,6 +8200,52 @@
           "added"
         ],
         "title": "TallyFilm"
+      },
+      "TheatricalRadarResponse": {
+        "properties": {
+          "radarr_configured": {
+            "type": "boolean",
+            "title": "Radarr Configured"
+          },
+          "region": {
+            "type": "string",
+            "title": "Region"
+          },
+          "total_theatrical": {
+            "type": "integer",
+            "title": "Total Theatrical"
+          },
+          "to_track_count": {
+            "type": "integer",
+            "title": "To Track Count"
+          },
+          "tracking_count": {
+            "type": "integer",
+            "title": "Tracking Count"
+          },
+          "downloaded_count": {
+            "type": "integer",
+            "title": "Downloaded Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RadarItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "radarr_configured",
+          "region",
+          "total_theatrical",
+          "to_track_count",
+          "tracking_count",
+          "downloaded_count",
+          "items"
+        ],
+        "title": "TheatricalRadarResponse"
       },
       "TitleAvailability": {
         "properties": {

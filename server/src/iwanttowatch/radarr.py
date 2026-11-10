@@ -182,8 +182,14 @@ class RadarrClient:
         existing = self.get_movie_by_tmdb(tmdb_id)
         if existing:
             movie_id = existing.get("id")
+            updated = False
             if not existing.get("monitored") and movie_id:
                 existing["monitored"] = True
+                updated = True
+            if minimum_availability and existing.get("minimumAvailability") != minimum_availability:
+                existing["minimumAvailability"] = minimum_availability
+                updated = True
+            if updated and movie_id:
                 try:
                     self._request("PUT", f"/api/v3/movie/{movie_id}", json=existing)
                 except RadarrError:

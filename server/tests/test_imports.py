@@ -140,6 +140,9 @@ def fake_tmdb(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200, json={"genres": [{"id": 35, "name": "Comedy"}, {"id": 18, "name": "Drama"}]}
         )
+    if path == "/movie/now_playing":
+        hits = [_summary(i) for i in MOVIES]
+        return httpx.Response(200, json={"results": hits, "page": 1, "total_pages": 1})
     if path == "/discover/movie":
         if params.get("page", "1") != "1":
             return httpx.Response(200, json={"results": []})

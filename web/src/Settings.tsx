@@ -2,6 +2,7 @@ import type { Me } from '@iwanttowatch/api-client'
 import { Link, Navigate, useParams } from 'react-router'
 import { useServerSettings } from './api'
 import { AiSettings } from './settings/AiSettings'
+import { AcquisitionRadarSettings } from './settings/AcquisitionRadarSettings'
 import { DeclutterSettings } from './settings/DeclutterSettings'
 import { HouseholdSettings } from './settings/HouseholdSettings'
 import { ImportExportSettings } from './settings/ImportExportSettings'
@@ -11,7 +12,7 @@ import { SettingsLayout } from './settings/SettingsLayout'
 import { SystemSettings } from './settings/SystemSettings'
 import { StreamingSettings } from './Streaming'
 
-const VALID_SECTIONS = ['profile', 'imports', 'streaming', 'household', 'integrations', 'ai', 'declutter', 'system'] as const
+const VALID_SECTIONS = ['profile', 'imports', 'streaming', 'household', 'integrations', 'ai', 'radar', 'declutter', 'system'] as const
 type ValidSection = (typeof VALID_SECTIONS)[number]
 
 const SECTION_META: Record<ValidSection, { title: string; description: string; adminOnly?: boolean }> = {
@@ -39,6 +40,11 @@ const SECTION_META: Record<ValidSection, { title: string; description: string; a
   ai: {
     title: 'AI & LLM',
     description: 'Configure AI writing providers (Gemini or Ollama), fallback priority, and inspect call logs.',
+    adminOnly: true,
+  },
+  radar: {
+    title: 'Acquisition Radar',
+    description: 'Smart media lifecycle: acquire unstreamable high-match movies and track early theatrical releases.',
     adminOnly: true,
   },
   declutter: {
@@ -97,6 +103,7 @@ export default function Settings({ me }: { me: Me }) {
         <IntegrationsSettings me={me} settings={settings.data} />
       )}
       {currentSection === 'ai' && settings.data && <AiSettings me={me} settings={settings.data} />}
+      {currentSection === 'radar' && <AcquisitionRadarSettings />}
       {currentSection === 'declutter' && <DeclutterSettings />}
       {currentSection === 'system' && settings.data && <SystemSettings settings={settings.data} />}
     </SettingsLayout>

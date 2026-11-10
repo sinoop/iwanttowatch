@@ -1470,6 +1470,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/radar/missing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Missing Candidates
+         * @description Inspect unwatched high-match recommendations not available on streaming or Jellyfin.
+         */
+        get: operations["get_missing_candidates_api_v1_library_radar_missing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/radar/theatrical": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Theatrical Candidates
+         * @description Discover high-taste theatrical releases and check Radarr monitoring status.
+         */
+        get: operations["get_theatrical_candidates_api_v1_library_radar_theatrical_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/radar/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queue Candidates
+         * @description Queue or track radar candidate titles in Radarr.
+         */
+        post: operations["queue_candidates_api_v1_library_radar_queue_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2357,6 +2417,25 @@ export interface components {
             /** Match */
             match: number;
         };
+        /** MissingCandidatesResponse */
+        MissingCandidatesResponse: {
+            /** Radarr Configured */
+            radarr_configured: boolean;
+            /** Scope */
+            scope: string;
+            /** Min Match */
+            min_match: number;
+            /** Total Missing */
+            total_missing: number;
+            /** To Request Count */
+            to_request_count: number;
+            /** Downloading Count */
+            downloading_count: number;
+            /** Downloaded Count */
+            downloaded_count: number;
+            /** Items */
+            items: components["schemas"]["RadarItem"][];
+        };
         /** NewAccount */
         NewAccount: {
             /** Username */
@@ -2432,6 +2511,72 @@ export interface components {
             name: string;
             /** Logo Path */
             logo_path: string | null;
+        };
+        /** RadarItem */
+        RadarItem: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Original Title */
+            original_title: string;
+            /** Original Language */
+            original_language: string;
+            /** Year */
+            year: number | null;
+            /** Runtime */
+            runtime: number | null;
+            /** Poster Path */
+            poster_path: string | null;
+            /** Genres */
+            genres: string[];
+            /** Match Pct */
+            match_pct: number;
+            /** Reasons */
+            reasons: string[];
+            imdb: components["schemas"]["ImdbScore"] | null;
+            /** Radarr Status */
+            radarr_status: string;
+            /** Radarr Movie Id */
+            radarr_movie_id: number | null;
+            /** Radarr Url */
+            radarr_url: string | null;
+            /**
+             * Is Theatrical
+             * @default false
+             */
+            is_theatrical: boolean;
+            /** Theatrical Release Date */
+            theatrical_release_date?: string | null;
+        };
+        /** RadarQueueItemResult */
+        RadarQueueItemResult: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Status */
+            status: string;
+            /** Detail */
+            detail: string;
+        };
+        /** RadarQueueRequest */
+        RadarQueueRequest: {
+            /** Tmdb Ids */
+            tmdb_ids: number[];
+            /** Minimum Availability */
+            minimum_availability?: string | null;
+        };
+        /** RadarQueueResponse */
+        RadarQueueResponse: {
+            /** Success */
+            success: boolean;
+            /** Requested Count */
+            requested_count: number;
+            /** Failed Count */
+            failed_count: number;
+            /** Items */
+            items: components["schemas"]["RadarQueueItemResult"][];
         };
         /** RadarrMovieStatus */
         RadarrMovieStatus: {
@@ -2816,6 +2961,23 @@ export interface components {
             score: number | null;
             /** Added */
             added: boolean;
+        };
+        /** TheatricalRadarResponse */
+        TheatricalRadarResponse: {
+            /** Radarr Configured */
+            radarr_configured: boolean;
+            /** Region */
+            region: string;
+            /** Total Theatrical */
+            total_theatrical: number;
+            /** To Track Count */
+            to_track_count: number;
+            /** Tracking Count */
+            tracking_count: number;
+            /** Downloaded Count */
+            downloaded_count: number;
+            /** Items */
+            items: components["schemas"]["RadarItem"][];
         };
         /** TitleAvailability */
         TitleAvailability: {
@@ -5694,6 +5856,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeclutterIgnoreResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_missing_candidates_api_v1_library_radar_missing_get: {
+        parameters: {
+            query?: {
+                /** @description Minimum predicted match percentage */
+                min_match?: number;
+                /** @description Scope: 'user' or 'group' */
+                scope?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissingCandidatesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_theatrical_candidates_api_v1_library_radar_theatrical_get: {
+        parameters: {
+            query?: {
+                /** @description Minimum predicted match percentage */
+                min_match?: number;
+                /** @description ISO 3166-1 country code (defaults to user region) */
+                region?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TheatricalRadarResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    queue_candidates_api_v1_library_radar_queue_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RadarQueueRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RadarQueueResponse"];
                 };
             };
             /** @description Validation Error */
