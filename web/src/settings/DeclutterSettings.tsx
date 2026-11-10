@@ -279,7 +279,7 @@ export function DeclutterSettings() {
             return (
               <div
                 key={item.tmdb_id}
-                className={`relative flex gap-4 rounded-xl border p-4 transition-all ${
+                className={`relative flex gap-3.5 sm:gap-4 rounded-xl border p-3.5 sm:p-4 transition-all overflow-hidden ${
                   item.is_protected
                     ? 'border-amber-500/30 bg-amber-500/[0.03]'
                     : isSelected
@@ -287,61 +287,70 @@ export function DeclutterSettings() {
                       : 'border-white/10 bg-white/[0.02] hover:border-white/20'
                 }`}
               >
-                <div className="flex flex-col items-center gap-2 shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => toggleSelect(item.tmdb_id)}
-                    className="size-4 rounded border-white/20 bg-black/40 text-accent focus:ring-accent/40"
-                  />
-                  <div className="w-16 sm:w-20">
-                    <Poster path={item.poster_path} title={item.title} />
-                  </div>
+                {/* Poster with overlay checkbox */}
+                <div className="relative shrink-0 w-16 sm:w-20 self-start">
+                  <Poster path={item.poster_path} title={item.title} />
+                  <label
+                    className="absolute top-1.5 left-1.5 flex items-center justify-center size-5 rounded bg-black/80 backdrop-blur-sm border border-white/30 cursor-pointer hover:border-white/60 transition-colors shadow-sm"
+                    title={isSelected ? 'Deselect movie' : 'Select movie'}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelect(item.tmdb_id)}
+                      className="size-3.5 rounded border-white/20 bg-black/60 text-accent focus:ring-accent/40"
+                    />
+                  </label>
                 </div>
 
                 <div className="flex min-w-0 flex-1 flex-col justify-between">
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h3 className="font-bold text-white text-base leading-snug truncate">
-                          {item.title}
-                        </h3>
-                        <div className="flex items-center gap-2 mt-0.5 text-xs text-white/50">
-                          {item.year && <span>{item.year}</span>}
-                          {item.original_language && (
-                            <span className="uppercase">{item.original_language}</span>
-                          )}
-                          {item.imdb_rating && (
-                            <span className="text-amber-400 font-medium">
-                              ★ {item.imdb_rating.toFixed(1)}
-                            </span>
-                          )}
-                          {item.match_pct !== null && (
-                            <span className="text-white/60">Match {item.match_pct}%</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        <span className="block text-xs font-bold text-accent">
-                          {item.size_formatted}
+                  <div className="min-w-0">
+                    {/* Top meta row: Category pill on the left, Reclaimable Size on the right */}
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      {catMeta && 'color' in catMeta ? (
+                        <span
+                          className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-semibold truncate ${catMeta.color}`}
+                        >
+                          {catMeta.label}
                         </span>
-                        {catMeta && 'color' in catMeta && (
-                          <span
-                            className={`mt-1 inline-block rounded-md border px-2 py-0.5 text-[10px] font-semibold ${catMeta.color}`}
-                          >
-                            {catMeta.label}
-                          </span>
-                        )}
-                      </div>
+                      ) : (
+                        <span />
+                      )}
+                      <span className="shrink-0 text-xs font-bold text-accent font-mono">
+                        {item.size_formatted}
+                      </span>
+                    </div>
+
+                    {/* Movie Title: full width, readable, wraps cleanly without clipping */}
+                    <h3
+                      className="font-bold text-white text-base leading-snug break-words"
+                      title={item.title}
+                    >
+                      {item.title}
+                    </h3>
+
+                    {/* Subtitle details: Year, Language, IMDb badge, Match % */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-xs text-white/50">
+                      {item.year && <span>{item.year}</span>}
+                      {item.original_language && (
+                        <span className="uppercase font-medium">{item.original_language}</span>
+                      )}
+                      {item.imdb_rating && (
+                        <span className="inline-flex items-center gap-1 font-semibold text-amber-400">
+                          ★ {item.imdb_rating.toFixed(1)}
+                        </span>
+                      )}
+                      {item.match_pct !== null && (
+                        <span className="text-white/70">Match {item.match_pct}%</span>
+                      )}
                     </div>
 
                     {/* Reasons list */}
                     <div className="mt-2.5 space-y-1">
                       {item.reasons.map((reason, idx) => (
-                        <p key={idx} className="flex items-center gap-1.5 text-xs text-white/70">
-                          <span className="text-rose-400 font-bold">•</span>
-                          <span>{reason}</span>
+                        <p key={idx} className="flex items-start gap-1.5 text-xs text-white/70 leading-relaxed">
+                          <span className="text-rose-400 font-bold shrink-0 mt-0.5">•</span>
+                          <span className="break-words">{reason}</span>
                         </p>
                       ))}
                     </div>
@@ -353,9 +362,9 @@ export function DeclutterSettings() {
                           <span>🛡️</span>
                           <span>Household Protected</span>
                         </div>
-                        <ul className="mt-1 list-disc pl-4 text-[11px] text-amber-100/80">
+                        <ul className="mt-1 list-disc pl-4 text-[11px] text-amber-100/80 space-y-0.5">
                           {item.protection_reasons.map((pr, idx) => (
-                            <li key={idx}>{pr}</li>
+                            <li key={idx} className="break-words">{pr}</li>
                           ))}
                         </ul>
                       </div>
@@ -367,7 +376,7 @@ export function DeclutterSettings() {
                     <button
                       type="button"
                       onClick={() => handleToggleIgnore(item.tmdb_id, item.is_ignored)}
-                      className="text-white/50 underline-offset-2 hover:text-white hover:underline"
+                      className="text-white/50 underline-offset-2 hover:text-white hover:underline transition-colors"
                     >
                       {item.is_ignored ? 'Un-whitelist' : 'Keep / Whitelist'}
                     </button>
@@ -377,7 +386,7 @@ export function DeclutterSettings() {
                         variant="ghost"
                         disabled={!radarrConfigured || deleteMutation.isPending}
                         onClick={() => handleSingleDelete(item)}
-                        className="px-2.5 py-1 text-xs text-rose-300 hover:bg-rose-500/10 hover:text-rose-200"
+                        className="px-2.5 py-1 text-xs text-rose-300 hover:bg-rose-500/15 hover:text-rose-100"
                       >
                         Delete from Radarr
                       </Button>
