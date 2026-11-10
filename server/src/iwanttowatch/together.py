@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from iwanttowatch.catalog import ensure_titles
 from iwanttowatch.children import allowed_for, family_tagged_films
 from iwanttowatch.db import utcnow
-from iwanttowatch.feed import hidden, seen, user_labels
+from iwanttowatch.feed import hidden, is_documentary, seen, user_labels
 from iwanttowatch.models import Guest, Recommendation, TasteShare, Title, User
 from iwanttowatch.recommender import Label, score
 from iwanttowatch.tmdb import TmdbClient
@@ -202,6 +202,7 @@ def group_picks(
         i
         for i in pool
         if i in titles
+        and not is_documentary(titles[i])
         and all(allowed_for(titles[i], m.region or "", m.allowed_certificates) for m in members)
     )
     if not candidates:

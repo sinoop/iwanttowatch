@@ -22,7 +22,7 @@ from iwanttowatch.api.deps import DbSession
 from iwanttowatch.availability import is_stale, watchable
 from iwanttowatch.children import allowed_for, library_owners
 from iwanttowatch.db import utcnow
-from iwanttowatch.feed import hidden, seen, shortlisted
+from iwanttowatch.feed import hidden, is_documentary, seen, shortlisted
 from iwanttowatch.imdb import enabled as imdb_enabled
 from iwanttowatch.jellyfin import STATUS_KEY as JELLYFIN_STATUS
 from iwanttowatch.jellyfin import URL_SETTING as JELLYFIN_URL
@@ -226,6 +226,8 @@ def _hide_reasons(session: Session, user: User, titles: list[Title]) -> dict[int
     reasons: dict[int, list[str]] = {}
     for title in titles:
         why = []
+        if is_documentary(title):
+            why.append("documentary")
         if title.tmdb_id in watched:
             why.append("watched or rated")
         if title.tmdb_id in turned_down:

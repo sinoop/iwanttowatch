@@ -37,6 +37,7 @@ from iwanttowatch.feed import (
     feed_reasons,
     films_for_request,
     hidden,
+    is_documentary,
     score_films,
     seen,
     shortlisted,
@@ -207,10 +208,14 @@ def read_feed(
     listed = []
     shortlist_count = 0
     for rec, title in rows:
-        if title.tmdb_id in exclude or (
-            age_limit
-            and title.tmdb_id not in saved
-            and not allowed_for(title, user.region, user.allowed_certificates)
+        if (
+            title.tmdb_id in exclude
+            or is_documentary(title)
+            or (
+                age_limit
+                and title.tmdb_id not in saved
+                and not allowed_for(title, user.region, user.allowed_certificates)
+            )
         ):
             continue
         shortlist_count += title.tmdb_id in saved

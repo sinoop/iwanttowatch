@@ -193,6 +193,13 @@ TMDB_GENRES: dict[str, int] = {
     "Western": 37,
 }
 GENRES_CACHE = timedelta(days=30)
+DOCUMENTARY_GENRE = "Documentary"
+DOCUMENTARY_GENRE_ID = TMDB_GENRES[DOCUMENTARY_GENRE]
+
+
+def is_documentary(title: Title) -> bool:
+    """Whether a film is a documentary. Documentaries are omitted from feed recommendations."""
+    return any(g.strip().lower() == "documentary" for g in title.genres)
 
 
 def genre_id(tmdb: TmdbClient, name: str) -> int | None:
@@ -223,9 +230,12 @@ def _discover(
         "vote_count.gte": MIN_VOTES_ONE_LANGUAGE if language else MIN_VOTES_ANY_LANGUAGE,
         "with_original_language": language,
         "include_adult": "false",
+        "without_genres": str(DOCUMENTARY_GENRE_ID),
     }
     if genre_id is not None:
         params["with_genres"] = str(genre_id)
+        if genre_id == DOCUMENTARY_GENRE_ID:
+            params.pop("without_genres", None)
     if providers:
         params |= {
             "watch_region": region,
@@ -250,6 +260,8 @@ def candidates(
 
     # When refreshing for a specific language or genre, discover films with those filters.
     if target_language or target_genre:
+        if target_genre and target_genre.strip().lower() == "documentary":
+            return []
         gid = genre_id(tmdb, target_genre) if target_genre else None
         target_requests: list[dict[str, Any]] = []
         if user.subscriptions:
@@ -584,7 +596,7 @@ def build_feed(
             step(f"Reading details of {len(ids)} films")
             titles = ensure_titles(session, tmdb, [*(label.tmdb_id for label in labels), *ids])
             session.commit()
-            ids = [i for i in ids if i in titles]
+            ids = [i for i in ids if i in titles and not is_documentary(titles[i])]
             if imdb.enabled(session):
                 step("Reading IMDb ratings")
                 imdb.update_ratings(session, data_dir)
@@ -621,7 +633,10 @@ def build_feed(
                 new = [
                     i
                     for i in stored_picks(session, user_id)
-                    if i not in ids and i not in exclude and i in titles
+                    if i not in ids
+                    and i not in exclude
+                    and i in titles
+                    and not is_documentary(titles[i])
                 ]
                 availability(session, tmdb, new, user.region)
                 ids = [*ids, *new]
@@ -676,7 +691,7 @@ def score_films(session: Session, user: User, ids: list[int]) -> list[Scored]:
     ids = [i for i in ids if i not in exclude]
     wanted = {*ids, *(label.tmdb_id for label in labels)}
     titles = {t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(wanted)))}
-    ids = [i for i in ids if i in titles]
+    ids = [i for i in ids if i in titles and not is_documentary(titles[i])]
     return score(
         titles,
         labels,

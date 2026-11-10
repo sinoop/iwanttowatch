@@ -148,17 +148,20 @@ def fake_tmdb(request: httpx.Request) -> httpx.Response:
         kinds = params.get("with_watch_monetization_types", "").split("|")
         region = params.get("watch_region", "")
         with_genres = {int(g) for g in params.get("with_genres", "").split(",") if g}
+        without_genres = {int(g) for g in params.get("without_genres", "").split(",") if g}
 
         def streams(tmdb_id: int) -> bool:
             offers = WATCH.get(tmdb_id, {}).get(region, {})
             return any(p["provider_id"] in providers for k in kinds for p in offers.get(k, []))
 
         def has_genre(tmdb_id: int) -> bool:
-            if not with_genres:
-                return True
             film_gids = {
                 g["id"] for g in MOVIES[tmdb_id].get("genres", [{"id": 18, "name": "Drama"}])
             }
+            if without_genres & film_gids:
+                return False
+            if not with_genres:
+                return True
             return bool(with_genres & film_gids)
 
         hits = [

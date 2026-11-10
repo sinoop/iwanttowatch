@@ -615,3 +615,74 @@ def test_explain_match_includes_reasons_and_metadata(client: TestClient) -> None
         assert "Recommender match reasons: Like Maanaadu, which you rated highly" in prompt
         assert "Films I watched already:" in prompt
         assert "AI: pick reason" not in prompt
+
+
+def test_feed_excludes_documentaries(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    doc_movie = {
+        "title": "David Attenborough: A Life on Our Planet",
+        "original_title": "David Attenborough: A Life on Our Planet",
+        "lang": "en",
+        "date": "2020-09-28",
+        "imdb": "tt11989890",
+        "certs": {"IN": "U", "US": "PG"},
+        "votes": 500,
+        "genres": [{"id": 99, "name": "Documentary"}],
+    }
+    monkeypatch.setitem(test_imports.MOVIES, 601, doc_movie)
+    monkeypatch.setitem(test_imports.WATCH, 601, {"IN": {"flatrate": [test_imports.NETFLIX]}})
+    assert client.put("/api/v1/settings/tmdb", json={"api_key": KEY}).status_code == 200
+    client.put("/api/v1/titles/101/reaction", json={"reaction": "loved"})
+    client.put("/api/v1/me/streaming", json={"region": "IN", "subscriptions": [8]})
+    idle(client)
+
+    # 1. Discover query excluded the documentary, so it isn't in the feed
+    page = feed(client, available_only=False)
+    assert page["status"] == "ready"
+    assert 601 not in {i["tmdb_id"] for i in page["items"]}
+    assert "Documentary" not in page["genres"]
+
+    # 2. Targeted refresh for Documentary returns no candidates
+    resp = client.post("/api/v1/feed/refresh", params={"genre": "Documentary"})
+    assert resp.status_code == 202
+    idle(client)
+    page_doc = feed(client, available_only=False, genre="Documentary")
+    assert 601 not in {i["tmdb_id"] for i in page_doc["items"]}
+    assert page_doc["total"] == 0
+
+    # 3. Even if a documentary was already stored in Recommendation (e.g. from an earlier build)
+    # or present on the user's Jellyfin server, the feed endpoint and rescore hide it
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        session.add(
+            LibraryItem(
+                user_id=1,
+                item_id="d" * 32,
+                tmdb_id=601,
+                name="David Attenborough",
+                year=2020,
+            )
+        )
+        session.add(
+            Recommendation(
+                user_id=1,
+                tmdb_id=601,
+                score=0.95,
+                rank=0,
+                reasons=["Great match"],
+            )
+        )
+        session.commit()
+
+    page = feed(client, available_only=False)
+    assert 601 not in {i["tmdb_id"] for i in page["items"]}
+    assert "Documentary" not in page["genres"]
+
+    # 4. Rescoring drops the documentary from recommendations
+    client.put("/api/v1/titles/201/reaction", json={"reaction": "liked"})
+    idle(client)
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        from sqlalchemy import select
+
+        recs = session.scalars(
+            select(Recommendation.tmdb_id).where(Recommendation.user_id == 1)
+        ).all()
+        assert 601 not in recs
