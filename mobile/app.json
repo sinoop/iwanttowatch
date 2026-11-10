@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "iWantToWatch",
+    "slug": "iwanttowatch",
+    "scheme": "iwanttowatch",
+    "version": "0.1.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0b1120",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "io.iwanttowatch.mobile"
+    },
+    "android": {
+      "package": "io.iwanttowatch.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#0b1120",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

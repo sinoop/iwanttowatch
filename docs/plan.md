@@ -376,10 +376,10 @@ Proposed 2026-11-09: bridge recommendation discovery and media acquisition for f
 
 Detailed analysis and trade-offs are documented in [`docs/multi-device-architecture.md`](multi-device-architecture.md).
 
-- **Phase 1 — Dedicated Mobile App (Client-Server):** Native iOS and Android app connecting to the self-hosted Docker server via `packages/api-client`. Provides deep links to streaming apps (Netflix, Prime, Disney+) and Jellyfin, offline caching of the current feed, push notifications, and fast touch UX.
-- **Phase 2 — TV 10-Foot Client & Casting:** Android TV and Apple TV client connecting directly to the Docker server with D-pad navigation; mobile app acts as a Cast/AirPlay target for standalone users.
-- **Phase 3 — Desktop Standalone App (Windows / macOS):** Packaged local Python runtime + SQLite database (Tauri / PyInstaller) allowing zero-Docker local operation or connection to a remote server.
-- **Phase 4 — Standalone Mobile Engine (Local-First):** Lightweight client-side candidate gathering and ported scoring algorithm (TS/WASM) for standalone phone use without a server, with one-click export/migration to a self-hosted Docker instance.
+- [x] **Phase 1 — Dedicated Mobile App (Client-Server):** Native Expo / React Native app in `mobile/` connecting to the self-hosted Docker server via `packages/api-client`. Provides server URL discovery and authentication, ranked Discover feed with pull-to-refresh, shortlist management, streaming provider deep links (Netflix, Prime, Disney+, Jellyfin), and dark mode UI (2026-11-10)
+- [ ] **Phase 2 — TV 10-Foot Client & Casting:** Android TV and Apple TV client connecting directly to the Docker server with D-pad navigation; mobile app acts as a Cast/AirPlay target for standalone users.
+- [ ] **Phase 3 — Desktop Standalone App (Windows / macOS):** Packaged local Python runtime + SQLite database (Tauri / PyInstaller) allowing zero-Docker local operation or connection to a remote server.
+- [ ] **Phase 4 — Standalone Mobile Engine (Local-First):** Lightweight client-side candidate gathering and ported scoring algorithm (TS/WASM) for standalone phone use without a server, with one-click export/migration to a self-hosted Docker instance.
 
 ## 10. Risks
 

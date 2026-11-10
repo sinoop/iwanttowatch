@@ -7,6 +7,8 @@
     "dev:web": "pnpm --filter web dev",
     "build:web": "pnpm --filter web build",
     "lint:web": "pnpm --filter web lint",
+    "dev:mobile": "pnpm --filter mobile start",
+    "typecheck:mobile": "pnpm --filter mobile typecheck",
     "gen:api": "cd server && uv run iwanttowatch openapi > ../packages/api-client/openapi.json && cd .. && pnpm --filter @iwanttowatch/api-client generate"
   }
 }
