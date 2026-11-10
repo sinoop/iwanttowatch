@@ -6,7 +6,8 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
+from iwanttowatch import radarr
+from iwanttowatch.api.deps import AdultUser, CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.library import LanguageCount
 from iwanttowatch.api.reactions import SOURCE as APP_SOURCE
 from iwanttowatch.api.reactions import load_title
@@ -459,6 +460,18 @@ class SeenStatus(BaseModel):
     reaction: str | None
 
 
+class RadarrMovieStatus(BaseModel):
+    configured: bool
+    movie_id: int | None = None
+    title: str | None = None
+    has_file: bool = False
+    monitored: bool = False
+    is_available: bool = False
+    status: str | None = None
+    radarr_url: str | None = None
+    error: str | None = None
+
+
 class TitleDetail(BaseModel):
     tmdb_id: int
     title: str
@@ -491,6 +504,8 @@ class TitleDetail(BaseModel):
     assigned_children: list[int] = Field(default_factory=list)
     # The AI's answer to "Why this?", once the user has asked.
     explanation: str | None = None
+    # Status in Radarr when connected.
+    radarr: RadarrMovieStatus | None = None
 
 
 def _match_and_reasons(
@@ -571,6 +586,9 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
         explanation=explained.text
         if (explained := session.get(Explanation, (user.id, title.tmdb_id)))
         else None,
+        radarr=RadarrMovieStatus(**radarr_info)
+        if (radarr_info := radarr.movie_status(session, title.tmdb_id)).get("configured")
+        else None,
     )
 
 
@@ -625,3 +643,48 @@ def explain_title(
     except LlmError as error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
     return _title_detail(session, user, tmdb, title)
+
+
+@router.post("/titles/{tmdb_id}/radarr")
+def download_via_radarr(
+    tmdb_id: int, user: AdultUser, session: DbSession, request: Request, tmdb: Tmdb
+) -> RadarrMovieStatus:
+    """Queue a movie for download via Radarr and start an automatic search."""
+    client = radarr.client_from_settings(session)
+    if client is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Radarr is not configured in Settings")
+
+    profile_id_str = get_setting(session, radarr.QUALITY_PROFILE_SETTING)
+    root_folder = get_setting(session, radarr.ROOT_FOLDER_SETTING)
+    min_avail = (
+        get_setting(session, radarr.MIN_AVAILABILITY_SETTING) or radarr.DEFAULT_MIN_AVAILABILITY
+    )
+
+    profile_id = int(profile_id_str) if profile_id_str and profile_id_str.isdigit() else None
+    if profile_id is None:
+        profiles = client.quality_profiles()
+        if not profiles:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No quality profiles found in Radarr")
+        profile_id = profiles[0]["id"]
+
+    if not root_folder:
+        root_folders = client.root_folders()
+        if not root_folders:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No root folders found in Radarr")
+        root_folder = root_folders[0]["path"]
+
+    title = load_title(session, request, tmdb_id)
+    try:
+        client.add_or_search(
+            tmdb_id=tmdb_id,
+            quality_profile_id=profile_id,
+            root_folder_path=root_folder,
+            minimum_availability=min_avail,
+            search=True,
+            title=title.title,
+            year=title.year,
+        )
+    except radarr.RadarrError as error:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Radarr error: {error}") from error
+
+    return RadarrMovieStatus(**radarr.movie_status(session, tmdb_id))

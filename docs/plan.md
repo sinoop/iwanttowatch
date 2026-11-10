@@ -329,6 +329,14 @@ Proposed 2026-11-08 from the ideas review: decide faster between films you'd wat
 
 **Exit:** a household builds a shortlist together and filters it to one platform before choosing.
 
+### Phase 5e — Radarr integration (download & acquisition)
+
+Proposed 2026-11-09: bridge recommendation discovery and media acquisition for films not playable on the user's streaming platforms or Jellyfin.
+
+- [x] **Phase 1 — Radarr connector & manual trigger:** Connect to Radarr with URL and API key in Settings; fetch quality profiles and root folders with test connection; view Radarr status (downloading, monitored, downloaded) and trigger on-demand downloads ("Download via Radarr") directly from the title details dialog for unstreamable films (2026-11-09)
+- [ ] **Phase 2 — Shortlist sync & trigger:** Automatic or one-click batch request to Radarr for shortlisted titles not available on current streaming platforms or Jellyfin.
+- [ ] **Phase 3 — Background auto-downloader:** Autonomous downloader for top recommendations scoring $\ge 85\%$ match that are not available on any streaming platform or Jellyfin, safeguarded by strict controls (weekly download caps, minimum vote floors, and physical/digital release availability filters).
+
 ### Phase 6 — Optional integrations and polish
 
 - [ ] Trakt (device flow, history/ratings pull, export-file import)
@@ -381,6 +389,7 @@ A TV app (Android TV first) follows the mobile apps; until then the installable 
 | Gemini cost, quota, and privacy | Optional and off by default; minimal prompts with no personal identifiers; DB caching of results; Ollama or no LLM remain full alternatives |
 | LLM suggests films that don't exist or don't fit | Its at most 5 additions must match a TMDb film, are scored by the recommender like any other, and are dropped if seen or unavailable; its predicted ratings make up at most half of a match |
 | Gemini's free tier allows about 20 requests a day per model | One review per feed build; feeds rebuild once a day; failures keep the last review |
+| Radarr auto-download storage exhaustion | Strict weekly download budget, minimum vote floor, released-only filter, and manual/shortlist confirmation before autonomous triggers |
 
 ## 11. Open questions
 

@@ -168,6 +168,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/radarr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Radarr
+         * @description Connect a Radarr server; verifies credentials and discovers profiles and folders.
+         */
+        put: operations["set_radarr_api_v1_settings_radarr_put"];
+        post?: never;
+        /**
+         * Disconnect Radarr
+         * @description Disconnect and clear Radarr configuration.
+         */
+        delete: operations["disconnect_radarr_api_v1_settings_radarr_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/llm/order": {
         parameters: {
             query?: never;
@@ -723,6 +747,26 @@ export interface paths {
          * @description Ask the configured LLM how well this film fits the user's taste; asked once.
          */
         post: operations["explain_title_api_v1_titles__tmdb_id__why_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/titles/{tmdb_id}/radarr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Download Via Radarr
+         * @description Queue a movie for download via Radarr and start an automatic search.
+         */
+        post: operations["download_via_radarr_api_v1_titles__tmdb_id__radarr_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2114,6 +2158,90 @@ export interface components {
             /** Logo Path */
             logo_path: string | null;
         };
+        /** RadarrMovieStatus */
+        RadarrMovieStatus: {
+            /** Configured */
+            configured: boolean;
+            /** Movie Id */
+            movie_id?: number | null;
+            /** Title */
+            title?: string | null;
+            /**
+             * Has File
+             * @default false
+             */
+            has_file: boolean;
+            /**
+             * Monitored
+             * @default false
+             */
+            monitored: boolean;
+            /**
+             * Is Available
+             * @default false
+             */
+            is_available: boolean;
+            /** Status */
+            status?: string | null;
+            /** Radarr Url */
+            radarr_url?: string | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** RadarrProfile */
+        RadarrProfile: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+        };
+        /** RadarrRootFolder */
+        RadarrRootFolder: {
+            /** Id */
+            id: number;
+            /** Path */
+            path: string;
+            /** Free Space */
+            free_space?: number | null;
+        };
+        /** RadarrSettings */
+        RadarrSettings: {
+            /** Configured */
+            configured: boolean;
+            /** Url */
+            url?: string | null;
+            /** Quality Profile Id */
+            quality_profile_id?: number | null;
+            /** Root Folder Path */
+            root_folder_path?: string | null;
+            /**
+             * Minimum Availability
+             * @default announced
+             */
+            minimum_availability: string;
+            /** Profiles */
+            profiles?: components["schemas"]["RadarrProfile"][];
+            /** Root Folders */
+            root_folders?: components["schemas"]["RadarrRootFolder"][];
+            /** Error */
+            error?: string | null;
+        };
+        /** RadarrUpdate */
+        RadarrUpdate: {
+            /** Url */
+            url: string;
+            /** Api Key */
+            api_key?: string | null;
+            /** Quality Profile Id */
+            quality_profile_id?: number | null;
+            /** Root Folder Path */
+            root_folder_path?: string | null;
+            /**
+             * Minimum Availability
+             * @default announced
+             */
+            minimum_availability: string;
+        };
         /** RatedTitle */
         RatedTitle: {
             /** Tmdb Id */
@@ -2210,6 +2338,7 @@ export interface components {
             llm: components["schemas"]["LlmSettings"];
             jellyfin: components["schemas"]["JellyfinSettings"];
             imdb: components["schemas"]["ImdbSettings"];
+            radarr: components["schemas"]["RadarrSettings"];
         };
         /** SetupRequest */
         SetupRequest: {
@@ -2388,6 +2517,7 @@ export interface components {
             assigned_children?: number[];
             /** Explanation */
             explanation?: string | null;
+            radarr?: components["schemas"]["RadarrMovieStatus"] | null;
         };
         /** TitleReaction */
         TitleReaction: {
@@ -2753,6 +2883,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_radarr_api_v1_settings_radarr_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RadarrUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_radarr_api_v1_settings_radarr_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSettings"];
                 };
             };
         };
@@ -3847,6 +4030,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TitleDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_via_radarr_api_v1_titles__tmdb_id__radarr_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RadarrMovieStatus"];
                 };
             };
             /** @description Validation Error */

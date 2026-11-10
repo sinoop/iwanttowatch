@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from iwanttowatch import __version__, imdb
+from iwanttowatch import __version__, imdb, radarr
 from iwanttowatch.api import mcp
 from iwanttowatch.api.deps import AdminUser, CurrentUser, DbSession
 from iwanttowatch.db import utcnow
@@ -78,6 +78,28 @@ class ImdbSettings(BaseModel):
     rated_films: int
 
 
+class RadarrProfile(BaseModel):
+    id: int
+    name: str
+
+
+class RadarrRootFolder(BaseModel):
+    id: int
+    path: str
+    free_space: int | None = None
+
+
+class RadarrSettings(BaseModel):
+    configured: bool
+    url: str | None = None
+    quality_profile_id: int | None = None
+    root_folder_path: str | None = None
+    minimum_availability: str = radarr.DEFAULT_MIN_AVAILABILITY
+    profiles: list[RadarrProfile] = Field(default_factory=list)
+    root_folders: list[RadarrRootFolder] = Field(default_factory=list)
+    error: str | None = None
+
+
 class ServerSettings(BaseModel):
     # The running release, from the package metadata (pyproject.toml).
     version: str
@@ -87,6 +109,15 @@ class ServerSettings(BaseModel):
     llm: LlmSettings
     jellyfin: JellyfinSettings
     imdb: ImdbSettings
+    radarr: RadarrSettings
+
+
+class RadarrUpdate(BaseModel):
+    url: str = Field(min_length=1, max_length=500)
+    api_key: str | None = Field(default=None, max_length=200)
+    quality_profile_id: int | None = None
+    root_folder_path: str | None = None
+    minimum_availability: str = radarr.DEFAULT_MIN_AVAILABILITY
 
 
 class ImdbUpdate(BaseModel):
@@ -183,6 +214,54 @@ def _imdb_out(session: Session) -> ImdbSettings:
     )
 
 
+def _radarr_out(session: Session, is_admin: bool) -> RadarrSettings:
+    url = get_setting(session, radarr.URL_SETTING)
+    if not url:
+        return RadarrSettings(configured=False, url=None)
+    profile_id_str = get_setting(session, radarr.QUALITY_PROFILE_SETTING)
+    profile_id = int(profile_id_str) if profile_id_str and profile_id_str.isdigit() else None
+    root_folder = get_setting(session, radarr.ROOT_FOLDER_SETTING)
+    min_avail = (
+        get_setting(session, radarr.MIN_AVAILABILITY_SETTING) or radarr.DEFAULT_MIN_AVAILABILITY
+    )
+
+    profiles: list[RadarrProfile] = []
+    root_folders: list[RadarrRootFolder] = []
+    error: str | None = None
+
+    if is_admin:
+        client = radarr.client_from_settings(session)
+        if client:
+            try:
+                raw_profiles = client.quality_profiles()
+                profiles = [
+                    RadarrProfile(id=p["id"], name=p["name"])
+                    for p in raw_profiles
+                    if "id" in p and "name" in p
+                ]
+                raw_folders = client.root_folders()
+                root_folders = [
+                    RadarrRootFolder(
+                        id=f.get("id", idx), path=f["path"], free_space=f.get("freeSpace")
+                    )
+                    for idx, f in enumerate(raw_folders, 1)
+                    if "path" in f
+                ]
+            except radarr.RadarrError as err:
+                error = str(err)
+
+    return RadarrSettings(
+        configured=True,
+        url=url,
+        quality_profile_id=profile_id,
+        root_folder_path=root_folder,
+        minimum_availability=min_avail,
+        profiles=profiles,
+        root_folders=root_folders,
+        error=error,
+    )
+
+
 def _settings_out(session: Session, is_admin: bool) -> ServerSettings:
     # Secrets are never returned, only whether they are set.
     return ServerSettings(
@@ -191,6 +270,7 @@ def _settings_out(session: Session, is_admin: bool) -> ServerSettings:
         mcp_enabled=get_setting(session, mcp.KEY_SETTING) is not None,
         jellyfin=_jellyfin_out(session, is_admin),
         imdb=_imdb_out(session),
+        radarr=_radarr_out(session, is_admin),
         llm=LlmSettings(
             order=llm_order(session),
             ollama_url=get_setting(session, OLLAMA_URL_SETTING),
@@ -265,6 +345,53 @@ def disconnect_jellyfin(_admin: AdminUser, session: DbSession) -> ServerSettings
 @router.post("/jellyfin/sync", status_code=status.HTTP_202_ACCEPTED)
 def sync_jellyfin(_admin: AdminUser, request: Request) -> None:
     request.app.state.jellyfin_worker.request_full_sync()
+
+
+@router.put("/radarr")
+def set_radarr(body: RadarrUpdate, _admin: AdminUser, session: DbSession) -> ServerSettings:
+    """Connect a Radarr server; verifies credentials and discovers profiles and folders."""
+    url = body.url.strip().rstrip("/")
+    api_key = (body.api_key or "").strip() or get_setting(session, radarr.API_KEY_SETTING)
+    if not api_key:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "An API key is required to connect to Radarr"
+        )
+    client = radarr.RadarrClient(url, api_key)
+    try:
+        client.system_status()
+        profiles = client.quality_profiles()
+        root_folders = client.root_folders()
+    except radarr.RadarrAuthError as error:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Radarr rejected this API key") from error
+    except radarr.RadarrError as error:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
+
+    profile_id = body.quality_profile_id
+    if profile_id is None and profiles:
+        profile_id = profiles[0].get("id")
+
+    root_folder = body.root_folder_path
+    if root_folder is None and root_folders:
+        root_folder = root_folders[0].get("path")
+
+    radarr.save_settings(
+        session,
+        url=url,
+        api_key=api_key,
+        quality_profile_id=profile_id,
+        root_folder_path=root_folder,
+        minimum_availability=body.minimum_availability,
+    )
+    session.commit()
+    return _settings_out(session, True)
+
+
+@router.delete("/radarr")
+def disconnect_radarr(_admin: AdminUser, session: DbSession) -> ServerSettings:
+    """Disconnect and clear Radarr configuration."""
+    radarr.clear_settings(session)
+    session.commit()
+    return _settings_out(session, True)
 
 
 def _set_order(session: Session, order: list[ProviderName]) -> None:

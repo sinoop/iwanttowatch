@@ -293,6 +293,62 @@
         }
       }
     },
+    "/api/v1/settings/radarr": {
+      "put": {
+        "summary": "Set Radarr",
+        "description": "Connect a Radarr server; verifies credentials and discovers profiles and folders.",
+        "operationId": "set_radarr_api_v1_settings_radarr_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RadarrUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Disconnect Radarr",
+        "description": "Disconnect and clear Radarr configuration.",
+        "operationId": "disconnect_radarr_api_v1_settings_radarr_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings/llm/order": {
       "put": {
         "summary": "Order Llms",
@@ -1919,6 +1975,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TitleDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/titles/{tmdb_id}/radarr": {
+      "post": {
+        "summary": "Download Via Radarr",
+        "description": "Queue a movie for download via Radarr and start an automatic search.",
+        "operationId": "download_via_radarr_api_v1_titles__tmdb_id__radarr_post",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadarrMovieStatus"
                 }
               }
             }
@@ -5723,6 +5819,266 @@
         ],
         "title": "Provider"
       },
+      "RadarrMovieStatus": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "movie_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Movie Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "has_file": {
+            "type": "boolean",
+            "title": "Has File",
+            "default": false
+          },
+          "monitored": {
+            "type": "boolean",
+            "title": "Monitored",
+            "default": false
+          },
+          "is_available": {
+            "type": "boolean",
+            "title": "Is Available",
+            "default": false
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "radarr_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radarr Url"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured"
+        ],
+        "title": "RadarrMovieStatus"
+      },
+      "RadarrProfile": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "RadarrProfile"
+      },
+      "RadarrRootFolder": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "free_space": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Space"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "path"
+        ],
+        "title": "RadarrRootFolder"
+      },
+      "RadarrSettings": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "quality_profile_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Profile Id"
+          },
+          "root_folder_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Folder Path"
+          },
+          "minimum_availability": {
+            "type": "string",
+            "title": "Minimum Availability",
+            "default": "announced"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/RadarrProfile"
+            },
+            "type": "array",
+            "title": "Profiles"
+          },
+          "root_folders": {
+            "items": {
+              "$ref": "#/components/schemas/RadarrRootFolder"
+            },
+            "type": "array",
+            "title": "Root Folders"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured"
+        ],
+        "title": "RadarrSettings"
+      },
+      "RadarrUpdate": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Url"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "quality_profile_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Profile Id"
+          },
+          "root_folder_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Folder Path"
+          },
+          "minimum_availability": {
+            "type": "string",
+            "title": "Minimum Availability",
+            "default": "announced"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "RadarrUpdate"
+      },
       "RatedTitle": {
         "properties": {
           "tmdb_id": {
@@ -6028,6 +6384,9 @@
           },
           "imdb": {
             "$ref": "#/components/schemas/ImdbSettings"
+          },
+          "radarr": {
+            "$ref": "#/components/schemas/RadarrSettings"
           }
         },
         "type": "object",
@@ -6037,7 +6396,8 @@
           "mcp_enabled",
           "llm",
           "jellyfin",
-          "imdb"
+          "imdb",
+          "radarr"
         ],
         "title": "ServerSettings"
       },
@@ -6622,6 +6982,16 @@
               }
             ],
             "title": "Explanation"
+          },
+          "radarr": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RadarrMovieStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

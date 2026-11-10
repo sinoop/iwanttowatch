@@ -402,6 +402,22 @@ function WhereToWatch({ film }: { film: TitleDetail }) {
   const hasRentOrBuy = rent.length > 0 || buy.length > 0
   const [showRentBuy, setShowRentBuy] = useState(me?.show_rent_buy ?? false)
   const rentBuyLabel = rent.length > 0 && buy.length > 0 ? 'rent and buy' : rent.length > 0 ? 'rent' : 'buy'
+
+  const download = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await api.POST('/api/v1/titles/{tmdb_id}/radarr', {
+        params: { path: { tmdb_id: film.tmdb_id } },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<TitleDetail>(['title', film.tmdb_id], (current) =>
+        current ? { ...current, radarr: data } : current,
+      )
+    },
+  })
+
   return (
     <section className="mt-5 rounded-xl border border-white/10 p-4">
       <h3 className="text-sm font-medium text-white/80">Where to watch</h3>
@@ -427,6 +443,41 @@ function WhereToWatch({ film }: { film: TitleDetail }) {
             )}
           </li>
         )}
+        {!availability.on_jellyfin && film.radarr?.configured && (
+          <li>
+            {film.radarr.has_file ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-sm font-medium text-emerald-300">
+                ✓ Downloaded in Radarr
+              </span>
+            ) : film.radarr.monitored ? (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 text-sm font-medium text-amber-300">
+                ⏳ Downloading in Radarr
+              </span>
+            ) : (
+              <button
+                type="button"
+                disabled={download.isPending || me?.is_child}
+                onClick={() => download.mutate()}
+                className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/20 px-3 py-1 text-sm font-medium text-sky-200 hover:bg-sky-500/30 disabled:opacity-50"
+              >
+                <DownloadIcon className="size-4" />
+                {download.isPending ? 'Requesting…' : 'Download via Radarr'}
+              </button>
+            )}
+          </li>
+        )}
+        {film.radarr?.radarr_url && (
+          <li>
+            <a
+              href={film.radarr.radarr_url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 text-xs text-white/50 hover:bg-white/5 hover:text-white/80"
+            >
+              Open in Radarr ↗
+            </a>
+          </li>
+        )}
         {availability.offers.map((offer) => (
           <li
             key={offer.provider_id}
@@ -438,6 +489,11 @@ function WhereToWatch({ film }: { film: TitleDetail }) {
           </li>
         ))}
       </ul>
+      {download.error && (
+        <div className="mt-2">
+          <ErrorText>{download.error.message}</ErrorText>
+        </div>
+      )}
       <OtherOffers label="On other streaming services" offers={elsewhere} />
       {showRentBuy && (
         <>
@@ -634,6 +690,25 @@ export function BookmarkIcon({ filled, className = 'size-4' }: { filled: boolean
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  )
+}
+
+function DownloadIcon({ className = 'size-4' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
     </svg>
   )
 }

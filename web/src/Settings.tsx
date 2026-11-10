@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRef, useState, type FormEvent } from 'react'
 import { api, copyToClipboard, errorMessage, useServerSettings } from './api'
 import { JellyfinAccount, JellyfinServer } from './JellyfinSettings'
+import { RadarrServer } from './RadarrSettings'
 import { StreamingSettings } from './Streaming'
 import { Button, ErrorText, Field } from './ui'
 
@@ -78,6 +79,7 @@ export default function Settings({ me }: { me: Me }) {
       {me.is_admin && <Household />}
       {settings.data && me.is_admin && <JellyfinServer settings={settings.data} />}
       <JellyfinAccount />
+      {settings.data && me.is_admin && <RadarrServer settings={settings.data} />}
       {settings.data?.tmdb_configured && <StreamingSettings me={me} />}
       <BirthYear me={me} />
       <ChildProfiles me={me} />
