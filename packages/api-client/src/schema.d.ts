@@ -3598,7 +3598,10 @@ export interface operations {
     };
     refresh_feed_api_v1_feed_refresh_post: {
         parameters: {
-            query?: never;
+            query?: {
+                language?: string | null;
+                genre?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3612,6 +3615,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

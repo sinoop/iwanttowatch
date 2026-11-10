@@ -139,7 +139,7 @@ export default function Discover({ me }: { me: Me }) {
           <h1 className="text-2xl font-semibold">Discover</h1>
           <p className="mt-1 text-white/60">Films picked for {me.display_name}, best match first.</p>
         </div>
-        {first && <RefreshButton page={first} />}
+        {first && <RefreshButton page={first} language={language} genre={genre} />}
       </div>
 
       {tmdbMissing ? (
@@ -296,10 +296,27 @@ function building(page: FeedPage | undefined) {
   return page?.status === 'none' || page?.status === 'queued' || page?.status === 'building'
 }
 
-function RefreshButton({ page }: { page: FeedPage }) {
+function RefreshButton({
+  page,
+  language,
+  genre,
+}: {
+  page: FeedPage
+  language: string | null
+  genre: string | null
+}) {
   const queryClient = useQueryClient()
+  const targetFilters = (language !== null || genre !== null) && page.total < 25
   const refresh = useMutation({
-    mutationFn: () => api.POST('/api/v1/feed/refresh'),
+    mutationFn: () =>
+      api.POST('/api/v1/feed/refresh', {
+        params: {
+          query: {
+            language: targetFilters ? (language ?? undefined) : undefined,
+            genre: targetFilters ? (genre ?? undefined) : undefined,
+          },
+        },
+      }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['feed'] }),
   })
   return (

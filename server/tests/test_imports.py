@@ -74,10 +74,11 @@ def _summary(tmdb_id: int) -> dict[str, Any]:
 
 def _details(tmdb_id: int) -> dict[str, Any]:
     m = MOVIES[tmdb_id]
+    genres = m.get("genres", [{"id": 18, "name": "Drama"}])
     return {
         **_summary(tmdb_id),
         "imdb_id": m["imdb"],
-        "genres": [{"id": 18, "name": "Drama"}],
+        "genres": genres,
         "spoken_languages": [{"iso_639_1": m["lang"]}],
         "credits": {"cast": [], "crew": [{"id": 9, "name": "A Director", "job": "Director"}]},
         "keywords": {"keywords": [{"id": 1, "name": "family"}]},
@@ -135,6 +136,10 @@ def fake_tmdb(request: httpx.Request) -> httpx.Response:
             for n, p in enumerate(CATALOGUE.get(region, []))
         ]
         return httpx.Response(200, json={"results": services[::-1]})
+    if path == "/genre/movie/list":
+        return httpx.Response(
+            200, json={"genres": [{"id": 35, "name": "Comedy"}, {"id": 18, "name": "Drama"}]}
+        )
     if path == "/discover/movie":
         if params.get("page", "1") != "1":
             return httpx.Response(200, json={"results": []})
@@ -142,13 +147,27 @@ def fake_tmdb(request: httpx.Request) -> httpx.Response:
         providers = {int(p) for p in params.get("with_watch_providers", "").split("|") if p}
         kinds = params.get("with_watch_monetization_types", "").split("|")
         region = params.get("watch_region", "")
+        with_genres = {int(g) for g in params.get("with_genres", "").split(",") if g}
 
         def streams(tmdb_id: int) -> bool:
             offers = WATCH.get(tmdb_id, {}).get(region, {})
             return any(p["provider_id"] in providers for k in kinds for p in offers.get(k, []))
 
-        hits = [_summary(i) for i, m in MOVIES.items()
-                if (not language or m["lang"] == language) and (not providers or streams(i))]  # fmt: skip
+        def has_genre(tmdb_id: int) -> bool:
+            if not with_genres:
+                return True
+            film_gids = {
+                g["id"] for g in MOVIES[tmdb_id].get("genres", [{"id": 18, "name": "Drama"}])
+            }
+            return bool(with_genres & film_gids)
+
+        hits = [
+            _summary(i)
+            for i, m in MOVIES.items()
+            if (not language or m["lang"] == language)
+            and (not providers or streams(i))
+            and has_genre(i)
+        ]
         return httpx.Response(200, json={"results": hits})
     if path.startswith("/movie/") and path.endswith("/recommendations"):
         tmdb_id = int(path.split("/")[2])

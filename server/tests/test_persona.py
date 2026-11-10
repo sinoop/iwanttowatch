@@ -156,6 +156,7 @@ def test_ollama_persona_and_refresh_after_import(
     messages = json.loads(ollama.calls.last.request.content)["messages"]
     assert [m["role"] for m in messages] == ["system", "user"]
     assert "Léon: The Professional / Léon (1994, fr): 9/10" in messages[1]["content"]
+    client.app.state.feed_worker.wait_until_idle()  # type: ignore[attr-defined]
 
 
 def test_the_next_llm_in_the_admins_order_answers_when_the_first_fails(

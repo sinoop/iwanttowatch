@@ -528,3 +528,38 @@ def test_adult_feed_can_be_filtered_by_certificate_limit(client: TestClient) -> 
     assert {
         i["tmdb_id"] for i in feed(client, available_only=False, max_certificate="PG-13")["items"]
     } == {201, 301, 302, 401}
+
+
+def test_refresh_with_targeted_language_and_genre_finds_more_movies(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    movie_501 = {
+        "title": "Aavesham",
+        "original_title": "ആവേശം",
+        "lang": "ml",
+        "date": "2024-04-11",
+        "imdb": "tt27074078",
+        "certs": {"IN": "U/A 13+"},
+        "votes": 50,
+        "genres": [{"id": 35, "name": "Comedy"}, {"id": 28, "name": "Action"}],
+    }
+    monkeypatch.setitem(test_imports.MOVIES, 501, movie_501)
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    client.put("/api/v1/titles/101/reaction", json={"reaction": "loved"})
+    idle(client)
+
+    initial = feed(client, available_only=False, language="ml", genre="Comedy")
+    assert 501 not in {i["tmdb_id"] for i in initial["items"]}
+    assert initial["total"] == 0
+
+    resp = client.post("/api/v1/feed/refresh", params={"language": "ml", "genre": "Comedy"})
+    assert resp.status_code == 202
+    idle(client)
+
+    updated = feed(client, available_only=False, language="ml", genre="Comedy")
+    assert 501 in {i["tmdb_id"] for i in updated["items"]}
+    assert updated["total"] >= 1
+
+    all_films = feed(client, available_only=False)
+    assert 501 in {i["tmdb_id"] for i in all_films["items"]}
+    assert 201 in {i["tmdb_id"] for i in all_films["items"]}
