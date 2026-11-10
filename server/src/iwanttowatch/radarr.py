@@ -204,6 +204,20 @@ class RadarrClient:
             year=year,
         )
 
+    def delete_movie(
+        self,
+        movie_id: int,
+        delete_files: bool = True,
+        add_import_exclusion: bool = False,
+    ) -> bool:
+        """Delete a movie from Radarr, optionally deleting movie files from disk."""
+        params = {
+            "deleteFiles": "true" if delete_files else "false",
+            "addImportExclusion": "true" if add_import_exclusion else "false",
+        }
+        self._request("DELETE", f"/api/v3/movie/{movie_id}", params=params)
+        return True
+
 
 def client_from_settings(session: Session, timeout: float = TIMEOUT_SECONDS) -> RadarrClient | None:
     """Instantiate a RadarrClient if URL and API key are configured."""

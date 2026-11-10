@@ -1410,6 +1410,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/declutter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Declutter Candidates
+         * @description Inspect the library and Radarr to identify safe prune candidates.
+         */
+        get: operations["get_declutter_candidates_api_v1_library_declutter_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/declutter/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete Candidates
+         * @description Delete candidate movies from Radarr and reclaim storage.
+         */
+        post: operations["delete_candidates_api_v1_library_declutter_delete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/declutter/ignore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ignore Candidate
+         * @description Whitelist/ignore a movie so it is not suggested for pruning.
+         */
+        post: operations["ignore_candidate_api_v1_library_declutter_ignore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1522,6 +1582,15 @@ export interface components {
             /** Poster Path */
             poster_path: string | null;
         };
+        /** CategoryStat */
+        CategoryStat: {
+            /** Count */
+            count: number;
+            /** Bytes */
+            bytes: number;
+            /** Formatted */
+            formatted: string;
+        };
         /** ChildCreate */
         ChildCreate: {
             /** Name */
@@ -1576,6 +1645,111 @@ export interface components {
              * @default []
              */
             shortlist: components["schemas"]["ExportedShortlistItem"][];
+        };
+        /** DeclutterCandidateItem */
+        DeclutterCandidateItem: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Radarr Movie Id */
+            radarr_movie_id: number | null;
+            /** Title */
+            title: string;
+            /** Year */
+            year: number | null;
+            /** Poster Path */
+            poster_path: string | null;
+            /** Original Language */
+            original_language: string | null;
+            /** Imdb Rating */
+            imdb_rating: number | null;
+            /** Category */
+            category: string;
+            /** Reasons */
+            reasons: string[];
+            /** Size Bytes */
+            size_bytes: number;
+            /** Size Formatted */
+            size_formatted: string;
+            /** Has File */
+            has_file: boolean;
+            /** Monitored */
+            monitored: boolean;
+            /** Match Pct */
+            match_pct: number | null;
+            /** Is Protected */
+            is_protected: boolean;
+            /** Protection Reasons */
+            protection_reasons: string[];
+            /** Streaming Offers */
+            streaming_offers: string[];
+            /** Is Ignored */
+            is_ignored: boolean;
+        };
+        /** DeclutterDeleteRequest */
+        DeclutterDeleteRequest: {
+            /** Tmdb Ids */
+            tmdb_ids: number[];
+            /**
+             * Delete Files
+             * @default true
+             */
+            delete_files: boolean;
+            /**
+             * Add Import Exclusion
+             * @default false
+             */
+            add_import_exclusion: boolean;
+        };
+        /** DeclutterDeleteResponse */
+        DeclutterDeleteResponse: {
+            /** Success */
+            success: boolean;
+            /** Deleted Count */
+            deleted_count: number;
+            /** Freed Bytes */
+            freed_bytes: number;
+            /** Freed Formatted */
+            freed_formatted: string;
+            /** Failed Count */
+            failed_count: number;
+            /** Errors */
+            errors: string[];
+        };
+        /** DeclutterIgnoreRequest */
+        DeclutterIgnoreRequest: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /**
+             * Ignored
+             * @default true
+             */
+            ignored: boolean;
+        };
+        /** DeclutterIgnoreResponse */
+        DeclutterIgnoreResponse: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Ignored */
+            ignored: boolean;
+        };
+        /** DeclutterInspection */
+        DeclutterInspection: {
+            /** Radarr Configured */
+            radarr_configured: boolean;
+            /** Total Candidates */
+            total_candidates: number;
+            /** Reclaimable Bytes */
+            reclaimable_bytes: number;
+            /** Reclaimable Formatted */
+            reclaimable_formatted: string;
+            /** Protected Count */
+            protected_count: number;
+            /** Categories Summary */
+            categories_summary: {
+                [key: string]: components["schemas"]["CategoryStat"];
+            };
+            /** Items */
+            items: components["schemas"]["DeclutterCandidateItem"][];
         };
         /** DivergentTitle */
         DivergentTitle: {
@@ -5420,6 +5594,106 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Me"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_declutter_candidates_api_v1_library_declutter_get: {
+        parameters: {
+            query?: {
+                /** @description Filter to a specific category */
+                category?: string | null;
+                /** @description Include previously ignored titles */
+                include_ignored?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeclutterInspection"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_candidates_api_v1_library_declutter_delete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeclutterDeleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeclutterDeleteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ignore_candidate_api_v1_library_declutter_ignore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeclutterIgnoreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeclutterIgnoreResponse"];
                 };
             };
             /** @description Validation Error */

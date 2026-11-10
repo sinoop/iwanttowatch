@@ -12,6 +12,7 @@ from iwanttowatch.api import (
     backup,
     backups,
     children,
+    declutter,
     feed,
     imports,
     invites,
@@ -71,7 +72,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     modules = (
         auth, settings_api, imports, library, reactions, jellyfin, streaming, feed, backup,
-        backups, together, children, vote, invites, mcp,
+        backups, together, children, vote, invites, mcp, declutter,
     )  # fmt: skip
     for module in modules:
         app.include_router(module.router)

@@ -3554,6 +3554,154 @@
           }
         }
       }
+    },
+    "/api/v1/library/declutter": {
+      "get": {
+        "tags": [
+          "declutter"
+        ],
+        "summary": "Get Declutter Candidates",
+        "description": "Inspect the library and Radarr to identify safe prune candidates.",
+        "operationId": "get_declutter_candidates_api_v1_library_declutter_get",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter to a specific category",
+              "title": "Category"
+            },
+            "description": "Filter to a specific category"
+          },
+          {
+            "name": "include_ignored",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include previously ignored titles",
+              "default": false,
+              "title": "Include Ignored"
+            },
+            "description": "Include previously ignored titles"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclutterInspection"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/library/declutter/delete": {
+      "post": {
+        "tags": [
+          "declutter"
+        ],
+        "summary": "Delete Candidates",
+        "description": "Delete candidate movies from Radarr and reclaim storage.",
+        "operationId": "delete_candidates_api_v1_library_declutter_delete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeclutterDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclutterDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/library/declutter/ignore": {
+      "post": {
+        "tags": [
+          "declutter"
+        ],
+        "summary": "Ignore Candidate",
+        "description": "Whitelist/ignore a movie so it is not suggested for pruning.",
+        "operationId": "ignore_candidate_api_v1_library_declutter_ignore_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeclutterIgnoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclutterIgnoreResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3881,6 +4029,29 @@
         ],
         "title": "Candidate"
       },
+      "CategoryStat": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "bytes": {
+            "type": "integer",
+            "title": "Bytes"
+          },
+          "formatted": {
+            "type": "string",
+            "title": "Formatted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "bytes",
+          "formatted"
+        ],
+        "title": "CategoryStat"
+      },
       "ChildCreate": {
         "properties": {
           "name": {
@@ -4006,6 +4177,307 @@
           "feedback"
         ],
         "title": "DataExport"
+      },
+      "DeclutterCandidateItem": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "radarr_movie_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radarr Movie Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "poster_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Path"
+          },
+          "original_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Language"
+          },
+          "imdb_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imdb Rating"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "size_formatted": {
+            "type": "string",
+            "title": "Size Formatted"
+          },
+          "has_file": {
+            "type": "boolean",
+            "title": "Has File"
+          },
+          "monitored": {
+            "type": "boolean",
+            "title": "Monitored"
+          },
+          "match_pct": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Pct"
+          },
+          "is_protected": {
+            "type": "boolean",
+            "title": "Is Protected"
+          },
+          "protection_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Protection Reasons"
+          },
+          "streaming_offers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Streaming Offers"
+          },
+          "is_ignored": {
+            "type": "boolean",
+            "title": "Is Ignored"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "radarr_movie_id",
+          "title",
+          "year",
+          "poster_path",
+          "original_language",
+          "imdb_rating",
+          "category",
+          "reasons",
+          "size_bytes",
+          "size_formatted",
+          "has_file",
+          "monitored",
+          "match_pct",
+          "is_protected",
+          "protection_reasons",
+          "streaming_offers",
+          "is_ignored"
+        ],
+        "title": "DeclutterCandidateItem"
+      },
+      "DeclutterDeleteRequest": {
+        "properties": {
+          "tmdb_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Tmdb Ids"
+          },
+          "delete_files": {
+            "type": "boolean",
+            "title": "Delete Files",
+            "default": true
+          },
+          "add_import_exclusion": {
+            "type": "boolean",
+            "title": "Add Import Exclusion",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_ids"
+        ],
+        "title": "DeclutterDeleteRequest"
+      },
+      "DeclutterDeleteResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "deleted_count": {
+            "type": "integer",
+            "title": "Deleted Count"
+          },
+          "freed_bytes": {
+            "type": "integer",
+            "title": "Freed Bytes"
+          },
+          "freed_formatted": {
+            "type": "string",
+            "title": "Freed Formatted"
+          },
+          "failed_count": {
+            "type": "integer",
+            "title": "Failed Count"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "deleted_count",
+          "freed_bytes",
+          "freed_formatted",
+          "failed_count",
+          "errors"
+        ],
+        "title": "DeclutterDeleteResponse"
+      },
+      "DeclutterIgnoreRequest": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "ignored": {
+            "type": "boolean",
+            "title": "Ignored",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id"
+        ],
+        "title": "DeclutterIgnoreRequest"
+      },
+      "DeclutterIgnoreResponse": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "ignored": {
+            "type": "boolean",
+            "title": "Ignored"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "ignored"
+        ],
+        "title": "DeclutterIgnoreResponse"
+      },
+      "DeclutterInspection": {
+        "properties": {
+          "radarr_configured": {
+            "type": "boolean",
+            "title": "Radarr Configured"
+          },
+          "total_candidates": {
+            "type": "integer",
+            "title": "Total Candidates"
+          },
+          "reclaimable_bytes": {
+            "type": "integer",
+            "title": "Reclaimable Bytes"
+          },
+          "reclaimable_formatted": {
+            "type": "string",
+            "title": "Reclaimable Formatted"
+          },
+          "protected_count": {
+            "type": "integer",
+            "title": "Protected Count"
+          },
+          "categories_summary": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CategoryStat"
+            },
+            "type": "object",
+            "title": "Categories Summary"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DeclutterCandidateItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "radarr_configured",
+          "total_candidates",
+          "reclaimable_bytes",
+          "reclaimable_formatted",
+          "protected_count",
+          "categories_summary",
+          "items"
+        ],
+        "title": "DeclutterInspection"
       },
       "DivergentTitle": {
         "properties": {

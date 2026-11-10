@@ -337,6 +337,23 @@ Proposed 2026-11-09: bridge recommendation discovery and media acquisition for f
 - [x] **Phase 2 — Shortlist sync & trigger:** Automatic or one-click batch request to Radarr for shortlisted titles not available on current streaming platforms or Jellyfin; toggle auto-sync in Settings to instantly queue new unstreamable shortlisted films, or trigger one-click batch downloads from Discover (personal shortlist) and Watch together (group shortlist) (2026-11-10)
 - [ ] **Phase 3 — Background auto-downloader:** Autonomous downloader for top recommendations scoring $\ge 85\%$ match that are not available on any streaming platform or Jellyfin, safeguarded by strict controls (weekly download caps, minimum vote floors, and physical/digital release availability filters).
 
+### Phase 5f — Smart Media Lifecycle: Acquisition Radar & Declutter Assistant
+
+Proposed 2026-11-10: balance smart media acquisition and library decluttering using taste models, streaming availability, and multi-user household awareness.
+
+- [ ] **Acquisition Radar & Theatrical Tracking:**
+  - High-value "Missing from Streaming" acquisition queue: unwatched high-match recommendations not available on any subscribed streaming platform or Jellyfin.
+  - "Now in Theaters" early tracking: discover high-taste theatrical releases using TMDb's theatrical discovery (`with_release_type=2|3`, `now_playing`) and queue them in Radarr monitored with `minimumAvailability="released"` so digital/physical releases are acquired automatically without pulling CAM/telesync rips.
+- [x] **Library Declutter Assistant:**
+  - Taste-driven prune candidate detection across Jellyfin & Radarr:
+    - **Watched & Disliked:** user or household member rated $\le 4.0/10$, reacted "disliked", or marked thumbs down.
+    - **Abandoned Play:** playback stopped at $< 20\%$ completion and abandoned for $> 30$ days.
+    - **Cold Hoard / Low Taste Match:** unwatched on disk for $> 6$ months with predicted taste match $< 35\%$.
+    - **Streaming Redundancy:** watched title currently available on user's active flatrate/free streaming subscriptions (e.g. Netflix, Prime Video), making local disk retention redundant.
+  - **Household Protection Guardrails:** automatically protects films from pruning suggestions if any other household member has shortlisted, favorited, rated $\ge 7.0$, or has a high unwatched taste match ($\ge 70\%$).
+  - **Storage Reclaim Metrics & Safety Controls:** reads file sizes directly from Radarr (`sizeOnDisk`), displays total gigabytes reclaimable, category breakdowns, and provides one-click or batch deletion via Radarr API (`DELETE /api/v3/movie/{id}?deleteFiles=true`) with ignore/keep whitelist actions and confirmation modals.
+  - **Web UI:** Dedicated "Declutter Assistant" section in Server Settings (admin-only) with category filters, reclaimed space gauges, safety badges, and bulk actions (2026-11-10).
+
 ### Phase 6 — Optional integrations and polish
 
 - [ ] Trakt (device flow, history/ratings pull, export-file import)

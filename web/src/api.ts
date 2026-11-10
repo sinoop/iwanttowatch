@@ -319,3 +319,71 @@ export function useRadarrBatchSync() {
     },
   })
 }
+
+/** Declutter inspection: fetch library prune candidates and storage metrics. */
+export function useDeclutterCandidates(category?: string, includeIgnored = false, enabled = true) {
+  return useQuery({
+    queryKey: ['declutter', category, includeIgnored],
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/v1/library/declutter', {
+        params: {
+          query: {
+            category: category && category !== 'all' ? category : undefined,
+            include_ignored: includeIgnored,
+          },
+        },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    enabled,
+  })
+}
+
+/** Batch delete prune candidates from Radarr. */
+export function useDeleteDeclutterCandidates() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      tmdbIds,
+      deleteFiles = true,
+      addImportExclusion = false,
+    }: {
+      tmdbIds: number[]
+      deleteFiles?: boolean
+      addImportExclusion?: boolean
+    }) => {
+      const { data, error } = await api.POST('/api/v1/library/declutter/delete', {
+        body: {
+          tmdb_ids: tmdbIds,
+          delete_files: deleteFiles,
+          add_import_exclusion: addImportExclusion,
+        },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['declutter'] })
+      queryClient.invalidateQueries({ queryKey: ['feed'] })
+      queryClient.invalidateQueries({ queryKey: ['title'] })
+    },
+  })
+}
+
+/** Whitelist/ignore or unignore a prune candidate. */
+export function useIgnoreDeclutterCandidate() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ tmdbId, ignored }: { tmdbId: number; ignored: boolean }) => {
+      const { data, error } = await api.POST('/api/v1/library/declutter/ignore', {
+        body: { tmdb_id: tmdbId, ignored },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['declutter'] })
+    },
+  })
+}

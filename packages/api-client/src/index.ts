@@ -35,6 +35,9 @@ export type GuestProfile = Schemas['GuestOut']
 export type ChildProfile = Schemas['ChildOut']
 export type RadarrShortlistStatus = Schemas['RadarrShortlistStatus']
 export type RadarrShortlistSyncResponse = Schemas['RadarrShortlistSyncResponse']
+export type DeclutterCandidateItem = Schemas['DeclutterCandidateItem']
+export type DeclutterInspection = Schemas['DeclutterInspection']
+export type DeclutterDeleteResponse = Schemas['DeclutterDeleteResponse']
 export type FeedSort = NonNullable<NonNullable<paths['/api/v1/feed']['get']['parameters']['query']>['sort']>
 
 /**

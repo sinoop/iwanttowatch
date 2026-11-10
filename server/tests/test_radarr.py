@@ -95,6 +95,16 @@ class FakeRadarr:
             self.commands.append(data)
             return httpx.Response(201, json={"id": 1, "name": data.get("name")})
 
+        if path.startswith("/api/v3/movie/") and request.method == "DELETE":
+            movie_id_str = path.split("/")[-1]
+            if movie_id_str.isdigit():
+                m_id = int(movie_id_str)
+                to_delete = [t for t, m in self.movies.items() if m.get("id") == m_id]
+                for t in to_delete:
+                    del self.movies[t]
+                return httpx.Response(200, json={})
+            return httpx.Response(404)
+
         return httpx.Response(404)
 
 
