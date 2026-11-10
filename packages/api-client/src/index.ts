@@ -33,6 +33,8 @@ export type InviteOut = Schemas['InviteOut']
 export type Backups = Schemas['Backups']
 export type GuestProfile = Schemas['GuestOut']
 export type ChildProfile = Schemas['ChildOut']
+export type RadarrShortlistStatus = Schemas['RadarrShortlistStatus']
+export type RadarrShortlistSyncResponse = Schemas['RadarrShortlistSyncResponse']
 export type FeedSort = NonNullable<NonNullable<paths['/api/v1/feed']['get']['parameters']['query']>['sort']>
 
 /**

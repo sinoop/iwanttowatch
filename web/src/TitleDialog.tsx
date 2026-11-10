@@ -794,7 +794,7 @@ export function BookmarkIcon({ filled, className = 'size-4' }: { filled: boolean
   )
 }
 
-function DownloadIcon({ className = 'size-4' }: { className?: string }) {
+export function DownloadIcon({ className = 'size-4' }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"

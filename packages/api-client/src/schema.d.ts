@@ -716,6 +716,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/titles/shortlist/radarr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Shortlist Radarr Status
+         * @description Inspect shortlisted films and their streaming availability and Radarr status.
+         */
+        get: operations["read_shortlist_radarr_status_api_v1_titles_shortlist_radarr_get"];
+        put?: never;
+        /**
+         * Batch Request Shortlist Radarr
+         * @description Batch request unstreamable shortlisted films into Radarr.
+         */
+        post: operations["batch_request_shortlist_radarr_api_v1_titles_shortlist_radarr_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/titles/{tmdb_id}": {
         parameters: {
             query?: never;
@@ -2296,6 +2320,11 @@ export interface components {
              * @default announced
              */
             minimum_availability: string;
+            /**
+             * Auto Sync Shortlist
+             * @default false
+             */
+            auto_sync_shortlist: boolean;
             /** Profiles */
             profiles?: components["schemas"]["RadarrProfile"][];
             /** Root Folders */
@@ -2306,6 +2335,80 @@ export interface components {
             };
             /** Error */
             error?: string | null;
+        };
+        /** RadarrShortlistItemStatus */
+        RadarrShortlistItemStatus: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Year */
+            year?: number | null;
+            /** Status */
+            status: string;
+            /** Detail */
+            detail?: string | null;
+        };
+        /** RadarrShortlistStatus */
+        RadarrShortlistStatus: {
+            /** Configured */
+            configured: boolean;
+            /** Auto Sync */
+            auto_sync: boolean;
+            /** Scope */
+            scope: string;
+            /** Total Shortlisted */
+            total_shortlisted: number;
+            /** Unstreamable Count */
+            unstreamable_count: number;
+            /** To Request Count */
+            to_request_count: number;
+            /** Downloading Count */
+            downloading_count: number;
+            /** Downloaded Count */
+            downloaded_count: number;
+            /** Available Count */
+            available_count: number;
+            /**
+             * Failed Count
+             * @default 0
+             */
+            failed_count: number;
+            /** Items */
+            items: components["schemas"]["RadarrShortlistItemStatus"][];
+        };
+        /** RadarrShortlistSyncRequest */
+        RadarrShortlistSyncRequest: {
+            /**
+             * Scope
+             * @default user
+             */
+            scope: string;
+            /** Tmdb Ids */
+            tmdb_ids?: number[] | null;
+        };
+        /** RadarrShortlistSyncResponse */
+        RadarrShortlistSyncResponse: {
+            /** Configured */
+            configured: boolean;
+            /** Scope */
+            scope: string;
+            /** Total Shortlisted */
+            total_shortlisted: number;
+            /** Unstreamable Count */
+            unstreamable_count: number;
+            /** Requested Count */
+            requested_count: number;
+            /** Downloading Count */
+            downloading_count: number;
+            /** Downloaded Count */
+            downloaded_count: number;
+            /** Available Count */
+            available_count: number;
+            /** Failed Count */
+            failed_count: number;
+            /** Items */
+            items: components["schemas"]["RadarrShortlistItemStatus"][];
         };
         /** RadarrUpdate */
         RadarrUpdate: {
@@ -2326,6 +2429,11 @@ export interface components {
             language_root_folders?: {
                 [key: string]: string;
             };
+            /**
+             * Auto Sync Shortlist
+             * @default false
+             */
+            auto_sync_shortlist: boolean;
         };
         /** RatedTitle */
         RatedTitle: {
@@ -4056,6 +4164,70 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_shortlist_radarr_status_api_v1_titles_shortlist_radarr_get: {
+        parameters: {
+            query?: {
+                scope?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RadarrShortlistStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    batch_request_shortlist_radarr_api_v1_titles_shortlist_radarr_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RadarrShortlistSyncRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RadarrShortlistSyncResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

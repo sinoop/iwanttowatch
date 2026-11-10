@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from iwanttowatch import radarr
 from iwanttowatch.api.deps import AdultUser, DbSession, ParentUser, Tmdb
 from iwanttowatch.api.reactions import load_title
 from iwanttowatch.api.schemas import BirthYear, Me
@@ -147,13 +148,14 @@ def assign_to_child(
 ) -> Response:
     """Assign a film to a child profile's shortlist so it shows up in their picks."""
     child = _child(session, child_id)
-    load_title(session, request, tmdb_id)
+    title = load_title(session, request, tmdb_id)
     availability(session, tmdb, [tmdb_id], child.region)
     if session.get(ShortlistItem, (child.id, tmdb_id)) is None:
         session.add(ShortlistItem(user_id=child.id, tmdb_id=tmdb_id))
         session.commit()
         if session.get(Recommendation, (child.id, tmdb_id)) is None:
             request.app.state.feed_worker.rescore_soon(child.id)
+        radarr.auto_sync_if_unstreamable(session, tmdb, _adult, tmdb_id, title)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

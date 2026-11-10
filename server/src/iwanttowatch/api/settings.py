@@ -95,6 +95,7 @@ class RadarrSettings(BaseModel):
     quality_profile_id: int | None = None
     root_folder_path: str | None = None
     minimum_availability: str = radarr.DEFAULT_MIN_AVAILABILITY
+    auto_sync_shortlist: bool = False
     profiles: list[RadarrProfile] = Field(default_factory=list)
     root_folders: list[RadarrRootFolder] = Field(default_factory=list)
     language_root_folders: dict[str, str] = Field(default_factory=dict)
@@ -120,6 +121,7 @@ class RadarrUpdate(BaseModel):
     root_folder_path: str | None = None
     minimum_availability: str = radarr.DEFAULT_MIN_AVAILABILITY
     language_root_folders: dict[str, str] = Field(default_factory=dict)
+    auto_sync_shortlist: bool = False
 
 
 class ImdbUpdate(BaseModel):
@@ -261,6 +263,7 @@ def _radarr_out(session: Session, is_admin: bool) -> RadarrSettings:
         quality_profile_id=profile_id,
         root_folder_path=root_folder,
         minimum_availability=min_avail,
+        auto_sync_shortlist=radarr.is_auto_sync_enabled(session),
         profiles=profiles,
         root_folders=root_folders,
         language_root_folders=radarr.get_language_root_folders(session),
@@ -388,6 +391,7 @@ def set_radarr(body: RadarrUpdate, _admin: AdminUser, session: DbSession) -> Ser
         root_folder_path=root_folder,
         minimum_availability=body.minimum_availability,
         language_root_folders=body.language_root_folders,
+        auto_sync_shortlist=body.auto_sync_shortlist,
     )
     session.commit()
     return _settings_out(session, True)

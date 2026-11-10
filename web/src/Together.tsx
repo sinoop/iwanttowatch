@@ -3,9 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { renderSVG } from 'uqr'
-import { api, copyToClipboard, errorMessage, facts, useChildren, watchOnQuery, type WatchOn } from './api'
+import { api, copyToClipboard, errorMessage, facts, useChildren, useRadarrBatchSync, useRadarrShortlist, useServerSettings, watchOnQuery, type WatchOn } from './api'
 import { PlatformFilter, WatchBadges } from './Streaming'
-import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, ImdbBadge, MatchBadge } from './TitleDialog'
+import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, DownloadIcon, ImdbBadge, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Field, Poster } from './ui'
 
 const chip = (selected: boolean) =>
@@ -16,6 +16,7 @@ const chip = (selected: boolean) =>
   }`
 
 export default function Together({ me }: { me: Me }) {
+  const settings = useServerSettings()
   const children = useChildren(!me.is_child)
   const options = useQuery({
     queryKey: ['together', 'options'],
@@ -30,6 +31,12 @@ export default function Together({ me }: { me: Me }) {
   const [watchOn, setWatchOn] = useState<WatchOn>('anywhere')
   const [shortlistOnly, setShortlistOnly] = useState(false)
   const [open, setOpen] = useState<number | null>(null)
+
+  const radarrShortlist = useRadarrShortlist(
+    'group',
+    shortlistOnly && !!settings.data?.radarr.configured && !me.is_child
+  )
+  const batchSync = useRadarrBatchSync()
 
   const household = options.data?.household ?? []
   const guests = options.data?.guests ?? []
@@ -114,15 +121,51 @@ export default function Together({ me }: { me: Me }) {
               <option value="all">All group picks</option>
               <option value="only">Group shortlist ({picks.data.shortlist_count})</option>
             </select>
+            {shortlistOnly && radarrShortlist.data?.configured && (
+              <>
+                {radarrShortlist.data.to_request_count > 0 && (
+                  <button
+                    type="button"
+                    disabled={batchSync.isPending}
+                    onClick={() => batchSync.mutate({ scope: 'group' })}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50 transition-colors cursor-pointer"
+                    title="Batch request unstreamable group shortlisted films to Radarr"
+                  >
+                    <DownloadIcon className="size-3.5" />
+                    {batchSync.isPending
+                      ? 'Requesting…'
+                      : `Download via Radarr (${radarrShortlist.data.to_request_count})`}
+                  </button>
+                )}
+                {radarrShortlist.data.to_request_count === 0 && radarrShortlist.data.unstreamable_count > 0 && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-xs text-white/60">
+                    {radarrShortlist.data.downloading_count > 0 ? (
+                      <>
+                        <span className="text-amber-400">⏳</span> {radarrShortlist.data.downloading_count} downloading in Radarr
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-emerald-400">✓</span> Radarr synced
+                      </>
+                    )}
+                  </span>
+                )}
+                {batchSync.data && (
+                  <span className="inline-flex items-center text-xs text-emerald-400">
+                    ✓ Queued {batchSync.data.requested_count} film(s)
+                  </span>
+                )}
+              </>
+            )}
           </>
         )}
       </div>
 
       {!me.is_child && <GuestVote users={users} />}
 
-      {(options.error || picks.error || shortlist.error) && (
+      {(options.error || picks.error || shortlist.error || batchSync.error) && (
         <div className="mt-6">
-          <ErrorText>{(options.error ?? picks.error ?? shortlist.error)?.message}</ErrorText>
+          <ErrorText>{(options.error ?? picks.error ?? shortlist.error ?? batchSync.error)?.message}</ErrorText>
         </div>
       )}
       {users.length + guestIds.length === 0 ? (

@@ -1,7 +1,7 @@
 import type { ServerSettings } from '@iwanttowatch/api-client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { api, errorMessage } from './api'
+import { api, errorMessage, useRadarrBatchSync, useRadarrShortlist } from './api'
 import { Button, ErrorText, Field } from './ui'
 
 function Badge({ on, children }: { on: boolean; children: ReactNode }) {
@@ -50,6 +50,10 @@ export function RadarrServer({ settings }: { settings: ServerSettings }) {
   const [rootFolderPath, setRootFolderPath] = useState<string>(radarr.root_folder_path ?? '')
   const [minAvailability, setMinAvailability] = useState<string>(radarr.minimum_availability ?? 'announced')
   const [languageFolders, setLanguageFolders] = useState<Record<string, string>>(radarr.language_root_folders ?? {})
+  const [autoSyncShortlist, setAutoSyncShortlist] = useState<boolean>(radarr.auto_sync_shortlist ?? false)
+
+  const shortlistQuery = useRadarrShortlist('all', connected)
+  const batchSync = useRadarrBatchSync()
 
   const [newLang, setNewLang] = useState('ml')
   const [newFolder, setNewFolder] = useState('')
@@ -58,6 +62,9 @@ export function RadarrServer({ settings }: { settings: ServerSettings }) {
     queryClient.setQueryData(['settings'], data)
     if (data?.radarr.language_root_folders) {
       setLanguageFolders(data.radarr.language_root_folders)
+    }
+    if (data?.radarr.auto_sync_shortlist !== undefined) {
+      setAutoSyncShortlist(data.radarr.auto_sync_shortlist)
     }
   }
 
@@ -71,6 +78,7 @@ export function RadarrServer({ settings }: { settings: ServerSettings }) {
           root_folder_path: rootFolderPath || null,
           minimum_availability: minAvailability,
           language_root_folders: languageFolders,
+          auto_sync_shortlist: autoSyncShortlist,
         },
       })
       if (error) throw new Error(errorMessage(error))
@@ -90,6 +98,7 @@ export function RadarrServer({ settings }: { settings: ServerSettings }) {
       setQualityProfileId(undefined)
       setRootFolderPath('')
       setLanguageFolders({})
+      setAutoSyncShortlist(false)
       save.reset()
     },
   })
@@ -293,6 +302,59 @@ export function RadarrServer({ settings }: { settings: ServerSettings }) {
                 </option>
               </select>
             </label>
+
+            {/* Shortlist sync & trigger */}
+            <label className="flex items-start gap-3 rounded-lg border border-white/10 bg-white/[0.02] p-3 cursor-pointer hover:bg-white/[0.04] transition-colors">
+              <input
+                type="checkbox"
+                checked={autoSyncShortlist}
+                onChange={(e) => setAutoSyncShortlist(e.target.checked)}
+                className="mt-1 size-4 rounded border-white/20 bg-black/40 text-accent focus:ring-accent"
+              />
+              <div>
+                <span className="block text-sm font-medium text-white">
+                  Auto-request unstreamable shortlist
+                </span>
+                <span className="mt-0.5 block text-xs text-white/50">
+                  Automatically queue unstreamable films in Radarr as soon as they are added to a personal or group shortlist.
+                </span>
+              </div>
+            </label>
+
+            {shortlistQuery.data && shortlistQuery.data.total_shortlisted > 0 && (
+              <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-white/80">Shortlist sync status</span>
+                  <span className="text-white/50">
+                    {shortlistQuery.data.unstreamable_count} unstreamable / {shortlistQuery.data.total_shortlisted} total
+                  </span>
+                </div>
+                <p className="mt-1 text-white/50">
+                  {shortlistQuery.data.downloaded_count > 0 && `${shortlistQuery.data.downloaded_count} downloaded • `}
+                  {shortlistQuery.data.downloading_count > 0 && `${shortlistQuery.data.downloading_count} downloading • `}
+                  {shortlistQuery.data.to_request_count} pending request
+                </p>
+                {shortlistQuery.data.to_request_count > 0 && (
+                  <div className="mt-2.5">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-xs! py-1! px-3!"
+                      disabled={batchSync.isPending}
+                      onClick={() => batchSync.mutate({ scope: 'all' })}
+                    >
+                      {batchSync.isPending ? 'Requesting…' : `Sync ${shortlistQuery.data.to_request_count} unstreamable films now`}
+                    </Button>
+                  </div>
+                )}
+                {batchSync.data && (
+                  <p className="mt-2 text-emerald-400">
+                    ✓ Queued {batchSync.data.requested_count} film(s) in Radarr
+                  </p>
+                )}
+                {batchSync.error && <ErrorText>{batchSync.error.message}</ErrorText>}
+              </div>
+            )}
           </>
         )}
 

@@ -1933,6 +1933,91 @@
         }
       }
     },
+    "/api/v1/titles/shortlist/radarr": {
+      "get": {
+        "summary": "Read Shortlist Radarr Status",
+        "description": "Inspect shortlisted films and their streaming availability and Radarr status.",
+        "operationId": "read_shortlist_radarr_status_api_v1_titles_shortlist_radarr_get",
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "user",
+              "title": "Scope"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadarrShortlistStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Batch Request Shortlist Radarr",
+        "description": "Batch request unstreamable shortlisted films into Radarr.",
+        "operationId": "batch_request_shortlist_radarr_api_v1_titles_shortlist_radarr_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RadarrShortlistSyncRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadarrShortlistSyncResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/titles/{tmdb_id}": {
       "get": {
         "summary": "Read Title",
@@ -6233,6 +6318,11 @@
             "title": "Minimum Availability",
             "default": "announced"
           },
+          "auto_sync_shortlist": {
+            "type": "boolean",
+            "title": "Auto Sync Shortlist",
+            "default": false
+          },
           "profiles": {
             "items": {
               "$ref": "#/components/schemas/RadarrProfile"
@@ -6271,6 +6361,203 @@
           "configured"
         ],
         "title": "RadarrSettings"
+      },
+      "RadarrShortlistItemStatus": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "status"
+        ],
+        "title": "RadarrShortlistItemStatus"
+      },
+      "RadarrShortlistStatus": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "auto_sync": {
+            "type": "boolean",
+            "title": "Auto Sync"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "total_shortlisted": {
+            "type": "integer",
+            "title": "Total Shortlisted"
+          },
+          "unstreamable_count": {
+            "type": "integer",
+            "title": "Unstreamable Count"
+          },
+          "to_request_count": {
+            "type": "integer",
+            "title": "To Request Count"
+          },
+          "downloading_count": {
+            "type": "integer",
+            "title": "Downloading Count"
+          },
+          "downloaded_count": {
+            "type": "integer",
+            "title": "Downloaded Count"
+          },
+          "available_count": {
+            "type": "integer",
+            "title": "Available Count"
+          },
+          "failed_count": {
+            "type": "integer",
+            "title": "Failed Count",
+            "default": 0
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RadarrShortlistItemStatus"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured",
+          "auto_sync",
+          "scope",
+          "total_shortlisted",
+          "unstreamable_count",
+          "to_request_count",
+          "downloading_count",
+          "downloaded_count",
+          "available_count",
+          "items"
+        ],
+        "title": "RadarrShortlistStatus"
+      },
+      "RadarrShortlistSyncRequest": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "default": "user"
+          },
+          "tmdb_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tmdb Ids"
+          }
+        },
+        "type": "object",
+        "title": "RadarrShortlistSyncRequest"
+      },
+      "RadarrShortlistSyncResponse": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "total_shortlisted": {
+            "type": "integer",
+            "title": "Total Shortlisted"
+          },
+          "unstreamable_count": {
+            "type": "integer",
+            "title": "Unstreamable Count"
+          },
+          "requested_count": {
+            "type": "integer",
+            "title": "Requested Count"
+          },
+          "downloading_count": {
+            "type": "integer",
+            "title": "Downloading Count"
+          },
+          "downloaded_count": {
+            "type": "integer",
+            "title": "Downloaded Count"
+          },
+          "available_count": {
+            "type": "integer",
+            "title": "Available Count"
+          },
+          "failed_count": {
+            "type": "integer",
+            "title": "Failed Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RadarrShortlistItemStatus"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured",
+          "scope",
+          "total_shortlisted",
+          "unstreamable_count",
+          "requested_count",
+          "downloading_count",
+          "downloaded_count",
+          "available_count",
+          "failed_count",
+          "items"
+        ],
+        "title": "RadarrShortlistSyncResponse"
       },
       "RadarrUpdate": {
         "properties": {
@@ -6325,6 +6612,11 @@
             },
             "type": "object",
             "title": "Language Root Folders"
+          },
+          "auto_sync_shortlist": {
+            "type": "boolean",
+            "title": "Auto Sync Shortlist",
+            "default": false
           }
         },
         "type": "object",

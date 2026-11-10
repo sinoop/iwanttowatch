@@ -438,7 +438,7 @@ def add_to_shortlist(
     tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
 ) -> Response:
     """Save a film to choose from later; it stays in the feed with its match."""
-    load_title(session, request, tmdb_id)
+    title = load_title(session, request, tmdb_id)
     # Look up where it streams before writing: the lookup caches on its own connection.
     availability(session, tmdb, [tmdb_id], user.region)
     if session.get(ShortlistItem, (user.id, tmdb_id)) is None:
@@ -447,6 +447,7 @@ def add_to_shortlist(
         # Films from search or Watch together join the feed's candidates.
         if session.get(Recommendation, (user.id, tmdb_id)) is None:
             request.app.state.feed_worker.rescore_soon(user.id)
+        radarr.auto_sync_if_unstreamable(session, tmdb, user, tmdb_id, title)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -476,6 +477,46 @@ class RadarrMovieStatus(BaseModel):
     status: str | None = None
     radarr_url: str | None = None
     error: str | None = None
+
+
+class RadarrShortlistItemStatus(BaseModel):
+    tmdb_id: int
+    title: str
+    year: int | None = None
+    status: str
+    detail: str | None = None
+
+
+class RadarrShortlistStatus(BaseModel):
+    configured: bool
+    auto_sync: bool
+    scope: str
+    total_shortlisted: int
+    unstreamable_count: int
+    to_request_count: int
+    downloading_count: int
+    downloaded_count: int
+    available_count: int
+    failed_count: int = 0
+    items: list[RadarrShortlistItemStatus]
+
+
+class RadarrShortlistSyncRequest(BaseModel):
+    scope: str = "user"
+    tmdb_ids: list[int] | None = None
+
+
+class RadarrShortlistSyncResponse(BaseModel):
+    configured: bool
+    scope: str
+    total_shortlisted: int
+    unstreamable_count: int
+    requested_count: int
+    downloading_count: int
+    downloaded_count: int
+    available_count: int
+    failed_count: int
+    items: list[RadarrShortlistItemStatus]
 
 
 class TitleDetail(BaseModel):
@@ -603,6 +644,32 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
     )
 
 
+@router.get("/titles/shortlist/radarr")
+def read_shortlist_radarr_status(
+    user: AdultUser, session: DbSession, tmdb: Tmdb, scope: str = "user"
+) -> RadarrShortlistStatus:
+    """Inspect shortlisted films and their streaming availability and Radarr status."""
+    data = radarr.inspect_shortlist_sync(session, tmdb, user, scope=scope)
+    return RadarrShortlistStatus(**data)
+
+
+@router.post("/titles/shortlist/radarr")
+def batch_request_shortlist_radarr(
+    user: AdultUser,
+    session: DbSession,
+    tmdb: Tmdb,
+    body: RadarrShortlistSyncRequest | None = None,
+) -> RadarrShortlistSyncResponse:
+    """Batch request unstreamable shortlisted films into Radarr."""
+    scope = body.scope if body else "user"
+    tmdb_ids = body.tmdb_ids if body else None
+    try:
+        data = radarr.batch_sync_shortlist(session, tmdb, user, scope=scope, tmdb_ids=tmdb_ids)
+    except radarr.RadarrError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+    return RadarrShortlistSyncResponse(**data)
+
+
 @router.get("/titles/{tmdb_id}")
 def read_title(
     tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
@@ -692,40 +759,15 @@ def download_via_radarr(
     tmdb_id: int, user: AdultUser, session: DbSession, request: Request, tmdb: Tmdb
 ) -> RadarrMovieStatus:
     """Queue a movie for download via Radarr and start an automatic search."""
-    client = radarr.client_from_settings(session)
-    if client is None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Radarr is not configured in Settings")
-
-    profile_id_str = get_setting(session, radarr.QUALITY_PROFILE_SETTING)
-    root_folder = get_setting(session, radarr.ROOT_FOLDER_SETTING)
-    min_avail = (
-        get_setting(session, radarr.MIN_AVAILABILITY_SETTING) or radarr.DEFAULT_MIN_AVAILABILITY
-    )
-
-    profile_id = int(profile_id_str) if profile_id_str and profile_id_str.isdigit() else None
-    if profile_id is None:
-        profiles = client.quality_profiles()
-        if not profiles:
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No quality profiles found in Radarr")
-        profile_id = profiles[0]["id"]
-
-    if not root_folder:
-        root_folders = client.root_folders()
-        if not root_folders:
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No root folders found in Radarr")
-        root_folder = root_folders[0]["path"]
-
     title = load_title(session, request, tmdb_id)
-    target_root_folder = radarr.resolve_root_folder(session, title.original_language, root_folder)
     try:
-        client.add_or_search(
+        radarr.queue_movie(
+            session=session,
             tmdb_id=tmdb_id,
-            quality_profile_id=profile_id,
-            root_folder_path=target_root_folder,
-            minimum_availability=min_avail,
-            search=True,
             title=title.title,
             year=title.year,
+            language=title.original_language,
+            search=True,
         )
     except radarr.RadarrError as error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Radarr error: {error}") from error

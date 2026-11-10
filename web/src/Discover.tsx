@@ -1,11 +1,11 @@
-import type { AskAnswer, ChildProfile, FeedItem, FeedPage, FeedSort, Me, Reaction } from '@iwanttowatch/api-client'
+import type { AskAnswer, ChildProfile, FeedItem, FeedPage, FeedSort, Me, RadarrShortlistStatus, Reaction } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
-import { api, errorMessage, facts, useChildren, useQuickRate, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
+import { api, errorMessage, facts, useChildren, useQuickRate, useRadarrBatchSync, useRadarrShortlist, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
 import RateDialog, { QuickTags, ReactionIcon } from './RateDialog'
 import { PlatformFilter, WatchBadges } from './Streaming'
-import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, ImdbBadge, MatchBadge } from './TitleDialog'
+import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, DownloadIcon, ImdbBadge, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
 
 const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
@@ -38,6 +38,12 @@ export default function Discover({ me }: { me: Me }) {
   const [answer, setAnswer] = useState<Answer | null>(null)
   const queryClient = useQueryClient()
   const refreshFeed = () => queryClient.invalidateQueries({ queryKey: ['feed'] })
+
+  const radarrShortlist = useRadarrShortlist(
+    'user',
+    shortlistFilter === 'only' && !!settings.data?.radarr.configured && !me.is_child
+  )
+  const batchSync = useRadarrBatchSync()
   const quickRate = useQuickRate()
   const feedback = useMutation({
     mutationFn: async ({ item, kind }: { item: FeedItem; kind: 'snoozed' | 'dismissed' }) => {
@@ -190,12 +196,14 @@ export default function Discover({ me }: { me: Me }) {
           onShortlistFilter={setShortlistFilter}
           sort={sort}
           onSort={setSort}
+          radarrShortlist={radarrShortlist.data}
+          batchSync={batchSync}
         />
       )}
 
-      {(feedback.error || shortlist.error) && (
+      {(feedback.error || shortlist.error || batchSync.error) && (
         <div className="mt-6">
-          <ErrorText>{(feedback.error ?? shortlist.error)?.message}</ErrorText>
+          <ErrorText>{(feedback.error ?? shortlist.error ?? batchSync.error)?.message}</ErrorText>
         </div>
       )}
       {feed.error && (
@@ -358,6 +366,8 @@ function Filters({
   onShortlistFilter,
   sort,
   onSort,
+  radarrShortlist,
+  batchSync,
 }: {
   page: FeedPage
   maxCertificate: string | null
@@ -375,6 +385,8 @@ function Filters({
   onShortlistFilter: (value: ShortlistFilter) => void
   sort: FeedSort
   onSort: (value: FeedSort) => void
+  radarrShortlist?: RadarrShortlistStatus | null
+  batchSync?: ReturnType<typeof useRadarrBatchSync>
 }) {
   const selectClass = (active: boolean) =>
     `rounded-lg border px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30 ${
@@ -404,6 +416,42 @@ function Filters({
         <option value="only">Shortlist only ({page.shortlist_count})</option>
         <option value="hide">Hide shortlisted ({page.shortlist_count})</option>
       </select>
+      {shortlistFilter === 'only' && radarrShortlist?.configured && (
+        <>
+          {radarrShortlist.to_request_count > 0 && (
+            <button
+              type="button"
+              disabled={batchSync?.isPending}
+              onClick={() => batchSync?.mutate({ scope: 'user' })}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50 transition-colors cursor-pointer"
+              title="Batch request unstreamable shortlisted films to Radarr"
+            >
+              <DownloadIcon className="size-3.5" />
+              {batchSync?.isPending
+                ? 'Requesting…'
+                : `Download via Radarr (${radarrShortlist.to_request_count})`}
+            </button>
+          )}
+          {radarrShortlist.to_request_count === 0 && radarrShortlist.unstreamable_count > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-xs text-white/60">
+              {radarrShortlist.downloading_count > 0 ? (
+                <>
+                  <span className="text-amber-400">⏳</span> {radarrShortlist.downloading_count} downloading in Radarr
+                </>
+              ) : (
+                <>
+                  <span className="text-emerald-400">✓</span> Radarr synced
+                </>
+              )}
+            </span>
+          )}
+          {batchSync?.data && (
+            <span className="inline-flex items-center text-xs text-emerald-400">
+              ✓ Queued {batchSync.data.requested_count} film(s)
+            </span>
+          )}
+        </>
+      )}
       {(languages.length > 1 || language) && (
         <select
           value={language ?? ''}

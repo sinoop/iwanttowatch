@@ -61,6 +61,7 @@ export function useShortlist() {
     onSettled: (_, __, { tmdbId }) => {
       queryClient.invalidateQueries({ queryKey: ['feed'] })
       queryClient.invalidateQueries({ queryKey: ['title', tmdbId] })
+      queryClient.invalidateQueries({ queryKey: ['radarr', 'shortlist'] })
     },
   })
 }
@@ -265,4 +266,44 @@ export function watchOnQuery(watchOn: WatchOn) {
     available_only: watchOn !== 'everything',
     platforms: Array.isArray(watchOn) ? watchOn : undefined,
   }
+}
+
+/** Inspect streaming availability and Radarr status of shortlisted films. */
+export function useRadarrShortlist(scope: 'user' | 'group' | 'all' = 'user', enabled = true) {
+  return useQuery({
+    queryKey: ['radarr', 'shortlist', scope],
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/v1/titles/shortlist/radarr', {
+        params: { query: { scope } },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    enabled,
+  })
+}
+
+/** Batch request unstreamable shortlisted films into Radarr. */
+export function useRadarrBatchSync() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (variables?: { scope?: 'user' | 'group' | 'all'; tmdbIds?: number[] }) => {
+      const scope = variables?.scope ?? 'user'
+      const body = {
+        scope,
+        tmdb_ids: variables?.tmdbIds ?? null,
+      }
+      const { data, error } = await api.POST('/api/v1/titles/shortlist/radarr', {
+        body,
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['radarr', 'shortlist'] })
+      queryClient.invalidateQueries({ queryKey: ['title'] })
+      queryClient.invalidateQueries({ queryKey: ['feed'] })
+      queryClient.invalidateQueries({ queryKey: ['together'] })
+    },
+  })
 }

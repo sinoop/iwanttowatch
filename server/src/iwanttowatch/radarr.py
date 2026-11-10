@@ -9,9 +9,20 @@ import logging
 from typing import Any
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from iwanttowatch.models import get_setting, set_setting
+from iwanttowatch.availability import availability, watchable
+from iwanttowatch.children import library_owners
+from iwanttowatch.models import (
+    GroupShortlistItem,
+    LibraryItem,
+    ShortlistItem,
+    Title,
+    User,
+    get_setting,
+    set_setting,
+)
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +32,7 @@ QUALITY_PROFILE_SETTING = "radarr_quality_profile_id"
 ROOT_FOLDER_SETTING = "radarr_root_folder_path"
 LANGUAGE_ROOT_FOLDERS_SETTING = "radarr_language_root_folders"
 MIN_AVAILABILITY_SETTING = "radarr_minimum_availability"
+AUTO_SYNC_SHORTLIST_SETTING = "radarr_auto_sync_shortlist"
 DEFAULT_MIN_AVAILABILITY = "announced"
 TIMEOUT_SECONDS = 5.0
 
@@ -98,6 +110,11 @@ class RadarrClient:
         if isinstance(res, list) and res and isinstance(res[0], dict):
             return res[0]
         return None
+
+    def get_all_movies(self) -> list[dict[str, Any]]:
+        """Return all movies currently tracked in Radarr."""
+        res = self._request("GET", "/api/v3/movie")
+        return res if isinstance(res, list) else []
 
     def lookup_movie(self, tmdb_id: int) -> dict[str, Any] | None:
         """Search Radarr's metadata lookup for a TMDb ID."""
@@ -268,6 +285,7 @@ def save_settings(
     root_folder_path: str | None = None,
     minimum_availability: str = DEFAULT_MIN_AVAILABILITY,
     language_root_folders: dict[str, str] | None = None,
+    auto_sync_shortlist: bool | None = None,
 ) -> None:
     """Store Radarr settings in the database."""
     set_setting(session, URL_SETTING, url.rstrip("/"))
@@ -285,6 +303,10 @@ def save_settings(
             if k and v
         }
         set_setting(session, LANGUAGE_ROOT_FOLDERS_SETTING, json.dumps(cleaned))
+    if auto_sync_shortlist is not None:
+        set_setting(
+            session, AUTO_SYNC_SHORTLIST_SETTING, "true" if auto_sync_shortlist else "false"
+        )
 
 
 def clear_settings(session: Session) -> None:
@@ -295,3 +317,381 @@ def clear_settings(session: Session) -> None:
     set_setting(session, ROOT_FOLDER_SETTING, None)
     set_setting(session, LANGUAGE_ROOT_FOLDERS_SETTING, None)
     set_setting(session, MIN_AVAILABILITY_SETTING, None)
+    set_setting(session, AUTO_SYNC_SHORTLIST_SETTING, None)
+
+
+def is_auto_sync_enabled(session: Session) -> bool:
+    """Whether unstreamable shortlisted movies are automatically requested in Radarr."""
+    return get_setting(session, AUTO_SYNC_SHORTLIST_SETTING) == "true"
+
+
+def queue_movie(
+    session: Session,
+    tmdb_id: int,
+    title: str | None = None,
+    year: int | None = None,
+    language: str | None = None,
+    client: RadarrClient | None = None,
+    profile_id: int | None = None,
+    default_root_folder: str | None = None,
+    min_avail: str | None = None,
+    search: bool = True,
+) -> dict[str, Any]:
+    """Ensure a movie is added and queued in Radarr with quality profile and root folder."""
+    if client is None:
+        client = client_from_settings(session)
+        if client is None:
+            raise RadarrError("Radarr is not configured in Settings")
+
+    if profile_id is None:
+        profile_id_str = get_setting(session, QUALITY_PROFILE_SETTING)
+        profile_id = int(profile_id_str) if profile_id_str and profile_id_str.isdigit() else None
+        if profile_id is None:
+            profiles = client.quality_profiles()
+            if not profiles:
+                raise RadarrError("No quality profiles found in Radarr")
+            profile_id = profiles[0]["id"]
+
+    if default_root_folder is None:
+        default_root_folder = get_setting(session, ROOT_FOLDER_SETTING)
+        if not default_root_folder:
+            root_folders = client.root_folders()
+            if not root_folders:
+                raise RadarrError("No root folders found in Radarr")
+            default_root_folder = root_folders[0]["path"]
+
+    if min_avail is None:
+        min_avail = get_setting(session, MIN_AVAILABILITY_SETTING) or DEFAULT_MIN_AVAILABILITY
+
+    target_root_folder = resolve_root_folder(session, language, default_root_folder)
+    return client.add_or_search(
+        tmdb_id=tmdb_id,
+        quality_profile_id=profile_id,
+        root_folder_path=target_root_folder,
+        minimum_availability=min_avail,
+        search=search,
+        title=title,
+        year=year,
+    )
+
+
+def auto_sync_if_unstreamable(
+    session: Session,
+    tmdb: Any,
+    user: User,
+    tmdb_id: int,
+    title: Title | None = None,
+) -> bool:
+    """If auto-sync is enabled and title is unstreamable on streaming/Jellyfin, queue in Radarr."""
+    if user.is_child or not is_auto_sync_enabled(session):
+        return False
+    client = client_from_settings(session)
+    if client is None:
+        return False
+
+    owners = library_owners(session, user)
+    in_library = (
+        session.scalar(
+            select(LibraryItem.tmdb_id).where(
+                LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id == tmdb_id
+            )
+        )
+        is not None
+    )
+    if in_library:
+        return False
+
+    avail_rows = availability(session, tmdb, [tmdb_id], user.region)
+    row = avail_rows.get(tmdb_id)
+    offers = watchable(row.offers, user.subscriptions) if row else []
+    if len(offers) > 0:
+        return False
+
+    if title is None:
+        title = session.get(Title, tmdb_id)
+
+    title_name = title.title if title else f"Movie {tmdb_id}"
+    year = title.year if title else None
+    lang = title.original_language if title else None
+
+    try:
+        queue_movie(
+            session=session,
+            tmdb_id=tmdb_id,
+            title=title_name,
+            year=year,
+            language=lang,
+            client=client,
+            search=True,
+        )
+        log.info("Auto-synced shortlisted movie %s (%s) to Radarr", title_name, tmdb_id)
+        return True
+    except RadarrError as err:
+        log.warning("Auto-sync to Radarr failed for %s (%s): %s", title_name, tmdb_id, err)
+        return False
+
+
+def inspect_shortlist_sync(
+    session: Session,
+    tmdb: Any,
+    user: User,
+    scope: str = "user",
+    tmdb_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """Inspect shortlisted films and determine streaming availability and Radarr status."""
+    if tmdb_ids is not None:
+        ids = list(dict.fromkeys(tmdb_ids))
+    elif scope == "group":
+        ids = list(
+            session.scalars(
+                select(GroupShortlistItem.tmdb_id).order_by(GroupShortlistItem.added_at.desc())
+            )
+        )
+    elif scope == "all":
+        user_ids = list(
+            session.scalars(select(ShortlistItem.tmdb_id).where(ShortlistItem.user_id == user.id))
+        )
+        group_ids = list(session.scalars(select(GroupShortlistItem.tmdb_id)))
+        ids = list(dict.fromkeys(user_ids + group_ids))
+    else:
+        ids = list(
+            session.scalars(
+                select(ShortlistItem.tmdb_id)
+                .where(ShortlistItem.user_id == user.id)
+                .order_by(ShortlistItem.added_at.desc())
+            )
+        )
+
+    client = client_from_settings(session, timeout=3.0)
+    configured = client is not None
+    auto_sync = is_auto_sync_enabled(session)
+
+    if not ids:
+        return {
+            "configured": configured,
+            "auto_sync": auto_sync,
+            "scope": scope,
+            "total_shortlisted": 0,
+            "unstreamable_count": 0,
+            "to_request_count": 0,
+            "downloading_count": 0,
+            "downloaded_count": 0,
+            "available_count": 0,
+            "failed_count": 0,
+            "items": [],
+        }
+
+    owners = library_owners(session, user)
+    in_library = set(
+        session.scalars(
+            select(LibraryItem.tmdb_id).where(
+                LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id.in_(ids)
+            )
+        )
+    )
+    avail_rows = availability(session, tmdb, ids, user.region)
+    titles = {t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(ids)))}
+
+    radarr_movies: dict[int, dict[str, Any]] = {}
+    if client is not None:
+        try:
+            radarr_movies = {
+                m["tmdbId"]: m
+                for m in client.get_all_movies()
+                if isinstance(m, dict) and "tmdbId" in m
+            }
+        except RadarrError as err:
+            log.warning("Could not list Radarr movies during shortlist inspection: %s", err)
+
+    items: list[dict[str, Any]] = []
+    unstreamable_count = 0
+    to_request_count = 0
+    downloading_count = 0
+    downloaded_count = 0
+    available_count = 0
+
+    for tmdb_id in ids:
+        title_obj = titles.get(tmdb_id)
+        title_name = title_obj.title if title_obj else f"Movie {tmdb_id}"
+        year = title_obj.year if title_obj else None
+
+        on_jellyfin = tmdb_id in in_library
+        row = avail_rows.get(tmdb_id)
+        offers = watchable(row.offers, user.subscriptions) if row else []
+        is_streamable = on_jellyfin or len(offers) > 0
+
+        if is_streamable:
+            available_count += 1
+            detail = "Available on Jellyfin" if on_jellyfin else "Available on streaming"
+            items.append(
+                {
+                    "tmdb_id": tmdb_id,
+                    "title": title_name,
+                    "year": year,
+                    "status": "available",
+                    "detail": detail,
+                }
+            )
+            continue
+
+        unstreamable_count += 1
+        rm = radarr_movies.get(tmdb_id)
+        if rm:
+            if rm.get("hasFile"):
+                downloaded_count += 1
+                items.append(
+                    {
+                        "tmdb_id": tmdb_id,
+                        "title": title_name,
+                        "year": year,
+                        "status": "downloaded",
+                        "detail": "Downloaded in Radarr",
+                    }
+                )
+            elif rm.get("monitored"):
+                downloading_count += 1
+                items.append(
+                    {
+                        "tmdb_id": tmdb_id,
+                        "title": title_name,
+                        "year": year,
+                        "status": "downloading",
+                        "detail": "Downloading in Radarr",
+                    }
+                )
+            else:
+                to_request_count += 1
+                items.append(
+                    {
+                        "tmdb_id": tmdb_id,
+                        "title": title_name,
+                        "year": year,
+                        "status": "to_request",
+                        "detail": "In Radarr but unmonitored",
+                    }
+                )
+        else:
+            to_request_count += 1
+            items.append(
+                {
+                    "tmdb_id": tmdb_id,
+                    "title": title_name,
+                    "year": year,
+                    "status": "to_request",
+                    "detail": "Not in Radarr",
+                }
+            )
+
+    return {
+        "configured": configured,
+        "auto_sync": auto_sync,
+        "scope": scope,
+        "total_shortlisted": len(ids),
+        "unstreamable_count": unstreamable_count,
+        "to_request_count": to_request_count,
+        "downloading_count": downloading_count,
+        "downloaded_count": downloaded_count,
+        "available_count": available_count,
+        "failed_count": 0,
+        "items": items,
+    }
+
+
+def batch_sync_shortlist(
+    session: Session,
+    tmdb: Any,
+    user: User,
+    scope: str = "user",
+    tmdb_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """Batch queue unstreamable shortlisted movies into Radarr."""
+    inspection = inspect_shortlist_sync(session, tmdb, user, scope=scope, tmdb_ids=tmdb_ids)
+    client = client_from_settings(session)
+    if client is None:
+        raise RadarrError("Radarr is not configured in Settings")
+
+    titles = {
+        t.tmdb_id: t
+        for t in session.scalars(
+            select(Title).where(Title.tmdb_id.in_([i["tmdb_id"] for i in inspection["items"]]))
+        )
+    }
+
+    requested_count = 0
+    failed_count = 0
+    updated_items: list[dict[str, Any]] = []
+
+    profile_id_str = get_setting(session, QUALITY_PROFILE_SETTING)
+    profile_id = int(profile_id_str) if profile_id_str and profile_id_str.isdigit() else None
+    if profile_id is None:
+        profiles = client.quality_profiles()
+        if profiles:
+            profile_id = profiles[0]["id"]
+
+    default_root_folder = get_setting(session, ROOT_FOLDER_SETTING)
+    if not default_root_folder:
+        root_folders = client.root_folders()
+        if root_folders:
+            default_root_folder = root_folders[0]["path"]
+
+    min_avail = get_setting(session, MIN_AVAILABILITY_SETTING) or DEFAULT_MIN_AVAILABILITY
+
+    for item in inspection["items"]:
+        if item["status"] != "to_request":
+            updated_items.append(item)
+            continue
+
+        tmdb_id = item["tmdb_id"]
+        title_obj = titles.get(tmdb_id)
+        title_name = title_obj.title if title_obj else item["title"]
+        year = title_obj.year if title_obj else item["year"]
+        lang = title_obj.original_language if title_obj else None
+
+        try:
+            queue_movie(
+                session=session,
+                tmdb_id=tmdb_id,
+                title=title_name,
+                year=year,
+                language=lang,
+                client=client,
+                profile_id=profile_id,
+                default_root_folder=default_root_folder,
+                min_avail=min_avail,
+                search=True,
+            )
+            requested_count += 1
+            updated_items.append(
+                {
+                    "tmdb_id": tmdb_id,
+                    "title": title_name,
+                    "year": year,
+                    "status": "requested",
+                    "detail": "Queued in Radarr",
+                }
+            )
+        except RadarrError as err:
+            failed_count += 1
+            log.warning("Batch sync failed for tmdb %s (%s): %s", tmdb_id, title_name, err)
+            updated_items.append(
+                {
+                    "tmdb_id": tmdb_id,
+                    "title": title_name,
+                    "year": year,
+                    "status": "failed",
+                    "detail": str(err),
+                }
+            )
+
+    return {
+        "configured": True,
+        "scope": scope,
+        "total_shortlisted": inspection["total_shortlisted"],
+        "unstreamable_count": inspection["unstreamable_count"],
+        "requested_count": requested_count,
+        "downloading_count": inspection["downloading_count"],
+        "downloaded_count": inspection["downloaded_count"],
+        "available_count": inspection["available_count"],
+        "failed_count": failed_count,
+        "items": updated_items,
+    }

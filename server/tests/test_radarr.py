@@ -49,9 +49,11 @@ class FakeRadarr:
 
         if path == "/api/v3/movie" and request.method == "GET":
             tmdb_id_str = request.url.params.get("tmdbId")
-            if tmdb_id_str and int(tmdb_id_str) in self.movies:
-                return httpx.Response(200, json=[self.movies[int(tmdb_id_str)]])
-            return httpx.Response(200, json=[])
+            if tmdb_id_str:
+                if int(tmdb_id_str) in self.movies:
+                    return httpx.Response(200, json=[self.movies[int(tmdb_id_str)]])
+                return httpx.Response(200, json=[])
+            return httpx.Response(200, json=list(self.movies.values()))
 
         if path == "/api/v3/movie/lookup/tmdb" and request.method == "GET":
             tmdb_id = int(request.url.params["tmdbId"])
@@ -225,3 +227,162 @@ def test_title_radarr_trigger(client: TestClient, fake_radarr: FakeRadarr) -> No
     title_after = client.get(f"/api/v1/titles/{tmdb_id}").json()
     assert title_after["radarr"]["status"] == "downloading"
     assert title_after["radarr"]["monitored"] is True
+
+
+def test_radarr_settings_auto_sync(client: TestClient, fake_radarr: FakeRadarr) -> None:
+    # Connect with auto_sync_shortlist enabled
+    ok = client.put(
+        "/api/v1/settings/radarr",
+        json={
+            "url": RADARR,
+            "api_key": API_KEY,
+            "auto_sync_shortlist": True,
+        },
+    )
+    assert ok.status_code == 200
+    assert ok.json()["radarr"]["auto_sync_shortlist"] is True
+
+    # Check GET /api/v1/settings
+    settings = client.get("/api/v1/settings").json()
+    assert settings["radarr"]["auto_sync_shortlist"] is True
+
+    # Disable auto sync
+    update = client.put(
+        "/api/v1/settings/radarr",
+        json={
+            "url": RADARR,
+            "api_key": API_KEY,
+            "auto_sync_shortlist": False,
+        },
+    )
+    assert update.status_code == 200
+    assert update.json()["radarr"]["auto_sync_shortlist"] is False
+
+
+def test_radarr_shortlist_inspect_and_batch_sync(
+    client: TestClient, fake_radarr: FakeRadarr
+) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    client.put(
+        "/api/v1/settings/radarr",
+        json={
+            "url": RADARR,
+            "api_key": API_KEY,
+            "root_folder_path": "/data/movies/english",
+            "language_root_folders": {"ml": "/data/movies/malayalam"},
+            "auto_sync_shortlist": False,
+        },
+    )
+
+    # Shortlist 401 (Premam, lang=ml, unstreamable)
+    res401 = client.put("/api/v1/titles/401/shortlist")
+    assert res401.status_code == 204
+
+    # Pre-populate 201 in FakeRadarr as already downloaded (hasFile=True)
+    fake_radarr.movies[201] = {
+        "id": 10,
+        "title": "Kumbalangi Nights",
+        "tmdbId": 201,
+        "year": 2019,
+        "titleSlug": "kumbalangi-nights-201",
+        "rootFolderPath": "/data/movies/malayalam",
+        "hasFile": True,
+        "monitored": True,
+        "isAvailable": True,
+    }
+    # Shortlist 201 as well
+    client.put("/api/v1/titles/201/shortlist")
+
+    # Inspect shortlist radarr status
+    insp = client.get("/api/v1/titles/shortlist/radarr?scope=user")
+    assert insp.status_code == 200
+    data = insp.json()
+    assert data["configured"] is True
+    assert data["total_shortlisted"] == 2
+    assert data["unstreamable_count"] == 2
+    assert data["to_request_count"] == 1  # 401 is pending request
+    assert data["downloaded_count"] == 1  # 201 hasFile
+    assert data["downloading_count"] == 0
+
+    # Batch sync shortlist to Radarr
+    batch = client.post("/api/v1/titles/shortlist/radarr", json={"scope": "user"})
+    assert batch.status_code == 200
+    batch_res = batch.json()
+    assert batch_res["requested_count"] == 1
+    assert batch_res["downloaded_count"] == 1
+
+    # Verify FakeRadarr now has 401 with language-routed folder
+    assert 401 in fake_radarr.movies
+    assert fake_radarr.movies[401]["rootFolderPath"] == "/data/movies/malayalam"
+
+    # Inspect again: to_request_count is now 0, downloading_count is 1
+    insp2 = client.get("/api/v1/titles/shortlist/radarr?scope=user")
+    assert insp2.status_code == 200
+    d2 = insp2.json()
+    assert d2["to_request_count"] == 0
+    assert d2["downloading_count"] == 1
+    assert d2["downloaded_count"] == 1
+
+
+def test_radarr_auto_sync_on_shortlist(client: TestClient, fake_radarr: FakeRadarr) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    # Configure with auto-sync enabled
+    client.put(
+        "/api/v1/settings/radarr",
+        json={
+            "url": RADARR,
+            "api_key": API_KEY,
+            "root_folder_path": "/data/movies/english",
+            "language_root_folders": {"ml": "/data/movies/malayalam"},
+            "auto_sync_shortlist": True,
+        },
+    )
+
+    # 401 is unstreamable; adding to shortlist should automatically queue in Radarr!
+    assert 401 not in fake_radarr.movies
+    res = client.put("/api/v1/titles/401/shortlist")
+    assert res.status_code == 204
+    assert 401 in fake_radarr.movies
+    assert fake_radarr.movies[401]["rootFolderPath"] == "/data/movies/malayalam"
+    assert fake_radarr.movies[401]["monitored"] is True
+
+    # Now turn auto-sync off
+    client.put(
+        "/api/v1/settings/radarr",
+        json={
+            "url": RADARR,
+            "api_key": API_KEY,
+            "auto_sync_shortlist": False,
+        },
+    )
+    # Shortlist 301; should NOT be queued in Radarr
+    assert 301 not in fake_radarr.movies
+    res301 = client.put("/api/v1/titles/301/shortlist")
+    assert res301.status_code == 204
+    assert 301 not in fake_radarr.movies
+
+
+def test_radarr_group_shortlist_sync(client: TestClient, fake_radarr: FakeRadarr) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    client.put(
+        "/api/v1/settings/radarr",
+        json={
+            "url": RADARR,
+            "api_key": API_KEY,
+            "root_folder_path": "/data/movies/english",
+            "language_root_folders": {"ml": "/data/movies/malayalam"},
+            "auto_sync_shortlist": True,
+        },
+    )
+
+    # Add 401 to group shortlist; with auto-sync on, should queue in Radarr!
+    assert 401 not in fake_radarr.movies
+    res = client.put("/api/v1/together/shortlist/401")
+    assert res.status_code == 204
+    assert 401 in fake_radarr.movies
+
+    # Inspect group shortlist
+    group_insp = client.get("/api/v1/titles/shortlist/radarr?scope=group")
+    assert group_insp.status_code == 200
+    assert group_insp.json()["total_shortlisted"] == 1
+    assert group_insp.json()["downloading_count"] == 1

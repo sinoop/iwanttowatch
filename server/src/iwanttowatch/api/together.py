@@ -9,6 +9,7 @@ from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, Up
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from iwanttowatch import radarr
 from iwanttowatch.api.deps import AdultUser, CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.reactions import load_title
 from iwanttowatch.api.schemas import ImdbScore, imdb_score
@@ -311,12 +312,13 @@ def add_to_group_shortlist(
     tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
 ) -> Response:
     """Save a film for everyone on this server to choose from on Watch together."""
-    load_title(session, request, tmdb_id)
+    title = load_title(session, request, tmdb_id)
     # Look up where it streams before writing: the lookup caches on its own connection.
     availability(session, tmdb, [tmdb_id], user.region)
     if session.get(GroupShortlistItem, tmdb_id) is None:
         session.add(GroupShortlistItem(tmdb_id=tmdb_id, added_by=user.id))
         session.commit()
+        radarr.auto_sync_if_unstreamable(session, tmdb, user, tmdb_id, title)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
