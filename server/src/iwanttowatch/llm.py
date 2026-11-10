@@ -9,6 +9,7 @@ see in Settings how often it's called and what it was sent.
 
 import logging
 import time
+from datetime import timedelta
 from typing import Any, Literal, Protocol
 
 import httpx
@@ -16,6 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from iwanttowatch.db import utcnow
 from iwanttowatch.models import LlmCall, get_setting
 
 log = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ TIMEOUT_SECONDS = 180
 # Gemini answers 503 when overloaded and 429 at its free-tier limit, usually briefly.
 RETRY_STATUSES = {429, 500, 503}
 RETRY_DELAYS = (2.0, 5.0)
-# Calls kept in the log; older ones are deleted as new ones arrive.
+# Calls kept in the log; older than 24 hours or beyond 200 are deleted as new ones arrive.
 KEEP_CALLS = 200
 
 Purpose = Literal["suggestions", "persona", "themes", "moods", "why", "ask", "check", "test"]
@@ -157,7 +159,12 @@ class LoggedProvider:
                     session.add(call)
                     session.flush()
                     keep = select(LlmCall.id).order_by(LlmCall.id.desc()).limit(KEEP_CALLS)
-                    session.execute(delete(LlmCall).where(LlmCall.id.not_in(keep)))
+                    session.execute(
+                        delete(LlmCall).where(
+                            (LlmCall.id.not_in(keep))
+                            | (LlmCall.created_at < utcnow() - timedelta(days=1))
+                        )
+                    )
                     session.commit()
             except SQLAlchemyError:
                 # The log is for debugging; never fail the call over it.

@@ -396,6 +396,7 @@ def llm_calls(session: Session, args: CallsArgs) -> dict[str, Any]:
     query = (
         select(LlmCall, User.username)
         .outerjoin(User, User.id == LlmCall.user_id)
+        .where(LlmCall.created_at >= now - timedelta(days=1))
         .order_by(LlmCall.id.desc())
         .limit(args.limit)
     )

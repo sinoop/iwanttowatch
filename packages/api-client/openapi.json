@@ -549,18 +549,29 @@
     "/api/v1/settings/llm/calls": {
       "get": {
         "summary": "Read Llm Calls",
-        "description": "Recent calls to the LLM with their prompts and replies, and how many were made.",
+        "description": "Recent calls to the LLM in the last 24 hours with their prompts and replies.",
         "operationId": "read_llm_calls_api_v1_settings_llm_calls_get",
         "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
           {
             "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 200,
+              "maximum": 100,
               "minimum": 1,
-              "default": 50,
+              "default": 10,
               "title": "Limit"
             }
           }
@@ -5186,6 +5197,18 @@
       },
       "LlmActivity": {
         "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages"
+          },
           "last_hour": {
             "type": "integer",
             "title": "Last Hour"
@@ -5208,6 +5231,9 @@
         },
         "type": "object",
         "required": [
+          "total",
+          "page",
+          "total_pages",
           "last_hour",
           "last_day",
           "failed_last_day",

@@ -202,3 +202,84 @@ def test_the_next_llm_in_the_admins_order_answers_when_the_first_fails(
     assert gemini.call_count == 4  # the test prompt and 3 tries at the limit
     client.delete("/api/v1/settings/llm/ollama")
     assert client.get("/api/v1/me/persona").json()["llm_configured"] is False
+
+
+def test_llm_activity_pagination_and_24h_limit(client: TestClient) -> None:
+    from datetime import timedelta
+
+    from iwanttowatch.db import utcnow
+    from iwanttowatch.models import LlmCall
+
+    engine = client.app.state.engine  # type: ignore[attr-defined]
+    now = utcnow()
+
+    # Insert 15 calls: 12 within the last 24 hours, 3 older than 24 hours
+    with Session(engine) as session:
+        for i in range(12):
+            session.add(
+                LlmCall(
+                    created_at=now - timedelta(minutes=i * 10),
+                    purpose="test",
+                    provider="gemini",
+                    model="gemini-flash-latest",
+                    system="sys",
+                    prompt=f"prompt {i}",
+                    reply=f"reply {i}",
+                    error=None,
+                    duration_ms=100,
+                )
+            )
+        for i in range(3):
+            session.add(
+                LlmCall(
+                    created_at=now - timedelta(hours=25 + i),
+                    purpose="test",
+                    provider="gemini",
+                    model="gemini-flash-latest",
+                    system="sys",
+                    prompt=f"old prompt {i}",
+                    reply=f"old reply {i}",
+                    error=None,
+                    duration_ms=100,
+                )
+            )
+        session.commit()
+
+    # Default request: page=1, limit=10 -> returns 10 calls, total=12, total_pages=2, page=1
+    res1 = client.get("/api/v1/settings/llm/calls").json()
+    assert res1["total"] == 12
+    assert res1["page"] == 1
+    assert res1["total_pages"] == 2
+    assert len(res1["calls"]) == 10
+    # Calls older than 24 hours are excluded
+    assert not any("old" in c["prompt"] for c in res1["calls"])
+
+    # Page 2 returns the remaining 2 calls
+    res2 = client.get("/api/v1/settings/llm/calls?page=2").json()
+    assert res2["total"] == 12
+    assert res2["page"] == 2
+    assert res2["total_pages"] == 2
+    assert len(res2["calls"]) == 2
+
+    # Out of range page automatically clamps to last page
+    res_clamped = client.get("/api/v1/settings/llm/calls?page=99").json()
+    assert res_clamped["page"] == 2
+    assert len(res_clamped["calls"]) == 2
+
+    # When a new call is logged, it purges entries older than 24 hours from the DB
+    with Session(engine) as session:
+        assert session.query(LlmCall).count() == 15
+    dummy_inner = type("Dummy", (), {"generate": lambda *a, **k: "OK"})()
+    with Session(engine) as session:
+        provider = llm.LoggedProvider(
+            inner=dummy_inner,
+            session=session,
+            purpose="test",
+            provider="gemini",
+            model="m",
+            user_id=None,
+        )
+        provider.generate("sys", "prompt")
+    with Session(engine) as session:
+        # 12 recent + 1 new = 13 calls; the 3 calls older than 24h were deleted!
+        assert session.query(LlmCall).count() == 13

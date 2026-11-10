@@ -142,6 +142,9 @@ class LlmCallOut(BaseModel):
 
 
 class LlmActivity(BaseModel):
+    total: int
+    page: int
+    total_pages: int
     last_hour: int
     last_day: int
     failed_last_day: int
@@ -497,10 +500,14 @@ def remove_mcp_key(_admin: AdminUser, session: DbSession) -> ServerSettings:
 
 @router.get("/llm/calls")
 def read_llm_calls(
-    _admin: AdminUser, session: DbSession, limit: int = Query(50, ge=1, le=200)
+    _admin: AdminUser,
+    session: DbSession,
+    page: int = Query(1, ge=1),
+    limit: int = Query(10, ge=1, le=100),
 ) -> LlmActivity:
-    """Recent calls to the LLM with their prompts and replies, and how many were made."""
+    """Recent calls to the LLM in the last 24 hours with their prompts and replies."""
     now = utcnow()
+    since_day = now - timedelta(days=1)
 
     def count(since: timedelta, failed: bool = False) -> int:
         query = select(func.count()).where(LlmCall.created_at >= now - since)
@@ -508,15 +515,25 @@ def read_llm_calls(
             query = query.where(LlmCall.error.is_not(None))
         return session.scalar(query) or 0
 
+    total = count(timedelta(days=1))
+    total_pages = max(1, (total + limit - 1) // limit)
+    page = min(page, total_pages) if total > 0 else 1
+    offset = (page - 1) * limit
+
     rows = session.execute(
         select(LlmCall, User.display_name)
         .outerjoin(User, User.id == LlmCall.user_id)
+        .where(LlmCall.created_at >= since_day)
         .order_by(LlmCall.id.desc())
+        .offset(offset)
         .limit(limit)
     ).all()
     return LlmActivity(
+        total=total,
+        page=page,
+        total_pages=total_pages,
         last_hour=count(timedelta(hours=1)),
-        last_day=count(timedelta(days=1)),
+        last_day=total,
         failed_last_day=count(timedelta(days=1), failed=True),
         calls=[
             LlmCallOut(

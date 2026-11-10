@@ -400,15 +400,21 @@ function McpSection({ enabled }: { enabled: boolean }) {
 }
 
 function LlmActivity() {
+  const [page, setPage] = useState(1)
   const activity = useQuery({
-    queryKey: ['llm-calls'],
+    queryKey: ['llm-calls', page],
     queryFn: async () => {
-      const { data, error } = await api.GET('/api/v1/settings/llm/calls', { params: { query: { limit: 50 } } })
+      const { data, error } = await api.GET('/api/v1/settings/llm/calls', {
+        params: { query: { page, limit: 10 } },
+      })
       if (error) throw new Error(errorMessage(error))
       return data
     },
+    placeholderData: (previous) => previous,
   })
   const data = activity.data
+  const currentPage = data?.page ?? page
+  const totalPages = data?.total_pages ?? 1
 
   return (
     <section className="mt-6 max-w-3xl rounded-xl border border-white/10 p-5">
@@ -424,7 +430,7 @@ function LlmActivity() {
         </Button>
       </div>
       <p className="mt-2 text-sm text-white/60">
-        Every request iWantToWatch sends to the AI, with the exact prompt and reply. The newest 200 are kept.
+        Every request iWantToWatch sends to the AI in the last 24 hours, with the exact prompt and reply.
       </p>
       {activity.error && (
         <div className="mt-3">
@@ -443,46 +449,73 @@ function LlmActivity() {
             )}
           </p>
           {data.calls.length === 0 ? (
-            <p className="mt-3 text-sm text-white/50">No AI calls yet.</p>
+            <p className="mt-3 text-sm text-white/50">No AI calls in the last 24 hours.</p>
           ) : (
-            <ul className="mt-3 divide-y divide-white/10 border-y border-white/10">
-              {data.calls.map((call) => (
-                <li key={call.id}>
-                  <details className="group py-2.5 text-sm">
-                    <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="text-white/45 tabular-nums">
-                        {new Date(call.created_at).toLocaleString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </span>
-                      <span className="font-medium">{PURPOSES[call.purpose] ?? call.purpose}</span>
-                      {call.user && <span className="text-white/60">for {call.user}</span>}
-                      <span className="text-white/45">{call.model}</span>
-                      <span className="text-white/45 tabular-nums">{(call.duration_ms / 1000).toFixed(1)} s</span>
-                      <span
-                        className={`ml-auto rounded px-1.5 py-0.5 text-xs ${
-                          call.error ? 'bg-red-500/15 text-red-300' : 'bg-emerald-500/15 text-emerald-300'
-                        }`}
-                      >
-                        {call.error ? 'Failed' : 'OK'}
-                      </span>
-                    </summary>
-                    <div className="mt-3 space-y-3">
-                      <LlmText label="System prompt" text={call.system} />
-                      <LlmText label="Prompt" text={call.prompt} />
-                      {call.error ? (
-                        <LlmText label="Error" text={call.error} />
-                      ) : (
-                        <LlmText label="Reply" text={call.reply ?? ''} />
-                      )}
-                    </div>
-                  </details>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="mt-3 divide-y divide-white/10 border-y border-white/10">
+                {data.calls.map((call) => (
+                  <li key={call.id}>
+                    <details className="group py-2.5 text-sm">
+                      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="text-white/45 tabular-nums">
+                          {new Date(call.created_at).toLocaleString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                        <span className="font-medium">{PURPOSES[call.purpose] ?? call.purpose}</span>
+                        {call.user && <span className="text-white/60">for {call.user}</span>}
+                        <span className="text-white/45">{call.model}</span>
+                        <span className="text-white/45 tabular-nums">{(call.duration_ms / 1000).toFixed(1)} s</span>
+                        <span
+                          className={`ml-auto rounded px-1.5 py-0.5 text-xs ${
+                            call.error ? 'bg-red-500/15 text-red-300' : 'bg-emerald-500/15 text-emerald-300'
+                          }`}
+                        >
+                          {call.error ? 'Failed' : 'OK'}
+                        </span>
+                      </summary>
+                      <div className="mt-3 space-y-3">
+                        <LlmText label="System prompt" text={call.system} />
+                        <LlmText label="Prompt" text={call.prompt} />
+                        {call.error ? (
+                          <LlmText label="Error" text={call.error} />
+                        ) : (
+                          <LlmText label="Reply" text={call.reply ?? ''} />
+                        )}
+                      </div>
+                    </details>
+                  </li>
+                ))}
+              </ul>
+              {totalPages > 1 && (
+                <div className="mt-4 flex items-center justify-between text-sm">
+                  <span className="text-white/60">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      className="border border-white/10 px-3 py-1 text-xs"
+                      onClick={() => setPage(Math.max(1, currentPage - 1))}
+                      disabled={currentPage <= 1 || activity.isFetching}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="border border-white/10 px-3 py-1 text-xs"
+                      onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
+                      disabled={currentPage >= totalPages || activity.isFetching}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </>
       )}

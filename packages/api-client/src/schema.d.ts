@@ -307,7 +307,7 @@ export interface paths {
         };
         /**
          * Read Llm Calls
-         * @description Recent calls to the LLM with their prompts and replies, and how many were made.
+         * @description Recent calls to the LLM in the last 24 hours with their prompts and replies.
          */
         get: operations["read_llm_calls_api_v1_settings_llm_calls_get"];
         put?: never;
@@ -1956,6 +1956,12 @@ export interface components {
         };
         /** LlmActivity */
         LlmActivity: {
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Total Pages */
+            total_pages: number;
             /** Last Hour */
             last_hour: number;
             /** Last Day */
@@ -3121,6 +3127,7 @@ export interface operations {
     read_llm_calls_api_v1_settings_llm_calls_get: {
         parameters: {
             query?: {
+                page?: number;
                 limit?: number;
             };
             header?: never;
