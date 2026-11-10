@@ -145,22 +145,29 @@ def effective_ratings(user_id: int) -> Subquery:
     return select(ranked).where(ranked.c.rank == 1).subquery()
 
 
-# Where each reaction sits in the user's own rating distribution (Criticker-style), and
-# the score used until there are enough numeric ratings to read that distribution from.
-REACTION_PERCENTILES = {"disliked": 0.15, "liked": 0.65, "loved": 0.90}
-# The fallback scores sit near a typical rater's 5th, 65th and 90th percentiles.
+def rating_to_reaction(rating: float) -> str:
+    """Map a 0–10 numeric rating (e.g. from IMDb or Letterboxd) to the 3-point reaction scale."""
+    if rating >= 9.0:
+        return "loved"
+    if rating >= 6.0:
+        return "liked"
+    return "disliked"
+
+
+# Target percentiles for the recommender labels:
+REACTION_PERCENTILES = {"disliked": 0.15, "liked": 0.70, "loved": 0.95}
+# Nominal 0–10 scores for divergence and persona summaries:
 REACTION_FALLBACK = {"disliked": 3.0, "liked": 8.0, "loved": 9.5}
 MIN_RATINGS_FOR_DISTRIBUTION = 10
 
 
 def numeric_ratings(session: Session, user_id: int) -> list[float]:
-    """The user's imported 1–10 ratings, lowest first. In-app reactions are left out so
-    they never shape the scale they are read against."""
+    """The user's imported 1–10 ratings, lowest first."""
     return sorted(
         rating
         for rating in session.scalars(
             select(UserTitle.rating).where(
-                UserTitle.user_id == user_id, UserTitle.reaction.is_(None)
+                UserTitle.user_id == user_id, UserTitle.rating.is_not(None)
             )
         )
         if rating is not None
@@ -168,26 +175,24 @@ def numeric_ratings(session: Session, user_id: int) -> list[float]:
 
 
 def reaction_score(numeric: Sequence[float], reaction: str) -> float:
-    """The 0–10 score a reaction stands for, given the user's sorted numeric ratings."""
-    if len(numeric) < MIN_RATINGS_FOR_DISTRIBUTION:
-        return REACTION_FALLBACK[reaction]
-    return float(numeric[round(REACTION_PERCENTILES[reaction] * (len(numeric) - 1))])
+    """The nominal 0–10 score a reaction stands for."""
+    return REACTION_FALLBACK.get(reaction, 8.0)
 
 
 def refresh_reaction_ratings(session: Session, user_id: int) -> int:
-    """Re-derive every in-app reaction's 0–10 score from the user's current numeric
-    ratings, so reactions given before an import follow the scale it reveals. The caller
-    commits. Returns how many scores changed."""
-    numeric = numeric_ratings(session, user_id)
+    """Ensure every rated entry has its 3-point reaction and nominal score set.
+    The caller commits. Returns how many rows changed."""
     changed = 0
-    for entry in session.scalars(
-        select(UserTitle).where(UserTitle.user_id == user_id, UserTitle.reaction.is_not(None))
-    ):
-        if entry.reaction not in REACTION_FALLBACK:
-            continue
-        score = reaction_score(numeric, entry.reaction)
-        if entry.rating != score:
-            entry.rating = score
+    for entry in session.scalars(select(UserTitle).where(UserTitle.user_id == user_id)):
+        if entry.reaction is None and entry.rating is not None:
+            entry.reaction = rating_to_reaction(entry.rating)
+            changed += 1
+        elif (
+            entry.reaction is not None
+            and entry.rating is None
+            and entry.reaction in REACTION_FALLBACK
+        ):
+            entry.rating = REACTION_FALLBACK[entry.reaction]
             changed += 1
     return changed
 
@@ -555,7 +560,13 @@ def find_divergent_ratings(
         if consensus is None:
             continue
         c_rating, votes = consensus
-        user_rating = float(r.rating)
+        user_rating = (
+            float(r.rating)
+            if r.rating is not None
+            else (REACTION_FALLBACK.get(r.reaction, 7.5) if r.reaction else None)
+        )
+        if user_rating is None:
+            continue
         diff = round(user_rating - c_rating, 1)
         if abs(diff) < threshold:
             continue

@@ -155,7 +155,7 @@ def test_ollama_persona_and_refresh_after_import(
     assert persona["text"] == PERSONA and persona["based_on_ratings"] == 6
     messages = json.loads(ollama.calls.last.request.content)["messages"]
     assert [m["role"] for m in messages] == ["system", "user"]
-    assert "Léon: The Professional / Léon (1994, fr): 9/10" in messages[1]["content"]
+    assert "Léon: The Professional / Léon (1994, fr): loved" in messages[1]["content"]
     client.app.state.feed_worker.wait_until_idle()  # type: ignore[attr-defined]
 
 

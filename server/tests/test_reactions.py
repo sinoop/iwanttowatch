@@ -8,7 +8,6 @@ from test_imports import KEY
 
 from iwanttowatch.feed import user_labels
 from iwanttowatch.models import Title, UserTitle
-from iwanttowatch.recommender import percentile_of
 from iwanttowatch.tags import TAGS
 from iwanttowatch.taste import refresh_reaction_ratings, taste_summary
 
@@ -69,7 +68,7 @@ def test_reaction_and_tags_feed_ratings_and_the_persona_summary(client: TestClie
 
 
 def test_reaction_scores_follow_the_users_own_rating_scale(client: TestClient) -> None:
-    # A generous rater: on their scale "liked" is an 8, not the default 7.
+    # Stable 3-point scores: in-app reactions keep distinct scores and never collide.
     scores = [4, 5, 6, 6, 7, 8, 8, 9, 9, 10]
     with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
         for i, score in enumerate(scores):
@@ -88,9 +87,20 @@ def test_reaction_scores_follow_the_users_own_rating_scale(client: TestClient) -
                 )
             )
         session.commit()
-    add_title(client, 500, ["Drama"])
+        # Backfill reaction for the imported ratings.
+        assert refresh_reaction_ratings(session, 1) == 10
+        session.commit()
 
-    expected = {"disliked": 5.0, "liked": 8.0, "loved": 9.0}  # 15th, 65th, 90th percentile
+    # Imported ratings map to 3-point reactions:
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        ut = {e.tmdb_id: e.reaction for e in session.scalars(select(UserTitle)).all()}
+    assert ut[109] == "loved"  # score 10
+    assert ut[108] == "loved"  # score 9
+    assert ut[105] == "liked"  # score 8
+    assert ut[100] == "disliked"  # score 4
+
+    add_title(client, 500, ["Drama"])
+    expected = {"disliked": 3.0, "liked": 8.0, "loved": 9.5}
     for reaction, expected_score in expected.items():
         assert react(client, 500, reaction, []).status_code == 200
         rated = {i["tmdb_id"]: i for i in client.get("/api/v1/ratings").json()["items"]}
@@ -147,25 +157,14 @@ def test_earlier_reactions_follow_ratings_imported_afterwards(client: TestClient
     assert react(client, 500, "liked", []).status_code == 200
     assert client.get("/api/v1/ratings").json()["items"][0]["rating"] == 8.0  # the default
 
-    # A harsh rater: their 65th percentile is a 6, so "liked" drops from the default 8.
+    # Imported ratings without reactions get backfilled by refresh_reaction_ratings:
     add_imported(client, [3, 4, 4, 5, 5, 6, 6, 7, 7, 8])
     with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
-        assert refresh_reaction_ratings(session, 1) == 1
+        assert refresh_reaction_ratings(session, 1) == 10
         session.commit()
         assert refresh_reaction_ratings(session, 1) == 0  # nothing left to change
     rated = {i["tmdb_id"]: i for i in client.get("/api/v1/ratings").json()["items"]}
-    assert rated[500]["rating"] == 6.0 and rated[500]["reaction"] == "liked"
-
-    # A more generous scale moves the same reaction up, without tapping it again.
-    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
-        for entry in session.scalars(select(UserTitle).where(UserTitle.source == "imdb")):
-            assert entry.rating is not None
-            entry.rating = entry.rating + 2
-        session.commit()
-        assert refresh_reaction_ratings(session, 1) == 1
-        session.commit()
-    rated = {i["tmdb_id"]: i for i in client.get("/api/v1/ratings").json()["items"]}
-    assert rated[500]["rating"] == 8.0
+    assert rated[500]["rating"] == 8.0 and rated[500]["reaction"] == "liked"
 
 
 def test_reactions_do_not_join_the_pool_they_are_scored_against(client: TestClient) -> None:
@@ -179,7 +178,5 @@ def test_reactions_do_not_join_the_pool_they_are_scored_against(client: TestClie
         after = {label.tmdb_id: label.value for label in user_labels(session, 1)}
     # Twenty "liked" films add no ties to the imported ratings' scale...
     assert all(after[i] == before[i] for i in before)
-    # ...and each lands where an imported 8 would.
-    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
-        eight = percentile_of([4, 5, 6, 6, 7, 8, 8, 9, 9, 10], 8.0)
-    assert all(after[i] == eight for i in range(500, 520))
+    # ...and each receives the discrete liked label weight (0.70).
+    assert all(after[i] == 0.70 for i in range(500, 520))

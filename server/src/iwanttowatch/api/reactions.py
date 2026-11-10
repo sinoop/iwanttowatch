@@ -13,7 +13,7 @@ from iwanttowatch.api.deps import CurrentUser, DbSession
 from iwanttowatch.catalog import ensure_title
 from iwanttowatch.models import Title, User, UserTitle
 from iwanttowatch.tags import BY_ID, MAX_NOTE, MAX_TAGS, Group, options_for
-from iwanttowatch.taste import refresh_reaction_ratings
+from iwanttowatch.taste import REACTION_FALLBACK, refresh_reaction_ratings
 from iwanttowatch.tmdb import TmdbError, client_from_settings
 
 router = APIRouter(prefix="/api/v1/titles")
@@ -134,6 +134,7 @@ def set_reaction(
     entry.rated_at = today
     entry.watched = True
     entry.watched_at = entry.watched_at or today
+    entry.rating = REACTION_FALLBACK[body.reaction]
     # Scores this reaction, and re-scores earlier ones, against the user's current scale.
     refresh_reaction_ratings(session, user.id)
     session.commit()

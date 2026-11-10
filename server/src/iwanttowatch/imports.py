@@ -19,6 +19,7 @@ from iwanttowatch.db import utcnow
 from iwanttowatch.models import ImportJob, ImportRow, UserTitle
 from iwanttowatch.taste import (
     mark_persona_stale,
+    rating_to_reaction,
     refresh_persona_quietly,
     refresh_reaction_ratings,
 )
@@ -314,7 +315,10 @@ def apply_match(
     data = row.data
     if data.get("rating") is not None:
         entry.rating = data["rating"]
+        entry.reaction = rating_to_reaction(data["rating"])
         entry.rated_at = _to_date(data.get("rated_at"))
+    elif data.get("liked"):
+        entry.reaction = "liked"
     # A rating, diary entry, or like in either service means the user has seen it.
     entry.watched = True
     watched_at = _to_date(data.get("watched_at"))

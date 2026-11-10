@@ -60,7 +60,7 @@ from iwanttowatch.models import (
     get_setting,
 )
 from iwanttowatch.moods import moods_for
-from iwanttowatch.taste import effective_ratings, explain_clash, explain_match
+from iwanttowatch.taste import REACTION_FALLBACK, effective_ratings, explain_clash, explain_match
 from iwanttowatch.tmdb import client_from_settings
 
 router = APIRouter(prefix="/api/v1")
@@ -736,7 +736,16 @@ def explain_title_clash(
         raise HTTPException(status.HTTP_409_CONFLICT, "Connect Ollama or Gemini in Settings first")
     effective = effective_ratings(user.id)
     rated = session.execute(select(effective).where(effective.c.tmdb_id == title.tmdb_id)).first()
-    if rated is None or rated.rating is None:
+    if rated is None or (rated.rating is None and rated.reaction is None):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Rate this film first to analyze conflicting opinions"
+        )
+    user_rating = (
+        float(rated.rating)
+        if rated.rating is not None
+        else (REACTION_FALLBACK.get(rated.reaction, 7.5) if rated.reaction else None)
+    )
+    if user_rating is None:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Rate this film first to analyze conflicting opinions"
         )
@@ -745,7 +754,7 @@ def explain_title_clash(
             session,
             user.id,
             title,
-            user_rating=rated.rating,
+            user_rating=user_rating,
             reaction=rated.reaction,
             tags=rated.tags or [],
             note=rated.note,

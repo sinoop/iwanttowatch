@@ -476,7 +476,7 @@ def test_any_film_gets_a_match_like_the_feeds_and_seen_films_show_the_rating(
     assert loved["match"] is None and loved["seen"]["reaction"] == "loved"
     imported = client.get("/api/v1/titles/9000").json()  # Kumbalangi Nights, rated 10
     assert imported["match"] is None
-    assert imported["seen"] == {"rating": 10.0, "reaction": None}
+    assert imported["seen"] == {"rating": 10.0, "reaction": "loved"}
     client.put("/api/v1/titles/401/feedback", json={"kind": "seen"})
     assert client.get("/api/v1/titles/401").json()["seen"] == {"rating": None, "reaction": None}
 

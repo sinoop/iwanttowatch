@@ -43,8 +43,13 @@ from iwanttowatch.models import (
     UserTitle,
 )
 from iwanttowatch.moods import moods_for, tag_moods
-from iwanttowatch.recommender import Label, Scored, percentile_of, percentiles, score
-from iwanttowatch.taste import effective_ratings, review_films
+from iwanttowatch.recommender import Label, Scored, percentile_of, score
+from iwanttowatch.taste import (
+    REACTION_PERCENTILES,
+    effective_ratings,
+    rating_to_reaction,
+    review_films,
+)
 from iwanttowatch.tmdb import TmdbClient, TmdbError, TmdbNotFound, client_from_settings
 
 log = logging.getLogger(__name__)
@@ -87,22 +92,19 @@ RESCORE_AFTER_SECONDS = 15.0
 def user_labels(session: Session, user_id: int) -> list[Label]:
     """The user's ratings as percentiles, plus unrated watches as weaker labels.
 
-    Imported ratings are placed among each other. An in-app reaction is placed as an
-    imported rating with the same score would be, but isn't added to the pool, so films
-    sharing a reaction don't pile up as ties and reshape the scale."""
+    Reactions (both in-app and imported) map to discrete percentile weights (Loved: 0.95,
+    Liked: 0.70, Disliked: 0.15) so they never collide or distort the scale."""
     effective = effective_ratings(user_id)
     rows = session.execute(
         select(effective.c.tmdb_id, effective.c.rating, effective.c.reaction)
     ).all()
-    ratings = {tmdb_id: rating for tmdb_id, rating, _ in rows}
-    numeric = {tmdb_id: rating for tmdb_id, rating, reaction in rows if reaction is None}
-    labels = [Label(tmdb_id, value) for tmdb_id, value in percentiles(numeric).items()]
-    pool = list(numeric.values())
-    labels += [
-        Label(tmdb_id, percentile_of(pool, rating))
-        for tmdb_id, rating, reaction in rows
-        if reaction is not None
-    ]
+    ratings: set[int] = set()
+    labels: list[Label] = []
+    for tmdb_id, rating, reaction in rows:
+        ratings.add(tmdb_id)
+        rx = reaction or (rating_to_reaction(rating) if rating is not None else None)
+        if rx in REACTION_PERCENTILES:
+            labels.append(Label(tmdb_id, REACTION_PERCENTILES[rx], explicit=True))
     watched = session.execute(
         select(UserTitle.tmdb_id, func.max(UserTitle.favorite))
         .where(UserTitle.user_id == user_id, UserTitle.watched)
@@ -521,7 +523,7 @@ def ai_percentiles(session: Session, user_id: int, picks: dict[int, AiPick]) -> 
     same scale `user_labels` reads reactions against."""
     effective = effective_ratings(user_id)
     ratings = list(
-        session.scalars(select(effective.c.rating).where(effective.c.reaction.is_(None)))
+        session.scalars(select(effective.c.rating).where(effective.c.rating.is_not(None)))
     )
     return {i: percentile_of(ratings, p.rating) for i, p in picks.items() if p.rating is not None}
 

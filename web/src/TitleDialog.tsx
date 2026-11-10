@@ -1,7 +1,7 @@
 import type { ChildProfile, Me, TitleDetail } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { api, errorMessage, facts, useAssignToChild, useChildren, useServerSettings, useShortlist } from './api'
+import { api, errorMessage, facts, REACTIONS, useAssignToChild, useChildren, useServerSettings, useShortlist } from './api'
 import { RatePicker } from './RateDialog'
 import { JellyfinLogo, JustWatchCredit, ProviderLogo } from './Streaming'
 import { Button, ErrorText, Poster } from './ui'
@@ -330,6 +330,7 @@ function ClashSection({ film }: { film: TitleDetail }) {
 
   const userRating = film.seen?.rating
   const audienceRating = film.imdb?.rating
+  const reaction = film.seen?.reaction ? REACTIONS.find((r) => r.value === film.seen?.reaction) : null
   const isDivergent =
     userRating !== null &&
     userRating !== undefined &&
@@ -344,9 +345,9 @@ function ClashSection({ film }: { film: TitleDetail }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium text-accent-strong flex items-center gap-1.5">
           <span>⚡ Conflicting opinion</span>
-          {audienceRating !== null && audienceRating !== undefined && userRating !== null && userRating !== undefined && (
+          {audienceRating !== null && audienceRating !== undefined && (reaction || (userRating !== null && userRating !== undefined)) && (
             <span className="text-xs text-white/60 font-normal">
-              (You: {userRating.toFixed(1)} vs Audience: {audienceRating.toFixed(1)})
+              (You: {reaction ? reaction.label : userRating?.toFixed(1)} vs Audience: {audienceRating.toFixed(1)})
             </span>
           )}
         </h3>
