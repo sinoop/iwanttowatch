@@ -347,8 +347,13 @@ def ask_feed(
 
 
 @router.post("/feed/refresh", status_code=status.HTTP_202_ACCEPTED)
-def refresh_feed(user: CurrentUser, request: Request) -> Response:
-    request.app.state.feed_worker.request(user.id)
+def refresh_feed(
+    user: CurrentUser,
+    request: Request,
+    language: str | None = None,
+    genre: str | None = None,
+) -> Response:
+    request.app.state.feed_worker.request(user.id, language=language, genre=genre)
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 

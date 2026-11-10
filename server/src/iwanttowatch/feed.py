@@ -15,7 +15,7 @@ import json
 import logging
 import queue
 import threading
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, timedelta
 from pathlib import Path
@@ -171,13 +171,61 @@ def hidden(session: Session, user_id: int) -> set[int]:
     )
 
 
-def _discover(region: str, language: str | None, providers: list[int]) -> dict[str, Any]:
+TMDB_GENRES: dict[str, int] = {
+    "Action": 28,
+    "Adventure": 12,
+    "Animation": 16,
+    "Comedy": 35,
+    "Crime": 80,
+    "Documentary": 99,
+    "Drama": 18,
+    "Family": 10751,
+    "Fantasy": 14,
+    "History": 36,
+    "Horror": 27,
+    "Music": 10402,
+    "Mystery": 9648,
+    "Romance": 10749,
+    "Science Fiction": 878,
+    "TV Movie": 10770,
+    "Thriller": 53,
+    "War": 10752,
+    "Western": 37,
+}
+GENRES_CACHE = timedelta(days=30)
+
+
+def genre_id(tmdb: TmdbClient, name: str) -> int | None:
+    """The TMDb genre ID for a genre name, such as 35 for "Comedy"."""
+    lowered = name.strip().lower()
+    for genre_name, gid in TMDB_GENRES.items():
+        if genre_name.lower() == lowered:
+            return gid
+    try:
+        data = tmdb.get("/genre/movie/list", None, GENRES_CACHE)
+        for item in data.get("genres", []):
+            if item.get("name", "").strip().lower() == lowered:
+                return int(item["id"])
+    except TmdbError:
+        pass
+    return None
+
+
+def _discover(
+    region: str,
+    language: str | None,
+    providers: list[int],
+    genre_id: int | None = None,
+    sort_by: str = "vote_average.desc",
+) -> dict[str, Any]:
     params: dict[str, Any] = {
-        "sort_by": "vote_average.desc",
+        "sort_by": sort_by,
         "vote_count.gte": MIN_VOTES_ONE_LANGUAGE if language else MIN_VOTES_ANY_LANGUAGE,
         "with_original_language": language,
         "include_adult": "false",
     }
+    if genre_id is not None:
+        params["with_genres"] = str(genre_id)
     if providers:
         params |= {
             "watch_region": region,
@@ -188,8 +236,53 @@ def _discover(region: str, language: str | None, providers: list[int]) -> dict[s
     return params
 
 
-def candidates(session: Session, tmdb: TmdbClient, user: User, labels: list[Label]) -> list[int]:
+def candidates(
+    session: Session,
+    tmdb: TmdbClient,
+    user: User,
+    labels: list[Label],
+    target_language: str | None = None,
+    target_genre: str | None = None,
+    existing_ids: Collection[int] = (),
+) -> list[int]:
     """Films to score, most trustworthy sources first, without anything already seen."""
+    exclude = seen(session, user.id)
+
+    # When refreshing for a specific language or genre, discover films with those filters.
+    if target_language or target_genre:
+        gid = genre_id(tmdb, target_genre) if target_genre else None
+        target_requests: list[dict[str, Any]] = []
+        if user.subscriptions:
+            target_requests += [
+                _discover(
+                    user.region, target_language, user.subscriptions, gid, "vote_average.desc"
+                ),
+                _discover(user.region, target_language, user.subscriptions, gid, "popularity.desc"),
+            ]
+        target_requests += [
+            _discover(user.region, target_language, [], gid, "vote_average.desc"),
+            _discover(user.region, target_language, [], gid, "popularity.desc"),
+        ]
+        target_exclude = exclude | set(existing_ids)
+
+        def fetch_target(request: dict[str, Any]) -> list[int]:
+            ids: list[int] = []
+            for page in range(1, MAX_DISCOVER_PAGES + 1):
+                found = tmdb.get("/discover/movie", {**request, "page": page}, DISCOVER_CACHE)
+                ids += [r["id"] for r in found["results"]]
+                if (
+                    not found["results"]
+                    or page >= found.get("total_pages", page)
+                    or sum(i not in target_exclude for i in ids) >= UNSEEN_PER_DISCOVER
+                ):
+                    break
+            return ids
+
+        with ThreadPoolExecutor(PARALLEL_REQUESTS) as pool:
+            found = [i for ids in pool.map(fetch_target, target_requests) for i in ids]
+        ordered = dict.fromkeys(i for i in found if i not in exclude)
+        return list(ordered)[:MAX_CANDIDATES]
+
     owners = library_owners(session, user)
     library = [
         i
@@ -214,7 +307,6 @@ def candidates(session: Session, tmdb: TmdbClient, user: User, labels: list[Labe
     )[:5]
     seeds = sorted((label for label in labels if label.explicit), key=lambda label: -label.value)
     seed_ids = [*(label.tmdb_id for label in seeds), *family][:RECOMMENDATION_SEEDS]
-    exclude = seen(session, user.id)
     # A discover search's parameters, or a film whose recommendations to read.
     requests: list[dict[str, Any] | int] = []
     if user.subscriptions:
@@ -426,7 +518,14 @@ def stored_picks(session: Session, user_id: int) -> dict[int, AiPick]:
     return {p.tmdb_id: p for p in session.scalars(select(AiPick).where(AiPick.user_id == user_id))}
 
 
-def build_feed(engine: Engine, tmdb_base_url: str, data_dir: Path, user_id: int) -> None:
+def build_feed(
+    engine: Engine,
+    tmdb_base_url: str,
+    data_dir: Path,
+    user_id: int,
+    language: str | None = None,
+    genre: str | None = None,
+) -> None:
     with Session(engine) as session:
         user = session.get(User, user_id)
         if user is None:
@@ -452,15 +551,35 @@ def build_feed(engine: Engine, tmdb_base_url: str, data_dir: Path, user_id: int)
             exclude = seen(session, user_id)
             # The LLM's additions from the last build stay candidates until it's asked again.
             added = [p.tmdb_id for p in stored_picks(session, user_id).values() if p.added]
-            ids = list(
-                dict.fromkeys(
-                    [
-                        *candidates(session, tmdb, user, labels),
-                        *added,
-                        *shortlisted(session, user_id),
-                    ]
+            existing = [
+                i
+                for i in session.scalars(
+                    select(Recommendation.tmdb_id).where(Recommendation.user_id == user_id)
                 )
+            ]
+            new_candidates = candidates(
+                session,
+                tmdb,
+                user,
+                labels,
+                language,
+                genre,
+                existing,
             )
+            if language or genre:
+                candidate_pool = [
+                    *new_candidates,
+                    *existing,
+                    *added,
+                    *shortlisted(session, user_id),
+                ]
+            else:
+                candidate_pool = [
+                    *new_candidates,
+                    *added,
+                    *shortlisted(session, user_id),
+                ]
+            ids = list(dict.fromkeys(candidate_pool))
             ids = [i for i in ids if i not in exclude]
             step(f"Reading details of {len(ids)} films")
             titles = ensure_titles(session, tmdb, [*(label.tmdb_id for label in labels), *ids])
@@ -608,7 +727,7 @@ class FeedWorker:
         self._engine = engine
         self._tmdb_base_url = tmdb_base_url
         self._data_dir = data_dir
-        self._queue: queue.Queue[tuple[Job, int]] = queue.Queue()
+        self._queue: queue.Queue[tuple[Any, ...]] = queue.Queue()
         self._lock = threading.Lock()
         # Users waiting for a rescore, and the timer that will queue it.
         self._timers: dict[int, threading.Timer] = {}
@@ -620,10 +739,10 @@ class FeedWorker:
                 select(FeedBuild.user_id).where(FeedBuild.status.in_(["queued", "building"]))
             ).all()
         for user_id in unfinished:
-            self._queue.put(("build", user_id))
+            self._queue.put(("build", user_id, None, None))
         threading.Thread(target=self._loop, name="feed", daemon=True).start()
 
-    def request(self, user_id: int) -> None:
+    def request(self, user_id: int, language: str | None = None, genre: str | None = None) -> None:
         """Rebuild the user's feed from scratch, fetching fresh candidates."""
         with Session(self._engine) as session:
             state = session.get(FeedBuild, user_id) or FeedBuild(user_id=user_id, status="")
@@ -634,7 +753,7 @@ class FeedWorker:
                 state.status, state.error = "queued", None
                 session.add(state)
                 session.commit()
-        self._queue.put(("build", user_id))
+        self._queue.put(("build", user_id, language, genre))
 
     def rescore_soon(self, user_id: int) -> None:
         """Rescore the user's feed once they stop rating and giving feedback for a moment."""
@@ -672,13 +791,23 @@ class FeedWorker:
     def _loop(self) -> None:
         while True:
             try:
-                job, user_id = self._queue.get(timeout=CHECK_EVERY_SECONDS)
+                item = self._queue.get(timeout=CHECK_EVERY_SECONDS)
             except queue.Empty:
                 self._queue_old_feeds()
                 continue
+            job, user_id = item[0], item[1]
             try:
                 if job == "build":
-                    build_feed(self._engine, self._tmdb_base_url, self._data_dir, user_id)
+                    language = item[2] if len(item) > 2 else None
+                    genre = item[3] if len(item) > 3 else None
+                    build_feed(
+                        self._engine,
+                        self._tmdb_base_url,
+                        self._data_dir,
+                        user_id,
+                        language=language,
+                        genre=genre,
+                    )
                 else:
                     self._rescore(user_id)
             except Exception:
