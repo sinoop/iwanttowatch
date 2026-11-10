@@ -427,6 +427,19 @@ class Explanation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class OpinionClash(Base):
+    """The LLM's breakdown of conflicting opinions between a user and the general audience."""
+
+    __tablename__ = "opinion_clashes"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    tmdb_id: Mapped[int] = mapped_column(ForeignKey("titles.tmdb_id"), primary_key=True)
+    text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class LlmCall(Base):
     """One call to the configured LLM, kept so an admin can see how often it's called
     and exactly what was sent and answered. Only the most recent calls are kept."""

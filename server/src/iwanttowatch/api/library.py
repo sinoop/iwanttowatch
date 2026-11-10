@@ -12,6 +12,7 @@ from iwanttowatch.models import Persona, Title, UserTitle
 from iwanttowatch.taste import (
     MIN_RATINGS_FOR_PERSONA,
     effective_ratings,
+    find_divergent_ratings,
     generate_persona,
     is_refreshing,
     rating_count,
@@ -97,6 +98,53 @@ def list_ratings(
         ],
         languages=[LanguageCount(language=lang, count=n) for lang, n in languages],
     )
+
+
+class DivergentTitle(BaseModel):
+    tmdb_id: int
+    title: str
+    original_title: str
+    original_language: str
+    year: int | None
+    poster_path: str | None
+    user_rating: float
+    consensus_rating: float
+    vote_count: int
+    divergence: float
+    reaction: str | None
+    tags: list[str]
+    note: str | None
+    clash: str | None = None
+
+
+@router.get("/me/divergent-ratings")
+def list_divergent_ratings(
+    user: CurrentUser,
+    session: DbSession,
+    limit: int = Query(50, ge=1, le=100),
+    threshold: float = Query(1.5, ge=0.5, le=5.0),
+) -> list[DivergentTitle]:
+    """Films the user rated where their rating strongly differed from the general audience."""
+    items = find_divergent_ratings(session, user.id, threshold=threshold, limit=limit)
+    return [
+        DivergentTitle(
+            tmdb_id=item.tmdb_id,
+            title=item.title,
+            original_title=item.original_title,
+            original_language=item.original_language,
+            year=item.year,
+            poster_path=item.poster_path,
+            user_rating=item.user_rating,
+            consensus_rating=item.consensus_rating,
+            vote_count=item.vote_count,
+            divergence=item.divergence,
+            reaction=item.reaction,
+            tags=item.tags,
+            note=item.note,
+            clash=item.clash,
+        )
+        for item in items
+    ]
 
 
 @router.get("/catalog/search")

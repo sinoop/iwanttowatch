@@ -50,6 +50,7 @@ from iwanttowatch.models import (
     Feedback,
     FeedBuild,
     LibraryItem,
+    OpinionClash,
     Recommendation,
     ShortlistItem,
     Title,
@@ -58,7 +59,7 @@ from iwanttowatch.models import (
     get_setting,
 )
 from iwanttowatch.moods import moods_for
-from iwanttowatch.taste import effective_ratings, explain_match
+from iwanttowatch.taste import effective_ratings, explain_clash, explain_match
 from iwanttowatch.tmdb import client_from_settings
 
 router = APIRouter(prefix="/api/v1")
@@ -504,6 +505,8 @@ class TitleDetail(BaseModel):
     assigned_children: list[int] = Field(default_factory=list)
     # The AI's answer to "Why this?", once the user has asked.
     explanation: str | None = None
+    # The AI's explanation of conflicting opinions, once asked.
+    clash: str | None = None
     # Status in Radarr when connected.
     radarr: RadarrMovieStatus | None = None
 
@@ -586,6 +589,9 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
         explanation=explained.text
         if (explained := session.get(Explanation, (user.id, title.tmdb_id)))
         else None,
+        clash=clashed.text
+        if (clashed := session.get(OpinionClash, (user.id, title.tmdb_id)))
+        else None,
         radarr=RadarrMovieStatus(**radarr_info)
         if (radarr_info := radarr.movie_status(session, title.tmdb_id)).get("configured")
         else None,
@@ -640,6 +646,37 @@ def explain_title(
     _, reasons = _match_and_reasons(session, user, title, watched)
     try:
         explain_match(session, user.id, title, llm, reasons=reasons)
+    except LlmError as error:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
+    return _title_detail(session, user, tmdb, title)
+
+
+@router.post("/titles/{tmdb_id}/clash")
+def explain_title_clash(
+    tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
+) -> TitleDetail:
+    """Ask the configured LLM to explain why the user's opinion conflicts with the audience."""
+    title = load_title(session, request, tmdb_id)
+    llm = provider_from_settings(session, "clash", user.id)
+    if llm is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Connect Ollama or Gemini in Settings first")
+    effective = effective_ratings(user.id)
+    rated = session.execute(select(effective).where(effective.c.tmdb_id == title.tmdb_id)).first()
+    if rated is None or rated.rating is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Rate this film first to analyze conflicting opinions"
+        )
+    try:
+        explain_clash(
+            session,
+            user.id,
+            title,
+            user_rating=rated.rating,
+            reaction=rated.reaction,
+            tags=rated.tags or [],
+            note=rated.note,
+            llm=llm,
+        )
     except LlmError as error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
     return _title_detail(session, user, tmdb, title)

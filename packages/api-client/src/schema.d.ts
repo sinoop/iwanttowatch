@@ -413,6 +413,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/divergent-ratings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Divergent Ratings
+         * @description Films the user rated where their rating strongly differed from the general audience.
+         */
+        get: operations["list_divergent_ratings_api_v1_me_divergent_ratings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/catalog/search": {
         parameters: {
             query?: never;
@@ -747,6 +767,26 @@ export interface paths {
          * @description Ask the configured LLM how well this film fits the user's taste; asked once.
          */
         post: operations["explain_title_api_v1_titles__tmdb_id__why_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/titles/{tmdb_id}/clash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explain Title Clash
+         * @description Ask the configured LLM to explain why the user's opinion conflicts with the audience.
+         */
+        post: operations["explain_title_clash_api_v1_titles__tmdb_id__clash_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1512,6 +1552,37 @@ export interface components {
              * @default []
              */
             shortlist: components["schemas"]["ExportedShortlistItem"][];
+        };
+        /** DivergentTitle */
+        DivergentTitle: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Original Title */
+            original_title: string;
+            /** Original Language */
+            original_language: string;
+            /** Year */
+            year: number | null;
+            /** Poster Path */
+            poster_path: string | null;
+            /** User Rating */
+            user_rating: number;
+            /** Consensus Rating */
+            consensus_rating: number;
+            /** Vote Count */
+            vote_count: number;
+            /** Divergence */
+            divergence: number;
+            /** Reaction */
+            reaction: string | null;
+            /** Tags */
+            tags: string[];
+            /** Note */
+            note: string | null;
+            /** Clash */
+            clash?: string | null;
         };
         /** ExportedEntry */
         ExportedEntry: {
@@ -2531,6 +2602,8 @@ export interface components {
             assigned_children?: number[];
             /** Explanation */
             explanation?: string | null;
+            /** Clash */
+            clash?: string | null;
             radarr?: components["schemas"]["RadarrMovieStatus"] | null;
         };
         /** TitleReaction */
@@ -3341,6 +3414,38 @@ export interface operations {
             };
         };
     };
+    list_divergent_ratings_api_v1_me_divergent_ratings_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                threshold?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DivergentTitle"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     search_catalog_api_v1_catalog_search_get: {
         parameters: {
             query: {
@@ -4028,6 +4133,37 @@ export interface operations {
         };
     };
     explain_title_api_v1_titles__tmdb_id__why_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explain_title_clash_api_v1_titles__tmdb_id__clash_post: {
         parameters: {
             query?: never;
             header?: never;

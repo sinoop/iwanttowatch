@@ -40,7 +40,9 @@ RETRY_DELAYS = (2.0, 5.0)
 # Calls kept in the log; older than 24 hours or beyond 200 are deleted as new ones arrive.
 KEEP_CALLS = 200
 
-Purpose = Literal["suggestions", "persona", "themes", "moods", "why", "ask", "check", "test"]
+Purpose = Literal[
+    "suggestions", "persona", "themes", "moods", "why", "ask", "check", "test", "clash"
+]
 ProviderName = Literal["ollama", "gemini"]
 PROVIDERS: tuple[ProviderName, ...] = ("ollama", "gemini")
 

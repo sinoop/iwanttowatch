@@ -3,6 +3,7 @@ LLM's review of their recommendations."""
 
 import json
 import logging
+import math
 from collections import Counter, defaultdict
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
@@ -15,7 +16,7 @@ from sqlalchemy.orm import Session
 from iwanttowatch.children import user_watched_titles
 from iwanttowatch.db import utcnow
 from iwanttowatch.llm import LlmError, LlmProvider, llm_order, provider_from_settings
-from iwanttowatch.models import Explanation, Persona, Title, UserTitle
+from iwanttowatch.models import Explanation, OpinionClash, Persona, Title, UserTitle
 from iwanttowatch.moods import MAX_MOODS, MOODS, moods_for, parse_moods
 from iwanttowatch.tags import BY_ID
 
@@ -495,3 +496,186 @@ def explain_match(
         title.themes_note = themes_note
     session.commit()
     return fit
+
+
+CLASH_SYSTEM = """You analyze why one person's opinion of a film strongly conflicts \
+with the general audience consensus. You get a summary of their movie taste, their \
+rating, reaction, tags, and note on the film, and the film's details with its \
+consensus score. In two or three short sentences (under 90 words), explain the conflict: \
+(1) what resonated with or divided the general audience, (2) where this person's view \
+sharply diverged based on their tags, notes, or reaction, and (3) why this disagreement fits \
+their overall taste profile. Be concrete, insightful, and validating: speak to them as \
+"you". Plain text only: no markdown headings, no bullet points, no intro or outro, no \
+quotes around the answer."""
+
+
+def consensus_for(title: Title) -> tuple[float, int] | None:
+    """The consensus rating (0–10) and vote count from IMDb or TMDb, or None if too few votes."""
+    if title.imdb_rating is not None and title.imdb_votes and title.imdb_votes >= 100:
+        return (title.imdb_rating, title.imdb_votes)
+    if title.vote_average is not None and title.vote_count and title.vote_count >= 50:
+        return (title.vote_average, title.vote_count)
+    return None
+
+
+@dataclass(frozen=True)
+class DivergentItem:
+    tmdb_id: int
+    title: str
+    original_title: str
+    original_language: str
+    year: int | None
+    poster_path: str | None
+    user_rating: float
+    consensus_rating: float
+    vote_count: int
+    divergence: float
+    reaction: str | None
+    tags: list[str]
+    note: str | None
+    clash: str | None = None
+
+
+def find_divergent_ratings(
+    session: Session,
+    user_id: int,
+    *,
+    threshold: float = 1.5,
+    limit: int = 50,
+) -> list[DivergentItem]:
+    """Finds films the user rated where their rating strongly differed from the general audience."""
+    effective = effective_ratings(user_id)
+    rows = session.execute(
+        select(effective, Title).join(Title, Title.tmdb_id == effective.c.tmdb_id)
+    ).all()
+    candidates: list[tuple[float, DivergentItem]] = []
+    for r in rows:
+        t: Title = r.Title
+        consensus = consensus_for(t)
+        if consensus is None:
+            continue
+        c_rating, votes = consensus
+        user_rating = float(r.rating)
+        diff = round(user_rating - c_rating, 1)
+        if abs(diff) < threshold:
+            continue
+        weight = abs(diff) * math.log10(max(votes, 10))
+        item = DivergentItem(
+            tmdb_id=t.tmdb_id,
+            title=t.title,
+            original_title=t.original_title,
+            original_language=t.original_language,
+            year=t.year,
+            poster_path=t.poster_path,
+            user_rating=user_rating,
+            consensus_rating=round(c_rating, 1),
+            vote_count=votes,
+            divergence=diff,
+            reaction=r.reaction,
+            tags=list(r.tags or []),
+            note=r.note,
+        )
+        candidates.append((weight, item))
+
+    candidates.sort(key=lambda pair: pair[0], reverse=True)
+    top_items = [item for _, item in candidates[:limit]]
+    if not top_items:
+        return []
+
+    clashes = {
+        c.tmdb_id: c.text
+        for c in session.scalars(
+            select(OpinionClash).where(
+                OpinionClash.user_id == user_id,
+                OpinionClash.tmdb_id.in_([item.tmdb_id for item in top_items]),
+            )
+        )
+    }
+
+    return [
+        DivergentItem(
+            tmdb_id=item.tmdb_id,
+            title=item.title,
+            original_title=item.original_title,
+            original_language=item.original_language,
+            year=item.year,
+            poster_path=item.poster_path,
+            user_rating=item.user_rating,
+            consensus_rating=item.consensus_rating,
+            vote_count=item.vote_count,
+            divergence=item.divergence,
+            reaction=item.reaction,
+            tags=item.tags,
+            note=item.note,
+            clash=clashes.get(item.tmdb_id),
+        )
+        for item in top_items
+    ]
+
+
+def explain_clash(
+    session: Session,
+    user_id: int,
+    title: Title,
+    user_rating: float,
+    reaction: str | None,
+    tags: list[str],
+    note: str | None,
+    llm: LlmProvider,
+) -> str:
+    """The LLM's explanation of conflicting opinions between the user and general audience."""
+    cached = session.get(OpinionClash, (user_id, title.tmdb_id))
+    if cached is not None:
+        return cached.text
+
+    consensus = consensus_for(title)
+    consensus_text = (
+        f"{consensus[0]:.1f}/10 ({consensus[1]:,} votes)"
+        if consensus
+        else (f"{title.vote_average:.1f}/10" if title.vote_average else "unknown")
+    )
+    user_score_str = f"{user_rating:g}/10"
+    if reaction:
+        user_score_str += f" ({REACTION_LABELS.get(reaction, reaction)})"
+
+    about = [str(title.year or "?"), title.original_language, *title.genres]
+    if title.runtime:
+        about.append(f"{title.runtime} min")
+
+    lines = [
+        taste_summary(session, user_id),
+        f"Film: {title.title} ({', '.join(about)})",
+        f"Audience consensus rating: {consensus_text}",
+        f"This user's rating: {user_score_str}",
+    ]
+    tag_labels = [BY_ID[t].label for t in tags if t in BY_ID]
+    if tag_labels:
+        lines.append(f"What the user noted: {', '.join(tag_labels)}")
+    if note:
+        lines.append(f'User note: "{note.strip()}"')
+    if title.tagline:
+        lines.append(f'Tagline: "{title.tagline}"')
+    if title.directors:
+        directors = [p["name"] for p in title.directors if isinstance(p, dict) and p.get("name")]
+        if directors:
+            lines.append("Directed by " + ", ".join(directors[:2]))
+    if title.cast:
+        cast = [p["name"] for p in title.cast if isinstance(p, dict) and p.get("name")]
+        if cast:
+            lines.append("Starring " + ", ".join(cast[:4]))
+    if title.overview:
+        lines.append(f"Overview: {title.overview}")
+
+    raw_text = llm.generate(CLASH_SYSTEM, "\n".join(lines)).strip().strip('"“”').strip()
+    if not raw_text:
+        raise LlmError("The LLM returned an empty answer")
+
+    clash = raw_text
+    if len(clash) > MAX_EXPLANATION_LENGTH:
+        cut = clash[:MAX_EXPLANATION_LENGTH]
+        end = max(cut.rfind(mark) for mark in (". ", "! ", "? "))
+        clash = cut[: end + 1] if end > 0 else cut.rsplit(" ", 1)[0] + "…"
+
+    session.add(OpinionClash(user_id=user_id, tmdb_id=title.tmdb_id, text=clash))
+    session.commit()
+    return clash

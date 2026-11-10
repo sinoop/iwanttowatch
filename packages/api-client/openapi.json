@@ -864,6 +864,65 @@
         }
       }
     },
+    "/api/v1/me/divergent-ratings": {
+      "get": {
+        "summary": "List Divergent Ratings",
+        "description": "Films the user rated where their rating strongly differed from the general audience.",
+        "operationId": "list_divergent_ratings_api_v1_me_divergent_ratings_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "threshold",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 5.0,
+              "minimum": 0.5,
+              "default": 1.5,
+              "title": "Threshold"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DivergentTitle"
+                  },
+                  "title": "Response List Divergent Ratings Api V1 Me Divergent Ratings Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/catalog/search": {
       "get": {
         "summary": "Search Catalog",
@@ -1968,6 +2027,46 @@
         "summary": "Explain Title",
         "description": "Ask the configured LLM how well this film fits the user's taste; asked once.",
         "operationId": "explain_title_api_v1_titles__tmdb_id__why_post",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TitleDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/titles/{tmdb_id}/clash": {
+      "post": {
+        "summary": "Explain Title Clash",
+        "description": "Ask the configured LLM to explain why the user's opinion conflicts with the audience.",
+        "operationId": "explain_title_clash_api_v1_titles__tmdb_id__clash_post",
         "parameters": [
           {
             "name": "tmdb_id",
@@ -3822,6 +3921,121 @@
           "feedback"
         ],
         "title": "DataExport"
+      },
+      "DivergentTitle": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "original_title": {
+            "type": "string",
+            "title": "Original Title"
+          },
+          "original_language": {
+            "type": "string",
+            "title": "Original Language"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "poster_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Path"
+          },
+          "user_rating": {
+            "type": "number",
+            "title": "User Rating"
+          },
+          "consensus_rating": {
+            "type": "number",
+            "title": "Consensus Rating"
+          },
+          "vote_count": {
+            "type": "integer",
+            "title": "Vote Count"
+          },
+          "divergence": {
+            "type": "number",
+            "title": "Divergence"
+          },
+          "reaction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reaction"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "clash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clash"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "original_title",
+          "original_language",
+          "year",
+          "poster_path",
+          "user_rating",
+          "consensus_rating",
+          "vote_count",
+          "divergence",
+          "reaction",
+          "tags",
+          "note"
+        ],
+        "title": "DivergentTitle"
       },
       "ExportedEntry": {
         "properties": {
@@ -7022,6 +7236,17 @@
               }
             ],
             "title": "Explanation"
+          },
+          "clash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clash"
           },
           "radarr": {
             "anyOf": [
