@@ -5,7 +5,7 @@ import { Link } from 'react-router'
 import { renderSVG } from 'uqr'
 import { api, copyToClipboard, errorMessage, facts, useChildren, watchOnQuery, type WatchOn } from './api'
 import { PlatformFilter, WatchBadges } from './Streaming'
-import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, MatchBadge } from './TitleDialog'
+import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, ImdbBadge, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Field, Poster } from './ui'
 
 const chip = (selected: boolean) =>
@@ -324,10 +324,13 @@ function GroupCard({
         type="button"
         onClick={onOpen}
         className="group relative block rounded-lg text-left focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
-        aria-label={`${item.title}, ${item.match}% for the group`}
+        aria-label={`${item.title}, ${item.match}% for the group${item.imdb ? `, IMDb ${item.imdb.rating.toFixed(1)}` : ''}`}
       >
         <Poster path={item.poster_path} title={item.title} className="transition-shadow group-hover:ring-2 group-hover:ring-accent" />
-        <MatchBadge match={item.match} className="absolute top-2 left-2 shadow-lg shadow-black/50" />
+        <div className="absolute top-2 left-2 flex items-center gap-1.5">
+          <MatchBadge match={item.match} className="shadow-lg shadow-black/50" />
+          {item.imdb && <ImdbBadge imdb={item.imdb} className="shadow-lg shadow-black/50" />}
+        </div>
       </button>
       <div className="mt-1.5 flex items-center gap-1">
         <button

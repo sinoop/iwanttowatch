@@ -5,7 +5,7 @@ import { Link } from 'react-router'
 import { api, errorMessage, facts, useChildren, useQuickRate, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
 import RateDialog, { QuickTags, ReactionIcon } from './RateDialog'
 import { PlatformFilter, WatchBadges } from './Streaming'
-import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, MatchBadge } from './TitleDialog'
+import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, ImdbBadge, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
 
 const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
@@ -670,14 +670,17 @@ function FeedCard({
         type="button"
         onClick={onOpen}
         className="group relative block rounded-lg text-left focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
-        aria-label={`${item.title}, ${item.match}% match`}
+        aria-label={`${item.title}, ${item.match}% match${item.imdb ? `, IMDb ${item.imdb.rating.toFixed(1)}` : ''}`}
       >
         <Poster
           path={item.poster_path}
           title={item.title}
           className="transition-shadow group-hover:ring-2 group-hover:ring-accent"
         />
-        <MatchBadge match={item.match} className="absolute top-2 left-2 shadow-lg shadow-black/50" />
+        <div className="absolute top-2 left-2 flex items-center gap-1.5">
+          <MatchBadge match={item.match} className="shadow-lg shadow-black/50" />
+          {item.imdb && <ImdbBadge imdb={item.imdb} className="shadow-lg shadow-black/50" />}
+        </div>
       </button>
       <div className="mt-1.5 flex items-center justify-between" role="group" aria-label={`Actions for ${item.title}`}>
         <div className="flex items-center rounded-full border border-white/10 bg-white/[0.03] p-0.5">

@@ -62,19 +62,13 @@ function Details({ tmdbId, onClose }: { tmdbId: number; onClose: () => void }) {
         <div className="min-w-0">
           <h2 className="text-xl font-semibold">{film.title}</h2>
           {film.original_title !== film.title && <p className="text-sm text-white/55">{film.original_title}</p>}
-          <p className="mt-1 text-sm text-white/55">{facts({ ...film, imdb: null }).join(' · ')}</p>
-          {film.imdb && (
-            <a
-              href={`https://www.imdb.com/title/${film.imdb.id}/`}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-1 block w-fit text-sm text-white/70 underline-offset-2 hover:underline"
-            >
-              IMDb {film.imdb.rating.toFixed(1)}{' '}
-              <span className="text-white/45">({film.imdb.votes.toLocaleString()} votes)</span>
-            </a>
+          <p className="mt-1 text-sm text-white/55">{facts(film).join(' · ')}</p>
+          {(film.match !== null || film.imdb) && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {film.match !== null && <MatchBadge match={film.match} />}
+              {film.imdb && <ImdbBadge imdb={film.imdb} isLink showVotes />}
+            </div>
           )}
-          {film.match !== null && <MatchBadge match={film.match} className="mt-3" />}
           {/* A reaction given here shows in the rating buttons below instead. */}
           {film.seen && !film.seen.reaction && (
             <p className="mt-3 text-sm font-medium text-accent-strong">{seenText(film.seen)}</p>
@@ -449,6 +443,70 @@ export function MatchBadge({ match, className = '' }: { match: number; className
         {match}
         <span className="text-[8px] font-semibold text-white/75">%</span>
       </span>
+    </span>
+  )
+}
+
+export function ImdbBadge({
+  imdb,
+  className = '',
+  showVotes = false,
+  isLink = false,
+}: {
+  imdb: { id: string; rating: number; votes: number }
+  className?: string
+  showVotes?: boolean
+  isLink?: boolean
+}) {
+  const color =
+    imdb.rating >= 7.5 ? 'text-emerald-400' : imdb.rating >= 6.0 ? 'text-accent' : 'text-white/55'
+
+  const content = (
+    <>
+      <span className="rounded bg-[#f5c518] px-1 py-0.5 text-[9.5px] font-black leading-none text-black tracking-tight select-none">
+        IMDb
+      </span>
+      <span className={`text-[12px] font-bold leading-none tabular-nums ${color}`}>
+        {imdb.rating.toFixed(1)}
+      </span>
+      {showVotes && imdb.votes > 0 && (
+        <span className="text-[11px] font-normal text-white/45">
+          ({imdb.votes >= 1_000_000
+            ? `${(imdb.votes / 1_000_000).toFixed(1)}M`
+            : imdb.votes >= 1_000
+              ? `${Math.round(imdb.votes / 1_000)}k`
+              : imdb.votes.toLocaleString()})
+        </span>
+      )}
+    </>
+  )
+
+  const classes = `inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-black/85 px-2.5 ring-1 ring-white/15 backdrop-blur-sm ${
+    isLink ? 'transition-all hover:ring-white/30 hover:bg-black/95' : ''
+  } ${className}`
+
+  if (isLink) {
+    return (
+      <a
+        href={`https://www.imdb.com/title/${imdb.id}/`}
+        target="_blank"
+        rel="noreferrer"
+        title={`IMDb rating ${imdb.rating.toFixed(1)} (${imdb.votes.toLocaleString()} votes)`}
+        aria-label={`IMDb rating ${imdb.rating.toFixed(1)} (${imdb.votes.toLocaleString()} votes)`}
+        className={classes}
+      >
+        {content}
+      </a>
+    )
+  }
+
+  return (
+    <span
+      title={`IMDb rating ${imdb.rating.toFixed(1)} (${imdb.votes.toLocaleString()} votes)`}
+      aria-label={`IMDb rating ${imdb.rating.toFixed(1)}`}
+      className={classes}
+    >
+      {content}
     </span>
   )
 }
