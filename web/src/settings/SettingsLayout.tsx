@@ -1,6 +1,6 @@
 import type { Me } from '@iwanttowatch/api-client'
-import { type ReactNode } from 'react'
-import { NavLink } from 'react-router'
+import { useEffect, type ReactNode } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router'
 import { useServerSettings } from '../api'
 
 export function UserIcon({ className = 'size-4' }: { className?: string }) {
@@ -86,12 +86,37 @@ export function TrashIcon({ className = 'size-4' }: { className?: string }) {
   )
 }
 
+function StatusBadge({
+  status,
+  variant = 'neutral',
+}: {
+  status: string
+  variant?: 'green' | 'amber' | 'neutral'
+}) {
+  const color =
+    variant === 'green'
+      ? 'bg-emerald-500/15 text-emerald-300'
+      : variant === 'amber'
+        ? 'bg-amber-500/15 text-amber-300'
+        : 'bg-white/10 text-white/50'
+
+  return <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium leading-none ${color}`}>{status}</span>
+}
+
+interface SubMenuItem {
+  id: string
+  label: string
+  href: string
+  badge?: ReactNode
+}
+
 interface NavSectionItem {
   id: string
   to: string
   label: string
   icon: ReactNode
   badge?: ReactNode
+  subItems?: SubMenuItem[]
 }
 
 export function SettingsLayout({
@@ -106,14 +131,76 @@ export function SettingsLayout({
   children: ReactNode
 }) {
   const settings = useServerSettings()
-  const tmdbMissing = settings.data && !settings.data.tmdb_configured
+  const location = useLocation()
+  const navigate = useNavigate()
+  const activeHash = location.hash.replace('#', '')
+
+  const tmdbConfigured = settings.data?.tmdb_configured ?? false
+  const jellyfinConnected = settings.data?.jellyfin.url !== null && settings.data?.jellyfin.url !== undefined
+  const radarrConnected =
+    Boolean(settings.data?.radarr.configured) &&
+    settings.data?.radarr.url !== null &&
+    settings.data?.radarr.url !== undefined
+  const imdbEnabled = settings.data?.imdb.enabled ?? false
   const llmActive = (settings.data?.llm.order.length ?? 0) > 0
+  const mcpEnabled = settings.data?.mcp_enabled ?? false
+
+  useEffect(() => {
+    const hash = location.hash.replace('#', '')
+    if (hash) {
+      const el = document.getElementById(hash)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' })
+      }
+    }
+  }, [location.pathname, location.hash])
+
+  const scrollToId = (id: string, targetPath: string) => {
+    if (location.pathname === targetPath) {
+      const el = document.getElementById(id)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' })
+        window.history.replaceState(null, '', `${targetPath}#${id}`)
+      }
+    } else {
+      void navigate(`${targetPath}#${id}`)
+    }
+  }
 
   const personalItems: NavSectionItem[] = [
-    { id: 'profile', to: '/settings/profile', label: 'My Profile', icon: <UserIcon /> },
-    { id: 'imports', to: '/settings/imports', label: 'Import & Export', icon: <ImportIcon /> },
+    {
+      id: 'profile',
+      to: '/settings/profile',
+      label: 'My Profile',
+      icon: <UserIcon />,
+      subItems: [
+        { id: 'birth-year', label: 'Birth Year', href: '/settings/profile#birth-year' },
+        { id: 'jellyfin-account', label: 'Jellyfin Account', href: '/settings/profile#jellyfin-account' },
+        { id: 'taste-profile', label: 'Taste Profile', href: '/settings/profile#taste-profile' },
+        { id: 'share-taste', label: 'Share Your Taste', href: '/settings/profile#share-taste' },
+      ],
+    },
+    {
+      id: 'imports',
+      to: '/settings/imports',
+      label: 'Import & Export',
+      icon: <ImportIcon />,
+      subItems: [
+        { id: 'import-ratings', label: 'Import Ratings', href: '/settings/imports#import-ratings' },
+        { id: 'your-data', label: 'Your Data', href: '/settings/imports#your-data' },
+      ],
+    },
     { id: 'streaming', to: '/settings/streaming', label: 'Streaming Services', icon: <TvIcon /> },
-    { id: 'household', to: '/settings/household', label: 'Household', icon: <HouseholdIcon /> },
+    {
+      id: 'household',
+      to: '/settings/household',
+      label: 'Household',
+      icon: <HouseholdIcon />,
+      subItems: [
+        ...(me.is_admin ? [{ id: 'invites', label: 'Household Invites', href: '/settings/household#invites' }] : []),
+        { id: 'child-profiles', label: 'Child Profiles', href: '/settings/household#child-profiles' },
+      ],
+    },
   ]
 
   const adminItems: NavSectionItem[] = [
@@ -122,9 +209,45 @@ export function SettingsLayout({
       to: '/settings/integrations',
       label: 'Integrations',
       icon: <PlugIcon />,
-      badge: tmdbMissing ? (
+      badge: !tmdbConfigured ? (
         <span className="size-2 rounded-full bg-amber-400" title="TMDb API key required" />
       ) : undefined,
+      subItems: [
+        {
+          id: 'tmdb',
+          label: 'TMDb',
+          href: '/settings/integrations#tmdb',
+          badge: <StatusBadge status={tmdbConfigured ? 'Connected' : 'Missing'} variant={tmdbConfigured ? 'green' : 'amber'} />,
+        },
+        {
+          id: 'jellyfin',
+          label: 'Jellyfin',
+          href: '/settings/integrations#jellyfin',
+          badge: (
+            <StatusBadge
+              status={jellyfinConnected ? 'Connected' : 'Not connected'}
+              variant={jellyfinConnected ? 'green' : 'neutral'}
+            />
+          ),
+        },
+        {
+          id: 'radarr',
+          label: 'Radarr',
+          href: '/settings/integrations#radarr',
+          badge: (
+            <StatusBadge
+              status={radarrConnected ? 'Connected' : 'Not connected'}
+              variant={radarrConnected ? 'green' : 'neutral'}
+            />
+          ),
+        },
+        {
+          id: 'imdb',
+          label: 'IMDb',
+          href: '/settings/integrations#imdb',
+          badge: <StatusBadge status={imdbEnabled ? 'On' : 'Off'} variant={imdbEnabled ? 'green' : 'neutral'} />,
+        },
+      ],
     },
     {
       id: 'ai',
@@ -140,6 +263,15 @@ export function SettingsLayout({
           {llmActive ? 'On' : 'Off'}
         </span>
       ),
+      subItems: [
+        {
+          id: 'ai-writing',
+          label: 'AI Writing',
+          href: '/settings/ai#ai-writing',
+          badge: <StatusBadge status={llmActive ? 'On' : 'Off'} variant={llmActive ? 'green' : 'neutral'} />,
+        },
+        { id: 'ai-activity', label: 'AI Activity', href: '/settings/ai#ai-activity' },
+      ],
     },
     {
       id: 'declutter',
@@ -147,15 +279,30 @@ export function SettingsLayout({
       label: 'Declutter',
       icon: <TrashIcon />,
     },
-    { id: 'system', to: '/settings/system', label: 'System', icon: <ServerIcon /> },
+    {
+      id: 'system',
+      to: '/settings/system',
+      label: 'System',
+      icon: <ServerIcon />,
+      subItems: [
+        {
+          id: 'mcp',
+          label: 'Debugging (MCP)',
+          href: '/settings/system#mcp',
+          badge: <StatusBadge status={mcpEnabled ? 'On' : 'Off'} variant={mcpEnabled ? 'green' : 'neutral'} />,
+        },
+        { id: 'backups', label: 'Server Backups', href: '/settings/system#backups' },
+      ],
+    },
   ]
 
   const allVisibleItems = me.is_admin ? [...personalItems, ...adminItems] : personalItems
+  const currentActiveItem = allVisibleItems.find((item) => location.pathname.startsWith(item.to))
 
   return (
     <div className="md:flex md:items-start md:gap-8 lg:gap-10">
       {/* Mobile horizontal tab rail */}
-      <div className="md:hidden -mx-4 mb-6 flex overflow-x-auto border-b border-white/10 px-4 pb-3 scrollbar-none gap-2">
+      <div className="md:hidden -mx-4 mb-4 flex overflow-x-auto border-b border-white/10 px-4 pb-3 scrollbar-none gap-2">
         {allVisibleItems.map((item) => (
           <NavLink
             key={item.id}
@@ -175,31 +322,83 @@ export function SettingsLayout({
         ))}
       </div>
 
-      {/* Desktop Left Sidebar (Radarr style) */}
-      <aside className="hidden md:block w-56 shrink-0 lg:w-60">
+      {/* Mobile secondary sub-menu pill rail */}
+      {currentActiveItem?.subItems && (
+        <div className="md:hidden -mx-4 -mt-2 mb-6 flex overflow-x-auto border-b border-white/5 px-4 pb-2.5 scrollbar-none gap-2">
+          {currentActiveItem.subItems.map((sub) => (
+            <a
+              key={sub.id}
+              href={sub.href}
+              onClick={(e) => {
+                e.preventDefault()
+                scrollToId(sub.id, currentActiveItem.to)
+              }}
+              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                activeHash === sub.id
+                  ? 'border-accent bg-accent/15 text-accent-strong font-medium'
+                  : 'border-white/10 bg-white/[0.03] text-white/75 hover:border-white/20 hover:text-white'
+              }`}
+            >
+              <span>{sub.label}</span>
+              {sub.badge}
+            </a>
+          ))}
+        </div>
+      )}
+
+      {/* Desktop Left Sidebar (Radarr style with Submenus) */}
+      <aside className="hidden md:block w-60 shrink-0 lg:w-64">
         <div className="sticky top-6 space-y-6">
           <div>
             <p className="px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">Personal</p>
             <nav className="space-y-1">
-              {personalItems.map((item) => (
-                <NavLink
-                  key={item.id}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    `flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                      isActive
-                        ? 'border-l-2 border-accent bg-accent/15 pl-2.5 text-accent-strong font-semibold'
-                        : 'text-white/70 hover:bg-white/5 hover:text-white'
-                    }`
-                  }
-                >
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    {item.icon}
-                    <span className="truncate">{item.label}</span>
-                  </span>
-                  {item.badge}
-                </NavLink>
-              ))}
+              {personalItems.map((item) => {
+                const isSectionActive = location.pathname.startsWith(item.to)
+                return (
+                  <div key={item.id}>
+                    <NavLink
+                      to={item.to}
+                      className={({ isActive }) =>
+                        `flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                          isActive
+                            ? 'border-l-2 border-accent bg-accent/15 pl-2.5 text-accent-strong font-semibold'
+                            : 'text-white/70 hover:bg-white/5 hover:text-white'
+                        }`
+                      }
+                    >
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        {item.icon}
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                      {item.badge}
+                    </NavLink>
+
+                    {/* Sub-menu items: shown when section is active */}
+                    {item.subItems && isSectionActive && (
+                      <div className="ml-5 mt-1 space-y-0.5 border-l border-white/10 pl-2.5">
+                        {item.subItems.map((sub) => (
+                          <a
+                            key={sub.id}
+                            href={sub.href}
+                            onClick={(e) => {
+                              e.preventDefault()
+                              scrollToId(sub.id, item.to)
+                            }}
+                            className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                              activeHash === sub.id
+                                ? 'text-accent font-semibold bg-accent/10'
+                                : 'text-white/60 hover:bg-white/5 hover:text-white'
+                            }`}
+                          >
+                            <span className="truncate">{sub.label}</span>
+                            {sub.badge}
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </nav>
           </div>
 
@@ -207,25 +406,56 @@ export function SettingsLayout({
             <div className="border-t border-white/10 pt-4">
               <p className="px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">Server Admin</p>
               <nav className="space-y-1">
-                {adminItems.map((item) => (
-                  <NavLink
-                    key={item.id}
-                    to={item.to}
-                    className={({ isActive }) =>
-                      `flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                        isActive
-                          ? 'border-l-2 border-accent bg-accent/15 pl-2.5 text-accent-strong font-semibold'
-                          : 'text-white/70 hover:bg-white/5 hover:text-white'
-                      }`
-                    }
-                  >
-                    <span className="flex min-w-0 items-center gap-2.5">
-                      {item.icon}
-                      <span className="truncate">{item.label}</span>
-                    </span>
-                    {item.badge}
-                  </NavLink>
-                ))}
+                {adminItems.map((item) => {
+                  const isSectionActive = location.pathname.startsWith(item.to)
+                  // For Integrations, show sub-menu items so admin sees connectivity at all times
+                  const showSubItems = item.subItems && (isSectionActive || item.id === 'integrations')
+
+                  return (
+                    <div key={item.id}>
+                      <NavLink
+                        to={item.to}
+                        className={({ isActive }) =>
+                          `flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                            isActive
+                              ? 'border-l-2 border-accent bg-accent/15 pl-2.5 text-accent-strong font-semibold'
+                              : 'text-white/70 hover:bg-white/5 hover:text-white'
+                          }`
+                        }
+                      >
+                        <span className="flex min-w-0 items-center gap-2.5">
+                          {item.icon}
+                          <span className="truncate">{item.label}</span>
+                        </span>
+                        {item.badge}
+                      </NavLink>
+
+                      {/* Sub-menu items with status badges */}
+                      {showSubItems && item.subItems && (
+                        <div className="ml-5 mt-1 space-y-0.5 border-l border-white/10 pl-2.5">
+                          {item.subItems.map((sub) => (
+                            <a
+                              key={sub.id}
+                              href={sub.href}
+                              onClick={(e) => {
+                                e.preventDefault()
+                                scrollToId(sub.id, item.to)
+                              }}
+                              className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                                isSectionActive && activeHash === sub.id
+                                  ? 'text-accent font-semibold bg-accent/10'
+                                  : 'text-white/60 hover:bg-white/5 hover:text-white'
+                              }`}
+                            >
+                              <span className="truncate">{sub.label}</span>
+                              {sub.badge}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </nav>
             </div>
           )}

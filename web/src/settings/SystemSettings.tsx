@@ -7,8 +7,12 @@ import { Button, ErrorText } from '../ui'
 export function SystemSettings({ settings }: { settings: ServerSettings }) {
   return (
     <div className="space-y-6">
-      <McpSection enabled={settings.mcp_enabled} />
-      <ServerBackups />
+      <div id="mcp" className="scroll-mt-6">
+        <McpSection enabled={settings.mcp_enabled} />
+      </div>
+      <div id="backups" className="scroll-mt-6">
+        <ServerBackups />
+      </div>
     </div>
   )
 }

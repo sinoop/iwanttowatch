@@ -17,8 +17,12 @@ export function ImportExportSettings() {
 
   return (
     <div className="space-y-6">
-      <ImportRatingsSection tmdbReady={tmdbReady} />
-      <YourDataSection tmdbReady={tmdbReady} />
+      <div id="import-ratings" className="scroll-mt-6">
+        <ImportRatingsSection tmdbReady={tmdbReady} />
+      </div>
+      <div id="your-data" className="scroll-mt-6">
+        <YourDataSection tmdbReady={tmdbReady} />
+      </div>
     </div>
   )
 }

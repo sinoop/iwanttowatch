@@ -11,10 +11,22 @@ const THIS_YEAR = new Date().getFullYear()
 export function ProfileSettings({ me }: { me: Me }) {
   return (
     <div className="space-y-6">
-      <BirthYear me={me} />
-      <JellyfinAccount />
-      {!me.is_child && <TastePersonaCard />}
-      {!me.is_child && <ShareTasteSection />}
+      <div id="birth-year" className="scroll-mt-6">
+        <BirthYear me={me} />
+      </div>
+      <div id="jellyfin-account" className="scroll-mt-6">
+        <JellyfinAccount />
+      </div>
+      {!me.is_child && (
+        <div id="taste-profile" className="scroll-mt-6">
+          <TastePersonaCard />
+        </div>
+      )}
+      {!me.is_child && (
+        <div id="share-taste" className="scroll-mt-6">
+          <ShareTasteSection />
+        </div>
+      )}
     </div>
   )
 }

@@ -23,8 +23,12 @@ const PURPOSES: Record<string, string> = {
 export function AiSettings({ me, settings }: { me: Me; settings: ServerSettings }) {
   return (
     <div className="space-y-6">
-      <LlmSection me={me} settings={settings} />
-      <LlmActivity />
+      <div id="ai-writing" className="scroll-mt-6">
+        <LlmSection me={me} settings={settings} />
+      </div>
+      <div id="ai-activity" className="scroll-mt-6">
+        <LlmActivity />
+      </div>
     </div>
   )
 }

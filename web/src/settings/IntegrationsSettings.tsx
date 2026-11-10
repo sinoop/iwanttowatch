@@ -9,10 +9,18 @@ import { Button, ErrorText, Field } from '../ui'
 export function IntegrationsSettings({ me, settings }: { me: Me; settings: ServerSettings }) {
   return (
     <div className="space-y-6">
-      <TmdbSection me={me} settings={settings} />
-      <JellyfinServer settings={settings} />
-      <RadarrServer settings={settings} />
-      <ImdbSection me={me} settings={settings} />
+      <div id="tmdb" className="scroll-mt-6">
+        <TmdbSection me={me} settings={settings} />
+      </div>
+      <div id="jellyfin" className="scroll-mt-6">
+        <JellyfinServer settings={settings} />
+      </div>
+      <div id="radarr" className="scroll-mt-6">
+        <RadarrServer settings={settings} />
+      </div>
+      <div id="imdb" className="scroll-mt-6">
+        <ImdbSection me={me} settings={settings} />
+      </div>
     </div>
   )
 }
