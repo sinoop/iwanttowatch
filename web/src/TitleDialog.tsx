@@ -660,8 +660,32 @@ export function ImdbBadge({
   )
 }
 
-export function Chips({ genres, moods, className = '' }: { genres: string[]; moods: string[]; className?: string }) {
-  if (genres.length === 0 && moods.length === 0) return null
+/** Standard TMDb genres that mirror a mood tag in the curated vocabulary. */
+const REDUNDANT_GENRES: Record<string, string> = {
+  thrilling: 'thriller',
+  scary: 'horror',
+  funny: 'comedy',
+  romantic: 'romance',
+  'true story': 'documentary',
+}
+
+export function Chips({
+  genres,
+  moods,
+  max,
+  className = '',
+}: {
+  genres: string[]
+  moods: string[]
+  max?: number
+  className?: string
+}) {
+  const redundant = new Set(moods.map((m) => REDUNDANT_GENRES[m.trim().toLowerCase()]).filter(Boolean))
+  const visibleGenres = genres.filter((g) => !redundant.has(g.trim().toLowerCase()))
+  const remaining = max !== undefined ? Math.max(0, max - moods.length) : undefined
+  const displayedGenres = remaining !== undefined ? visibleGenres.slice(0, remaining) : visibleGenres
+
+  if (moods.length === 0 && displayedGenres.length === 0) return null
   return (
     <ul className={`flex flex-wrap gap-1 ${className}`} aria-label="Genres and moods">
       {moods.map((m) => (
@@ -669,7 +693,7 @@ export function Chips({ genres, moods, className = '' }: { genres: string[]; moo
           {m}
         </li>
       ))}
-      {genres.map((g) => (
+      {displayedGenres.map((g) => (
         <li key={g} className="rounded-full bg-white/8 px-2 py-0.5 text-[11px] text-white/60">
           {g}
         </li>

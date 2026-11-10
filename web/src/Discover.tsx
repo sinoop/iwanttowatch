@@ -721,7 +721,7 @@ function FeedCard({
       <h2 className="mt-1 text-sm leading-snug font-medium">{item.title}</h2>
       <p className="text-xs text-white/50">{facts(item).join(' · ')}</p>
       <WatchBadges availability={item.availability} />
-      <Chips genres={item.genres.slice(0, 3 - item.moods.length)} moods={item.moods} className="mt-2" />
+      <Chips genres={item.genres} moods={item.moods} max={3} className="mt-2" />
       {fit ? (
         <p className="mt-1.5 line-clamp-3 text-xs text-accent-strong/80">{fit}</p>
       ) : (

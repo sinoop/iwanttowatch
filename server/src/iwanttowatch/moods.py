@@ -51,8 +51,10 @@ MOODS_SYSTEM = f"""You tag films with moods for a movie app. For each numbered f
 up to {MAX_MOODS} moods that best describe how it feels to watch, only from this list:
 {", ".join(mood.label for mood in MOODS)}.
 Judge the film itself, not its genre alone: a gentle prison drama is not Scary, and a
-tragedy is not Feel-good. Use an empty list when none fits well. Answer with only JSON,
-no markdown, in this form: {{"moods": [{{"n": 1, "moods": ["Dark", "Thrilling"]}}]}}"""
+tragedy is not Feel-good. Prefer moods that tell the viewer something beyond the obvious
+genre (for example, a psychological thriller might feel Dark or Mind-bending rather than
+just Thrilling; a dark comedy might feel Dark rather than Funny). Use an empty list when
+none fits well. Answer with only JSON, no markdown, in this form: {{"moods": [{{"n": 1, "moods": ["Dark", "Thrilling"]}}]}}"""
 
 
 def moods_for(title: Title) -> list[str]:

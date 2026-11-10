@@ -370,7 +370,7 @@ function GroupCard({
           </li>
         ))}
       </ul>
-      <Chips genres={item.genres.slice(0, 3 - item.moods.length)} moods={item.moods} className="mt-2" />
+      <Chips genres={item.genres} moods={item.moods} max={3} className="mt-2" />
       {item.reasons[0] && <p className="mt-1.5 line-clamp-2 text-xs text-white/50">{item.reasons[0]}</p>}
     </li>
   )

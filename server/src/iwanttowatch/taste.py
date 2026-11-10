@@ -46,7 +46,8 @@ have already seen. For every numbered film, predict the rating out of 10 they wo
 give it on their own scale (their average is in the summary; use the whole scale, low
 for films they would dislike), with one short sentence on why, and up to {MAX_MOODS}
 moods that describe how the film feels to watch, only from: {", ".join(m.label for m in MOODS)}
-(an empty list when none fits; judge the film itself, not its genre alone). Then add up to
+(an empty list when none fits; judge the film itself, not its genre alone; prefer moods that
+tell the viewer something beyond the obvious genre). Then add up to
 {MAX_ADDITIONS} real, released feature films that are not in the list or already seen and
 that they are likely to rate higher than most of the list, each with a predicted rating
 and why. Answer with only JSON, no markdown, in this form:
