@@ -18,6 +18,8 @@ class Me(BaseModel):
     languages: list[str]
     # TMDb provider IDs of the streaming services the user subscribes to.
     subscriptions: list[int]
+    # Whether to show Rent and Buy options in film details.
+    show_rent_buy: bool = False
     birth_year: int | None
     is_child: bool = False
     # Maximum film certificate in the user's region, e.g. "U/A 7+" or "PG".

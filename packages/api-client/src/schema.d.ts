@@ -1538,6 +1538,11 @@ export interface components {
             languages: string[];
             /** Subscriptions */
             subscriptions: number[];
+            /**
+             * Show Rent Buy
+             * @default false
+             */
+            show_rent_buy: boolean;
             /** Birth Year */
             birth_year?: number | null;
         };
@@ -2009,6 +2014,11 @@ export interface components {
             languages: string[];
             /** Subscriptions */
             subscriptions: number[];
+            /**
+             * Show Rent Buy
+             * @default false
+             */
+            show_rent_buy: boolean;
             /** Birth Year */
             birth_year: number | null;
             /**
@@ -2264,6 +2274,11 @@ export interface components {
             region: string;
             /** Subscriptions */
             subscriptions: number[];
+            /**
+             * Show Rent Buy
+             * @default false
+             */
+            show_rent_buy: boolean;
         };
         /** TagOption */
         TagOption: {

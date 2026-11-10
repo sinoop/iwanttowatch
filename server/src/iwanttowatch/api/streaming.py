@@ -60,6 +60,7 @@ class TitleAvailability(BaseModel):
 class StreamingUpdate(BaseModel):
     region: Region
     subscriptions: list[int] = Field(max_length=100)
+    show_rent_buy: bool = False
 
 
 @router.get("/streaming/regions")
@@ -89,10 +90,12 @@ def set_streaming(
         )
     user.region = body.region
     user.subscriptions = list(dict.fromkeys(body.subscriptions))
+    user.show_rent_buy = body.show_rent_buy
     for child in children:
         child.max_certificate, child.allowed_certificates = limits[child.id]
         child.region = body.region
         child.subscriptions = list(user.subscriptions)
+        child.show_rent_buy = body.show_rent_buy
     session.commit()
     # Candidates come partly from the user's services, so rebuild the feed.
     request.app.state.feed_worker.request(user.id)

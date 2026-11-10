@@ -39,8 +39,10 @@ export function StreamingSettings({ me }: { me: Me }) {
     staleTime: Infinity,
   })
   const save = useMutation({
-    mutationFn: async (body: { region: string; subscriptions: number[] }) => {
-      const { data, error } = await api.PUT('/api/v1/me/streaming', { body })
+    mutationFn: async (body: { region: string; subscriptions: number[]; show_rent_buy?: boolean }) => {
+      const { data, error } = await api.PUT('/api/v1/me/streaming', {
+        body: { show_rent_buy: me.show_rent_buy, ...body },
+      })
       if (error) throw new Error(errorMessage(error))
       return data
     },
@@ -56,6 +58,7 @@ export function StreamingSettings({ me }: { me: Me }) {
       subscriptions: me.subscriptions.includes(id)
         ? me.subscriptions.filter((s) => s !== id)
         : [...me.subscriptions, id],
+      show_rent_buy: me.show_rent_buy,
     })
 
   const all = providers.data ?? []
@@ -80,7 +83,9 @@ export function StreamingSettings({ me }: { me: Me }) {
         <span className="mb-1.5 block font-medium text-white/80">Country</span>
         <select
           value={me.region}
-          onChange={(e) => save.mutate({ region: e.target.value, subscriptions: me.subscriptions })}
+          onChange={(e) =>
+            save.mutate({ region: e.target.value, subscriptions: me.subscriptions, show_rent_buy: me.show_rent_buy })
+          }
           className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
         >
           {!regions.data?.some((r) => r.code === me.region) && <option value={me.region}>{me.region}</option>}
@@ -90,6 +95,21 @@ export function StreamingSettings({ me }: { me: Me }) {
             </option>
           ))}
         </select>
+      </label>
+      <label className="mt-4 flex cursor-pointer select-none items-center gap-2.5 text-sm">
+        <input
+          type="checkbox"
+          checked={me.show_rent_buy}
+          onChange={(e) =>
+            save.mutate({
+              region: me.region,
+              subscriptions: me.subscriptions,
+              show_rent_buy: e.target.checked,
+            })
+          }
+          className="size-4 rounded border-white/20 bg-black/40 text-accent focus:ring-accent/40"
+        />
+        <span className="text-white/80">Show Buy and Rent options in film details</span>
       </label>
       {save.error && (
         <div className="mt-3">

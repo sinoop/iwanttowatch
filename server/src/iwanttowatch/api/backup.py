@@ -33,6 +33,7 @@ class ExportedProfile(BaseModel):
     region: str = Field(pattern=r"^[A-Z]{2}$")
     languages: list[LanguageCode] = Field(max_length=20)
     subscriptions: list[int]
+    show_rent_buy: bool = False
     birth_year: BirthYear | None = None
 
 
@@ -118,6 +119,7 @@ def export_data(user: AdultUser, session: DbSession, response: Response) -> Data
             region=user.region,
             languages=user.languages,
             subscriptions=user.subscriptions,
+            show_rent_buy=user.show_rent_buy,
             birth_year=user.birth_year,
         ),
         entries=[
@@ -215,6 +217,7 @@ def restore_data(
     user.region = data.profile.region
     user.languages = data.profile.languages
     user.subscriptions = data.profile.subscriptions
+    user.show_rent_buy = data.profile.show_rent_buy
     # Older exports have no birth year; keep the one set here.
     if data.profile.birth_year is not None:
         user.birth_year = data.profile.birth_year

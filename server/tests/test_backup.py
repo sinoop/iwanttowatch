@@ -30,6 +30,7 @@ def test_export_restores_into_another_server(
         "region": "US",
         "languages": [],
         "subscriptions": [8],
+        "show_rent_buy": False,
         "birth_year": 1985,
     }
     by_id = {e["tmdb_id"]: e for e in exported["entries"]}

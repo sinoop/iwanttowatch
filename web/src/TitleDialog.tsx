@@ -304,12 +304,17 @@ function ThemesSection({ film }: { film: TitleDetail }) {
 }
 
 function WhereToWatch({ film }: { film: TitleDetail }) {
+  const queryClient = useQueryClient()
+  const me = queryClient.getQueryData<Me>(['me'])
   const { availability } = film
   const nothing = !availability.on_jellyfin && availability.offers.length === 0
   const others = availability.other_offers ?? []
   const elsewhere = others.filter((o) => o.kind === 'flatrate')
   const rent = others.filter((o) => o.kind === 'rent')
   const buy = others.filter((o) => o.kind === 'buy')
+  const hasRentOrBuy = rent.length > 0 || buy.length > 0
+  const [showRentBuy, setShowRentBuy] = useState(me?.show_rent_buy ?? false)
+  const rentBuyLabel = rent.length > 0 && buy.length > 0 ? 'rent and buy' : rent.length > 0 ? 'rent' : 'buy'
   return (
     <section className="mt-5 rounded-xl border border-white/10 p-4">
       <h3 className="text-sm font-medium text-white/80">Where to watch</h3>
@@ -347,8 +352,23 @@ function WhereToWatch({ film }: { film: TitleDetail }) {
         ))}
       </ul>
       <OtherOffers label="On other streaming services" offers={elsewhere} />
-      <OtherOffers label="Rent" offers={rent} />
-      <OtherOffers label="Buy" offers={buy} />
+      {showRentBuy && (
+        <>
+          <OtherOffers label="Rent" offers={rent} />
+          <OtherOffers label="Buy" offers={buy} />
+        </>
+      )}
+      {hasRentOrBuy && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setShowRentBuy((v) => !v)}
+            className="text-xs text-white/50 underline-offset-2 hover:text-white/80 hover:underline"
+          >
+            {showRentBuy ? `Hide ${rentBuyLabel} options` : `Show ${rentBuyLabel} options`}
+          </button>
+        </div>
+      )}
       {availability.stale && availability.checked_at && (
         <p className="mt-2 text-xs text-amber-300/80">
           Last checked {new Date(availability.checked_at).toLocaleDateString()}
