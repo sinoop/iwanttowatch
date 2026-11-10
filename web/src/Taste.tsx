@@ -2,7 +2,7 @@ import type { DivergentTitle, Me, RatedTitle, Reaction, TitleAvailability } from
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { api, errorMessage, ratingToReaction, REACTIONS, TAG_LABELS, useAvailability, useImports, usePeopleTaste, useServerSettings } from './api'
+import { api, errorMessage, NEGATIVE_TAG_IDS, ratingToReaction, REACTIONS, TAG_LABELS, useAvailability, useImports, usePeopleTaste, useServerSettings } from './api'
 import { ReactionBadge, ReactionIcon } from './RateDialog'
 import PersonDialog, { HeartIcon } from './PersonDialog'
 import OutlierReviewDialog from './OutlierReviewDialog'
@@ -920,7 +920,11 @@ function DivergentCard({
               {item.tags.map((tagId) => (
                 <li
                   key={tagId}
-                  className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10.5px] text-white/60"
+                  className={`rounded-full border px-2 py-0.5 text-[10.5px] ${
+                    NEGATIVE_TAG_IDS.has(tagId)
+                      ? 'border-amber-400/25 bg-amber-400/10 text-amber-200/80'
+                      : 'border-white/10 bg-white/5 text-white/70'
+                  }`}
                 >
                   {TAG_LABELS[tagId] ?? tagId}
                 </li>
@@ -1043,8 +1047,8 @@ function RatingCard({
               <li
                 key={tagId}
                 className={`rounded-full px-2 py-0.5 text-[10.5px] ${
-                  item.reaction === 'disliked'
-                    ? 'border border-white/10 bg-white/5 text-white/60'
+                  NEGATIVE_TAG_IDS.has(tagId)
+                    ? 'border border-amber-400/25 bg-amber-400/10 text-amber-200/80'
                     : 'border border-accent/25 bg-accent/10 text-accent-strong'
                 }`}
               >

@@ -41,10 +41,14 @@ def test_reaction_and_tags_feed_ratings_and_the_persona_summary(client: TestClie
         "loved", ["moved_me", "great_story"], 9.5, "app"
     )  # fmt: skip
 
-    assert react(client, 401, "disliked", ["moved_me"]).status_code == 400  # a "liked" tag
+    # Mixed tags: caveat tag on a loved film, redeeming tag on a disliked film.
+    mixed_loved = react(client, 401, "loved", ["moved_me", "too_slow"])
+    assert mixed_loved.status_code == 200
+    assert mixed_loved.json()["tags"] == ["moved_me", "too_slow"]
+
     assert react(client, 401, "loved", ["not_a_tag"]).status_code == 400
-    four = ["moved_me", "great_story", "great_acting", "great_music"]
-    assert react(client, 401, "loved", four).status_code == 422
+    six = ["moved_me", "great_story", "great_acting", "great_music", "too_slow", "weak_story"]
+    assert react(client, 401, "loved", six).status_code == 422
 
     disliked = client.put(
         "/api/v1/titles/401/reaction",

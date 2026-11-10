@@ -122,13 +122,10 @@ def set_reaction(
     tmdb_id: int, body: ReactionUpdate, user: CurrentUser, session: DbSession, request: Request
 ) -> TitleReaction:
     title = load_title(session, request, tmdb_id)
-    positive = body.reaction != "disliked"
     tags = list(dict.fromkeys(body.tags))
     for tag in tags:
-        if tag not in BY_ID or BY_ID[tag].positive != positive:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, f"{tag!r} isn't a tag for {body.reaction!r}"
-            )
+        if tag not in BY_ID:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"{tag!r} isn't a known tag")
     entry = _entry(session, user.id, tmdb_id)
     if entry is None:
         entry = UserTitle(user_id=user.id, tmdb_id=tmdb_id, source=SOURCE)

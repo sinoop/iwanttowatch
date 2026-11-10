@@ -53,10 +53,9 @@ class ExportedEntry(BaseModel):
 
     @model_validator(mode="after")
     def tags_match_reaction(self) -> Self:
-        positive = self.reaction != "disliked"
         for tag in self.tags:
-            if self.reaction is None or tag not in BY_ID or BY_ID[tag].positive != positive:
-                raise ValueError(f"{tag!r} isn't a tag for {self.reaction!r}")
+            if self.reaction is None or tag not in BY_ID:
+                raise ValueError(f"{tag!r} isn't a known tag or requires a reaction")
         return self
 
 

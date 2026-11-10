@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from 'react'
 import { REACTIONS, useReaction } from './api'
 import { Button, ErrorText, Poster } from './ui'
 
-const MAX_TAGS = 3
+const MAX_TAGS = 5
+const PRIMARY_MAX = 3
+const CAVEAT_MAX = 2
 const MAX_NOTE = 200
 
 type TagOption = TitleReaction['liked_tags'][number]
@@ -22,7 +24,7 @@ export default function RateDialog({ tmdbId, onClose }: { tmdbId: number | null;
       onClose={onClose}
       onClick={(e) => e.target === dialog.current && dialog.current.close()}
       aria-label="Rate this film"
-      className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#11141b] p-0 text-[#e7e9ee] shadow-2xl backdrop:bg-black/70"
+      className="m-auto max-h-[90vh] overflow-y-auto w-[min(32rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#11141b] p-0 text-[#e7e9ee] shadow-2xl backdrop:bg-black/70"
     >
       {tmdbId !== null && <RateForm key={tmdbId} tmdbId={tmdbId} onDone={() => dialog.current?.close()} />}
     </dialog>
@@ -85,11 +87,13 @@ function TagChip({
   tag,
   selected,
   disabled,
+  isCaveat = false,
   onClick,
 }: {
   tag: TagOption
   selected: boolean
   disabled: boolean
+  isCaveat?: boolean
   onClick: () => void
 }) {
   return (
@@ -100,7 +104,9 @@ function TagChip({
       onClick={onClick}
       className={`rounded-full border px-3 py-1 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-35 ${
         selected
-          ? 'border-accent bg-accent/15 text-accent-strong'
+          ? isCaveat
+            ? 'border-amber-400/60 bg-amber-400/15 text-amber-200'
+            : 'border-accent bg-accent/15 text-accent-strong'
           : 'border-white/10 text-white/65 hover:border-white/25 hover:text-white'
       }`}
     >
@@ -127,16 +133,36 @@ export function RatePicker({
 }) {
   const { film, error, save, remove } = useReaction(tmdbId)
   const [note, setNote] = useState<string | null>(null)
-  const [more, setMore] = useState(false)
+  const [morePrimary, setMorePrimary] = useState(false)
+  const [moreCaveat, setMoreCaveat] = useState(false)
+  const [showCaveatSection, setShowCaveatSection] = useState(false)
   const [noting, setNoting] = useState(false)
   // The note being typed, or the saved one until the user edits it.
   const draft = note ?? film?.note ?? ''
 
   const positive = film?.reaction !== 'disliked'
-  const options = film ? (positive ? film.liked_tags : film.disliked_tags) : []
-  const group = (name: TagOption['group']) => options.filter((t) => t.group === name)
-  const extra = group('more')
-  const showMore = more || (film !== undefined && extra.some((t) => film.tags.includes(t.id)))
+  const primaryOptions = film ? (positive ? film.liked_tags : film.disliked_tags) : []
+  const caveatOptions = film ? (positive ? film.disliked_tags : film.liked_tags) : []
+
+  const primaryGroup = (name: TagOption['group']) => primaryOptions.filter((t) => t.group === name)
+  const caveatGroup = (name: TagOption['group']) => caveatOptions.filter((t) => t.group === name)
+
+  const primaryExtra = primaryGroup('more')
+  const caveatExtra = caveatGroup('more')
+
+  const hasCaveatsSelected = film !== undefined && caveatOptions.some((t) => film.tags.includes(t.id))
+  const isCaveatSectionVisible = showCaveatSection || hasCaveatsSelected
+
+  const showMorePrimary = morePrimary || (film !== undefined && primaryExtra.some((t) => film.tags.includes(t.id)))
+  const showMoreCaveat = moreCaveat || (film !== undefined && caveatExtra.some((t) => film.tags.includes(t.id)))
+
+  const primaryIds = new Set(primaryOptions.map((t) => t.id))
+  const caveatIds = new Set(caveatOptions.map((t) => t.id))
+
+  const selectedPrimaryCount = film ? film.tags.filter((id) => primaryIds.has(id)).length : 0
+  const selectedCaveatCount = film ? film.tags.filter((id) => caveatIds.has(id)).length : 0
+  const totalSelected = film?.tags.length ?? 0
+
   const choose = (reaction: Reaction) => {
     // Tags only carry over while the answer stays on the same side; the note always does.
     const tags = film && (reaction === 'disliked') === (film.reaction === 'disliked') ? film.tags : []
@@ -152,16 +178,21 @@ export function RatePicker({
       save.mutate({ reaction: film.reaction, tags: film.tags, note: draft })
     }
   }
-  const chips = (tags: TagOption[]) => (
+  const chips = (tags: TagOption[], isCaveat: boolean) => (
     <div className="mt-2 flex flex-wrap gap-2">
       {tags.map((tag) => {
         const selected = film?.tags.includes(tag.id) ?? false
+        const disabled =
+          !selected &&
+          (totalSelected >= MAX_TAGS ||
+            (isCaveat ? selectedCaveatCount >= CAVEAT_MAX : selectedPrimaryCount >= PRIMARY_MAX))
         return (
           <TagChip
             key={tag.id}
             tag={tag}
             selected={selected}
-            disabled={!selected && (film?.tags.length ?? 0) >= MAX_TAGS}
+            disabled={disabled}
+            isCaveat={isCaveat}
             onClick={() => toggle(tag.id)}
           />
         )
@@ -203,29 +234,87 @@ export function RatePicker({
         <fieldset className={compact ? 'mt-3 rounded-xl border border-accent/30 bg-white/[0.02] p-3' : 'mt-5'}>
           <legend className="text-sm font-medium">
             {positive ? 'What did you like most?' : 'What didn’t work?'}{' '}
-            <span className="font-normal text-white/45">Optional, up to {MAX_TAGS}</span>
+            <span className="font-normal text-white/45">Optional, up to {PRIMARY_MAX}</span>
           </legend>
-          {chips(group('core'))}
-          {group('suggested').length > 0 && (
+          {chips(primaryGroup('core'), false)}
+          {primaryGroup('suggested').length > 0 && (
             <>
               <p className="mt-3 text-xs text-white/45">Suggested for this film</p>
-              {chips(group('suggested'))}
+              {chips(primaryGroup('suggested'), false)}
             </>
           )}
-          {showMore ? (
+          {showMorePrimary ? (
             <>
               <p className="mt-3 text-xs text-white/45">More</p>
-              {chips(extra)}
+              {chips(primaryExtra, false)}
             </>
           ) : (
             <button
               type="button"
-              onClick={() => setMore(true)}
+              onClick={() => setMorePrimary(true)}
               className="mt-3 text-sm text-white/55 underline-offset-2 hover:text-white hover:underline"
             >
-              More tags ({extra.length})
+              More tags ({primaryExtra.length})
             </button>
           )}
+
+          {/* Caveat or secondary sentiment section */}
+          {isCaveatSectionVisible ? (
+            <div className="mt-5 border-t border-white/10 pt-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-white/90">
+                  {positive ? 'Any caveats or what didn’t work?' : 'Any redeeming qualities?'}{' '}
+                  <span className="font-normal text-white/45">Optional, up to {CAVEAT_MAX}</span>
+                </p>
+                {!hasCaveatsSelected && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCaveatSection(false)}
+                    className="text-xs text-white/45 hover:text-white"
+                  >
+                    Hide
+                  </button>
+                )}
+              </div>
+              {chips(caveatGroup('core'), true)}
+              {caveatGroup('suggested').length > 0 && (
+                <>
+                  <p className="mt-3 text-xs text-white/45">Suggested for this film</p>
+                  {chips(caveatGroup('suggested'), true)}
+                </>
+              )}
+              {showMoreCaveat ? (
+                <>
+                  <p className="mt-3 text-xs text-white/45">More</p>
+                  {chips(caveatExtra, true)}
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setMoreCaveat(true)}
+                  className="mt-3 text-sm text-white/55 underline-offset-2 hover:text-white hover:underline"
+                >
+                  More tags ({caveatExtra.length})
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="mt-4 border-t border-white/5 pt-3">
+              <button
+                type="button"
+                onClick={() => setShowCaveatSection(true)}
+                className="inline-flex items-center gap-1.5 text-xs text-white/60 hover:text-white"
+              >
+                <span className="font-bold text-accent-strong">+</span>
+                <span>
+                  {positive
+                    ? 'Any caveats? (e.g. Too slow, Too long, Disappointing ending)'
+                    : 'Any redeeming qualities? (e.g. Great acting, Beautiful visuals)'}
+                </span>
+              </button>
+            </div>
+          )}
+
           {compact && (
             <div className="mt-3 flex items-center justify-between gap-3 text-sm">
               {showNote ? (

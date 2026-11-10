@@ -17,7 +17,7 @@ def test_export_restores_into_another_server(
     assert client.put("/api/v1/me/profile", json={"birth_year": 1985}).json()["birth_year"] == 1985
     client.put(
         "/api/v1/titles/201/reaction",
-        json={"reaction": "loved", "tags": ["great_story"], "note": "The ending!"},
+        json={"reaction": "loved", "tags": ["great_story", "too_slow"], "note": "The ending!"},
     )
     client.put("/api/v1/titles/301/feedback", json={"kind": "seen"})
     client.put("/api/v1/titles/401/feedback", json={"kind": "dismissed"})
@@ -34,7 +34,11 @@ def test_export_restores_into_another_server(
         "birth_year": 1985,
     }
     by_id = {e["tmdb_id"]: e for e in exported["entries"]}
-    assert by_id[201]["reaction"] == "loved" and by_id[201]["note"] == "The ending!"
+    assert (
+        by_id[201]["reaction"] == "loved"
+        and by_id[201]["tags"] == ["great_story", "too_slow"]
+        and by_id[201]["note"] == "The ending!"
+    )
     assert by_id[301]["watched"] is True and by_id[301]["rating"] is None
     assert [(f["tmdb_id"], f["kind"]) for f in exported["feedback"]] == [(401, "dismissed")]
     assert [s["tmdb_id"] for s in exported["shortlist"]] == [402]

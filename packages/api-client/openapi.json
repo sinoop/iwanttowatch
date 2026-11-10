@@ -5332,7 +5332,7 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 3,
+            "maxItems": 5,
             "title": "Tags"
           },
           "note": {
@@ -8885,7 +8885,7 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 3,
+            "maxItems": 5,
             "title": "Tags"
           },
           "note": {
