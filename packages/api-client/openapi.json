@@ -1541,6 +1541,22 @@
             }
           },
           {
+            "name": "content_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content Type"
+            }
+          },
+          {
             "name": "offset",
             "in": "query",
             "required": false,
@@ -1694,6 +1710,22 @@
               "default": true,
               "title": "Age Limit"
             }
+          },
+          {
+            "name": "content_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content Type"
+            }
           }
         ],
         "requestBody": {
@@ -1765,6 +1797,22 @@
                 }
               ],
               "title": "Genre"
+            }
+          },
+          {
+            "name": "content_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content Type"
             }
           }
         ],
@@ -6503,6 +6551,11 @@
               }
             ],
             "title": "Max Certificate"
+          },
+          "default_content_type": {
+            "type": "string",
+            "title": "Default Content Type",
+            "default": "movies"
           }
         },
         "type": "object",
@@ -6798,12 +6851,20 @@
               }
             ],
             "title": "Birth Year"
+          },
+          "default_content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Content Type"
           }
         },
         "type": "object",
-        "required": [
-          "birth_year"
-        ],
         "title": "ProfileUpdate"
       },
       "Provider": {

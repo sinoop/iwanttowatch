@@ -21,6 +21,10 @@ class User(Base):
     languages: Mapped[list[str]] = mapped_column(JSON, default=list)
     # TMDb provider IDs of the streaming services the user pays for, e.g. 8 for Netflix.
     subscriptions: Mapped[list[int]] = mapped_column(JSON, default=list)
+    # Default content type in Discovery: "movies" (default), "standup", "concerts", "all".
+    default_content_type: Mapped[str] = mapped_column(
+        String(32), default="movies", server_default="movies"
+    )
     # Show rent and buy options in movie details (off by default).
     show_rent_buy: Mapped[bool] = mapped_column(default=False)
     # Optional on adults (films from before it count a little against their matches);

@@ -37,7 +37,7 @@ from iwanttowatch.feed import (
     feed_reasons,
     films_for_request,
     hidden,
-    is_documentary,
+    matches_content_type,
     score_films,
     seen,
     shortlisted,
@@ -158,6 +158,8 @@ def read_feed(
     sort: FeedSort = "recommended",
     # Only these films, such as the AI's picks for a request.
     only: Annotated[list[int], Query(max_length=ASK_PICKS)] = [],  # noqa: B006
+    # Content type filter: "movies" (default), "standup", "concerts", "all".
+    content_type: str | None = None,
     offset: int = Query(0, ge=0),
     limit: int = Query(24, ge=1, le=100),
 ) -> FeedPage:
@@ -209,10 +211,13 @@ def read_feed(
         assigned[tmdb_id].append(child_id)
     listed = []
     shortlist_count = 0
+    active_content_type = (
+        content_type or getattr(user, "default_content_type", "movies") or "movies"
+    )
     for rec, title in rows:
         if (
             title.tmdb_id in exclude
-            or is_documentary(title)
+            or not matches_content_type(title, active_content_type)
             or (
                 age_limit
                 and title.tmdb_id not in saved
@@ -318,6 +323,7 @@ def ask_feed(
     shortlist: bool = False,
     hide_shortlisted: bool = False,
     age_limit: bool = True,
+    content_type: str | None = None,
 ) -> AskAnswer:
     """Ask the configured LLM which films near the top of the feed, with the same
     filters, fit a request such as "a light Malayalam comedy under 2 hours"."""
@@ -338,6 +344,7 @@ def ask_feed(
         age_limit,
         sort="recommended",
         only=[],
+        content_type=content_type,
         offset=0,
         limit=ASK_FILMS,
     )
@@ -361,8 +368,11 @@ def refresh_feed(
     request: Request,
     language: str | None = None,
     genre: str | None = None,
+    content_type: str | None = None,
 ) -> Response:
-    request.app.state.feed_worker.request(user.id, language=language, genre=genre)
+    request.app.state.feed_worker.request(
+        user.id, language=language, genre=genre, content_type=content_type
+    )
     return Response(status_code=status.HTTP_202_ACCEPTED)
 
 

@@ -713,3 +713,105 @@ def test_feed_excludes_documentaries(client: TestClient, monkeypatch: pytest.Mon
             select(Recommendation.tmdb_id).where(Recommendation.user_id == 1)
         ).all()
         assert 601 not in recs
+
+
+def test_feed_content_type_filtering(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    # 701: Stand-up comedy special (e.g. Zakir Khan: Haq Se Single)
+    standup_special = {
+        "title": "Zakir Khan: Haq Se Single",
+        "original_title": "Zakir Khan: Haq Se Single",
+        "lang": "hi",
+        "date": "2017-07-08",
+        "imdb": "tt7123456",
+        "certs": {"IN": "U/A 16+"},
+        "votes": 500,
+        "genres": [{"id": 35, "name": "Comedy"}],
+        "keywords": [{"id": 9716, "name": "stand-up comedy"}],
+        "runtime": 92,
+    }
+    # 702: Concert film
+    concert_film = {
+        "title": "Taylor Swift: The Eras Tour",
+        "original_title": "Taylor Swift: The Eras Tour",
+        "lang": "en",
+        "date": "2023-10-13",
+        "imdb": "tt28814949",
+        "certs": {"IN": "U"},
+        "votes": 400,
+        "genres": [{"id": 10402, "name": "Music"}],
+        "keywords": [{"id": 6029, "name": "concert film"}],
+        "runtime": 169,
+    }
+    # 703: Short film (< 40 min)
+    short_film = {
+        "title": "Piper",
+        "original_title": "Piper",
+        "lang": "en",
+        "date": "2016-06-16",
+        "imdb": "tt5613056",
+        "certs": {"IN": "U"},
+        "votes": 300,
+        "genres": [{"id": 16, "name": "Animation"}],
+        "keywords": [{"id": 1595, "name": "short film"}],
+        "runtime": 6,
+    }
+    monkeypatch.setitem(test_imports.MOVIES, 701, standup_special)
+    monkeypatch.setitem(test_imports.MOVIES, 702, concert_film)
+    monkeypatch.setitem(test_imports.MOVIES, 703, short_film)
+    monkeypatch.setitem(test_imports.WATCH, 701, {"IN": {"flatrate": [test_imports.PRIME]}})
+    monkeypatch.setitem(test_imports.WATCH, 702, {"IN": {"flatrate": [test_imports.HOTSTAR]}})
+    monkeypatch.setitem(test_imports.WATCH, 703, {"IN": {"flatrate": [test_imports.HOTSTAR]}})
+
+    assert client.put("/api/v1/settings/tmdb", json={"api_key": KEY}).status_code == 200
+    client.put("/api/v1/titles/101/reaction", json={"reaction": "loved"})
+    client.put("/api/v1/me/streaming", json={"region": "IN", "subscriptions": [8, 119, 2336]})
+    idle(client)
+
+    # 1. By default ("movies" / Movies only), non-movies (stand-up, concert, short) are excluded
+    page_default = feed(client, available_only=False)
+    assert page_default["status"] == "ready"
+    assert 701 not in {i["tmdb_id"] for i in page_default["items"]}
+    assert 702 not in {i["tmdb_id"] for i in page_default["items"]}
+    assert 703 not in {i["tmdb_id"] for i in page_default["items"]}
+
+    # 2. Even if present in Recommendations, default feed hides them
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        session.add(
+            Recommendation(user_id=1, tmdb_id=701, score=0.92, rank=0, reasons=["Great match"])
+        )
+        session.add(
+            Recommendation(user_id=1, tmdb_id=702, score=0.91, rank=1, reasons=["Great match"])
+        )
+        session.add(
+            Recommendation(user_id=1, tmdb_id=703, score=0.90, rank=2, reasons=["Great match"])
+        )
+        session.commit()
+
+    page_movies = feed(client, available_only=False, content_type="movies")
+    assert 701 not in {i["tmdb_id"] for i in page_movies["items"]}
+    assert 702 not in {i["tmdb_id"] for i in page_movies["items"]}
+    assert 703 not in {i["tmdb_id"] for i in page_movies["items"]}
+
+    # 3. Requesting content_type="standup" shows the standup special
+    page_standup = feed(client, available_only=False, content_type="standup")
+    assert 701 in {i["tmdb_id"] for i in page_standup["items"]}
+    assert 702 not in {i["tmdb_id"] for i in page_standup["items"]}
+
+    # 4. Requesting content_type="concerts" shows the concert film
+    page_concerts = feed(client, available_only=False, content_type="concerts")
+    assert 702 in {i["tmdb_id"] for i in page_concerts["items"]}
+    assert 701 not in {i["tmdb_id"] for i in page_concerts["items"]}
+
+    # 5. Requesting content_type="all" shows all of them
+    page_all = feed(client, available_only=False, content_type="all")
+    assert {701, 702, 703}.issubset({i["tmdb_id"] for i in page_all["items"]})
+
+    # 6. Profile preference: updating default_content_type updates user's default feed
+    resp = client.put("/api/v1/me/profile", json={"default_content_type": "standup"})
+    assert resp.status_code == 200
+    assert resp.json()["default_content_type"] == "standup"
+
+    # Default feed call without content_type param now uses user's default_content_type ("standup")
+    page_pref = feed(client, available_only=False)
+    assert 701 in {i["tmdb_id"] for i in page_pref["items"]}
+    assert 702 not in {i["tmdb_id"] for i in page_pref["items"]}

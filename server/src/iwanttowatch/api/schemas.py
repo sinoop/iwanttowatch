@@ -24,6 +24,8 @@ class Me(BaseModel):
     is_child: bool = False
     # Maximum film certificate in the user's region, e.g. "U/A 7+" or "PG".
     max_certificate: str | None = None
+    # Default content type in Discovery: "movies", "standup", "concerts", "all".
+    default_content_type: str = "movies"
 
 
 # Optional; films from before it count a little against the user's matches.
@@ -31,7 +33,8 @@ BirthYear = Annotated[int, Field(ge=1900, le=2100)]
 
 
 class ProfileUpdate(BaseModel):
-    birth_year: BirthYear | None
+    birth_year: BirthYear | None = None
+    default_content_type: str | None = None
 
 
 class SetupStatus(BaseModel):

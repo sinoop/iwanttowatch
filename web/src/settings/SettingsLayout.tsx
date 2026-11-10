@@ -185,6 +185,7 @@ export function SettingsLayout({
       label: 'My Profile',
       icon: <UserIcon />,
       subItems: [
+        { id: 'content-filter', label: 'Default Feed Content', href: '/settings/profile#content-filter' },
         { id: 'birth-year', label: 'Birth Year', href: '/settings/profile#birth-year' },
         { id: 'jellyfin-account', label: 'Jellyfin Account', href: '/settings/profile#jellyfin-account' },
         { id: 'taste-profile', label: 'Taste Profile', href: '/settings/profile#taste-profile' },

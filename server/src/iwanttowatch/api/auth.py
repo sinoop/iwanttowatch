@@ -107,13 +107,24 @@ def me(user: CurrentUser) -> Me:
     return Me.model_validate(user)
 
 
+VALID_CONTENT_TYPES = {"movies", "standup", "concerts", "all"}
+
+
 @router.put("/me/profile")
 def update_profile(
     body: ProfileUpdate, user: CurrentUser, session: DbSession, request: Request
 ) -> Me:
     if body.birth_year is not None and body.birth_year > date.today().year:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "That year hasn't happened yet")
-    user.birth_year = body.birth_year
+    if "birth_year" in body.model_fields_set:
+        user.birth_year = body.birth_year
+    if body.default_content_type is not None:
+        if body.default_content_type not in VALID_CONTENT_TYPES:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                f"Content type must be one of {sorted(VALID_CONTENT_TYPES)}",
+            )
+        user.default_content_type = body.default_content_type
     session.commit()
     request.app.state.feed_worker.rescore_soon(user.id)
     return Me.model_validate(user)

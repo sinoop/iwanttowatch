@@ -75,13 +75,15 @@ def _summary(tmdb_id: int) -> dict[str, Any]:
 def _details(tmdb_id: int) -> dict[str, Any]:
     m = MOVIES[tmdb_id]
     genres = m.get("genres", [{"id": 18, "name": "Drama"}])
+    keywords = m.get("keywords", [{"id": 1, "name": "family"}])
     return {
         **_summary(tmdb_id),
         "imdb_id": m["imdb"],
         "genres": genres,
+        "runtime": m.get("runtime"),
         "spoken_languages": [{"iso_639_1": m["lang"]}],
         "credits": {"cast": [], "crew": [{"id": 9, "name": "A Director", "job": "Director"}]},
-        "keywords": {"keywords": [{"id": 1, "name": "family"}]},
+        "keywords": {"keywords": keywords},
         "translations": {"translations": []},
         "alternative_titles": {"titles": []},
         "release_dates": {
@@ -152,6 +154,13 @@ def fake_tmdb(request: httpx.Request) -> httpx.Response:
         region = params.get("watch_region", "")
         with_genres = {int(g) for g in params.get("with_genres", "").split(",") if g}
         without_genres = {int(g) for g in params.get("without_genres", "").split(",") if g}
+        without_keywords = {
+            int(k) for k in params.get("without_keywords", "").replace("|", ",").split(",") if k
+        }
+        with_keywords = {
+            int(k) for k in params.get("with_keywords", "").replace("|", ",").split(",") if k
+        }
+        min_runtime = int(params.get("with_runtime.gte", "0"))
 
         def streams(tmdb_id: int) -> bool:
             offers = WATCH.get(tmdb_id, {}).get(region, {})
@@ -167,12 +176,26 @@ def fake_tmdb(request: httpx.Request) -> httpx.Response:
                 return True
             return bool(with_genres & film_gids)
 
+        def matches_keywords(tmdb_id: int) -> bool:
+            k_ids = {
+                k["id"] for k in MOVIES[tmdb_id].get("keywords", [{"id": 1, "name": "family"}])
+            }
+            if without_keywords & k_ids:
+                return False
+            return not (with_keywords and not (with_keywords & k_ids))
+
+        def matches_runtime(tmdb_id: int) -> bool:
+            rt = MOVIES[tmdb_id].get("runtime")
+            return not (min_runtime and rt is not None and rt < min_runtime)
+
         hits = [
             _summary(i)
             for i, m in MOVIES.items()
             if (not language or m["lang"] == language)
             and (not providers or streams(i))
             and has_genre(i)
+            and matches_keywords(i)
+            and matches_runtime(i)
         ]
         return httpx.Response(200, json={"results": hits})
     if path.startswith("/movie/") and path.endswith("/recommendations"):

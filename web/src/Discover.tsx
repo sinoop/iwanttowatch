@@ -24,6 +24,7 @@ export default function Discover({ me }: { me: Me }) {
   const settings = useServerSettings()
   const children = useChildren(!me.is_child)
   const [watchOn, setWatchOn] = useState<WatchOn>('anywhere')
+  const [contentType, setContentType] = useState<string>(me.default_content_type ?? 'movies')
   const [language, setLanguage] = useState<string | null>(null)
   const [genre, setGenre] = useState<string | null>(null)
   const [certificate, setCertificate] = useState<string | null>(null)
@@ -86,6 +87,7 @@ export default function Discover({ me }: { me: Me }) {
     ...watchOnQuery(watchOn),
     language: language ?? undefined,
     genre: genre ?? undefined,
+    content_type: contentType,
     max_certificate: !me.is_child ? (certificate ?? undefined) : undefined,
     shortlist: shortlistFilter === 'only' || undefined,
     hide_shortlisted: shortlistFilter === 'hide' || undefined,
@@ -107,7 +109,7 @@ export default function Discover({ me }: { me: Me }) {
   // While an answer is shown, the feed lists only the AI's picks, in the feed's order.
   const only = answer?.picks.map((p) => p.tmdb_id)
   const feed = useInfiniteQuery({
-    queryKey: ['feed', me.id, watchOn, language, genre, certificate, shortlistFilter, sort, ageLimit, only],
+    queryKey: ['feed', me.id, watchOn, language, genre, contentType, certificate, shortlistFilter, sort, ageLimit, only],
     queryFn: async ({ pageParam }) => {
       const { data, error } = await api.GET('/api/v1/feed', {
         params: {
@@ -182,7 +184,7 @@ export default function Discover({ me }: { me: Me }) {
           <h1 className="text-2xl font-semibold">Discover</h1>
           <p className="mt-1 text-white/60">Films picked for {me.display_name}, recommended first.</p>
         </div>
-        {first && <RefreshButton page={first} language={language} genre={genre} />}
+        {first && <RefreshButton page={first} language={language} genre={genre} contentType={contentType} />}
       </div>
 
       {tmdbMissing ? (
@@ -240,6 +242,8 @@ export default function Discover({ me }: { me: Me }) {
           onAgeLimit={setAgeLimit}
           watchOn={watchOn}
           onWatchOn={setWatchOn}
+          contentType={contentType}
+          onContentType={setContentType}
           language={language}
           onLanguage={setLanguage}
           genre={genre}
@@ -362,13 +366,16 @@ function RefreshButton({
   page,
   language,
   genre,
+  contentType,
 }: {
   page: FeedPage
   language: string | null
   genre: string | null
+  contentType?: string
 }) {
   const queryClient = useQueryClient()
-  const targetFilters = (language !== null || genre !== null) && page.total < 25
+  const targetFilters =
+    (language !== null || genre !== null || (contentType && contentType !== 'movies')) && page.total < 25
   const refresh = useMutation({
     mutationFn: () =>
       api.POST('/api/v1/feed/refresh', {
@@ -376,6 +383,7 @@ function RefreshButton({
           query: {
             language: targetFilters ? (language ?? undefined) : undefined,
             genre: targetFilters ? (genre ?? undefined) : undefined,
+            content_type: targetFilters ? (contentType ?? undefined) : undefined,
           },
         },
       }),
@@ -410,6 +418,8 @@ function Filters({
   onAgeLimit,
   watchOn,
   onWatchOn,
+  contentType,
+  onContentType,
   language,
   onLanguage,
   genre,
@@ -429,6 +439,8 @@ function Filters({
   onAgeLimit: (value: boolean) => void
   watchOn: WatchOn
   onWatchOn: (value: WatchOn) => void
+  contentType: string
+  onContentType: (value: string) => void
   language: string | null
   onLanguage: (value: string | null) => void
   genre: string | null
@@ -506,6 +518,17 @@ function Filters({
           )}
         </>
       )}
+      <select
+        value={contentType}
+        onChange={(e) => onContentType(e.target.value)}
+        aria-label="Content type"
+        className={selectClass(contentType !== 'movies')}
+      >
+        <option value="movies">Movies only</option>
+        <option value="standup">Stand-up comedy</option>
+        <option value="concerts">Concerts &amp; Live</option>
+        <option value="all">All content</option>
+      </select>
       {(languages.length > 1 || language) && (
         <select
           value={language ?? ''}

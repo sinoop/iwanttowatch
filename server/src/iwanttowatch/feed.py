@@ -198,10 +198,117 @@ GENRES_CACHE = timedelta(days=30)
 DOCUMENTARY_GENRE = "Documentary"
 DOCUMENTARY_GENRE_ID = TMDB_GENRES[DOCUMENTARY_GENRE]
 
+STANDUP_KEYWORDS = {
+    "stand-up comedy",
+    "stand-up special",
+    "stand-up",
+    "stand up comedy",
+    "comedy special",
+    "stand up special",
+}
+
+CONCERT_KEYWORDS = {
+    "concert film",
+    "concert",
+    "live concert",
+    "music tour",
+    "stage performance",
+    "live performance",
+    "theatre recording",
+    "stage production",
+    "opera",
+    "broadway",
+}
+
+BEHIND_THE_SCENES_KEYWORDS = {
+    "making of",
+    "behind the scenes",
+    "featurette",
+    "outtakes",
+    "bloopers",
+    "interview",
+}
+
+SPORTS_KEYWORDS = {
+    "professional wrestling",
+    "wrestling",
+    "wwe",
+    "mma",
+    "ufc",
+    "sports event",
+}
+
+SHORT_KEYWORDS = {
+    "short film",
+    "animated short",
+    "short",
+}
+
+# TMDb keyword IDs to exclude for "movies" using pipe (OR logic in without_keywords):
+# 9716 (stand-up comedy), 6078 (concert), 6029 (concert film), 10683 (making of),
+# 1595 (short film), 6075 (sport / wrestling)
+NON_MOVIE_KEYWORD_IDS = "9716|6078|6029|10683|1595|6075"
+STANDUP_KEYWORD_ID = 9716
+CONCERT_KEYWORD_IDS = "6078|6029"
+MIN_MOVIE_RUNTIME = 40
+
 
 def is_documentary(title: Title) -> bool:
     """Whether a film is a documentary. Documentaries are omitted from feed recommendations."""
     return any(g.strip().lower() == "documentary" for g in title.genres)
+
+
+def is_standup(title: Title) -> bool:
+    """Whether a title is a stand-up comedy special."""
+    return any(k.strip().lower() in STANDUP_KEYWORDS for k in title.keywords)
+
+
+def is_concert(title: Title) -> bool:
+    """Whether a title is a concert film, live music performance, or stage recording."""
+    return any(k.strip().lower() in CONCERT_KEYWORDS for k in title.keywords)
+
+
+def is_behind_the_scenes(title: Title) -> bool:
+    """Whether a title is a making-of or featurette."""
+    return any(k.strip().lower() in BEHIND_THE_SCENES_KEYWORDS for k in title.keywords)
+
+
+def is_sports(title: Title) -> bool:
+    """Whether a title is a sports event, wrestling, or combat sports broadcast."""
+    return any(k.strip().lower() in SPORTS_KEYWORDS for k in title.keywords)
+
+
+def is_short(title: Title) -> bool:
+    """Whether a title is a short film (< 40 min runtime or tagged as short film)."""
+    if title.runtime is not None and title.runtime < MIN_MOVIE_RUNTIME:
+        return True
+    return any(k.strip().lower() in SHORT_KEYWORDS for k in title.keywords)
+
+
+def is_non_movie(title: Title) -> bool:
+    """Whether a title is a documentary, stand-up special, concert, behind-the-scenes,
+    sports event, or short film."""
+    return (
+        is_documentary(title)
+        or is_standup(title)
+        or is_concert(title)
+        or is_behind_the_scenes(title)
+        or is_sports(title)
+        or is_short(title)
+    )
+
+
+def matches_content_type(title: Title, content_type: str = "movies") -> bool:
+    """Whether a title matches the selected content type."""
+    if content_type == "movies":
+        return not is_non_movie(title)
+    if content_type == "standup":
+        return is_standup(title)
+    if content_type == "concerts":
+        return is_concert(title)
+    if content_type == "all":
+        return True
+    return not is_non_movie(title)
 
 
 def genre_id(tmdb: TmdbClient, name: str) -> int | None:
@@ -226,14 +333,23 @@ def _discover(
     providers: list[int],
     genre_id: int | None = None,
     sort_by: str = "vote_average.desc",
+    content_type: str = "movies",
 ) -> dict[str, Any]:
     params: dict[str, Any] = {
         "sort_by": sort_by,
         "vote_count.gte": MIN_VOTES_ONE_LANGUAGE if language else MIN_VOTES_ANY_LANGUAGE,
         "with_original_language": language,
         "include_adult": "false",
-        "without_genres": str(DOCUMENTARY_GENRE_ID),
     }
+    if content_type == "movies":
+        params["without_genres"] = str(DOCUMENTARY_GENRE_ID)
+        params["without_keywords"] = NON_MOVIE_KEYWORD_IDS
+        params["with_runtime.gte"] = MIN_MOVIE_RUNTIME
+    elif content_type == "standup":
+        params["with_keywords"] = str(STANDUP_KEYWORD_ID)
+    elif content_type == "concerts":
+        params["with_keywords"] = CONCERT_KEYWORD_IDS
+
     if genre_id is not None:
         params["with_genres"] = str(genre_id)
         if genre_id == DOCUMENTARY_GENRE_ID:
@@ -256,26 +372,46 @@ def candidates(
     target_language: str | None = None,
     target_genre: str | None = None,
     existing_ids: Collection[int] = (),
+    target_content_type: str | None = None,
 ) -> list[int]:
     """Films to score, most trustworthy sources first, without anything already seen."""
     exclude = seen(session, user.id)
+    content_type = (
+        target_content_type or getattr(user, "default_content_type", "movies") or "movies"
+    )
 
-    # When refreshing for a specific language or genre, discover films with those filters.
-    if target_language or target_genre:
-        if target_genre and target_genre.strip().lower() == "documentary":
+    # When refreshing for a specific language, genre, or content type, discover films.
+    if target_language or target_genre or target_content_type:
+        if (
+            target_genre
+            and target_genre.strip().lower() == "documentary"
+            and content_type == "movies"
+        ):
             return []
         gid = genre_id(tmdb, target_genre) if target_genre else None
         target_requests: list[dict[str, Any]] = []
         if user.subscriptions:
             target_requests += [
                 _discover(
-                    user.region, target_language, user.subscriptions, gid, "vote_average.desc"
+                    user.region,
+                    target_language,
+                    user.subscriptions,
+                    gid,
+                    "vote_average.desc",
+                    content_type,
                 ),
-                _discover(user.region, target_language, user.subscriptions, gid, "popularity.desc"),
+                _discover(
+                    user.region,
+                    target_language,
+                    user.subscriptions,
+                    gid,
+                    "popularity.desc",
+                    content_type,
+                ),
             ]
         target_requests += [
-            _discover(user.region, target_language, [], gid, "vote_average.desc"),
-            _discover(user.region, target_language, [], gid, "popularity.desc"),
+            _discover(user.region, target_language, [], gid, "vote_average.desc", content_type),
+            _discover(user.region, target_language, [], gid, "popularity.desc", content_type),
         ]
         target_exclude = exclude | set(existing_ids)
 
@@ -325,9 +461,14 @@ def candidates(
     requests: list[dict[str, Any] | int] = []
     if user.subscriptions:
         services = user.subscriptions
-        requests += [_discover(user.region, lang, services) for lang in [*languages, None]]
+        requests += [
+            _discover(user.region, lang, services, content_type=content_type)
+            for lang in [*languages, None]
+        ]
     requests += seed_ids
-    requests += [_discover(user.region, lang, []) for lang in languages or [None]]
+    requests += [
+        _discover(user.region, lang, [], content_type=content_type) for lang in languages or [None]
+    ]
 
     def fetch(request: dict[str, Any] | int) -> list[int]:
         if isinstance(request, int):
@@ -539,6 +680,7 @@ def build_feed(
     user_id: int,
     language: str | None = None,
     genre: str | None = None,
+    content_type: str | None = None,
 ) -> None:
     with Session(engine) as session:
         user = session.get(User, user_id)
@@ -563,6 +705,9 @@ def build_feed(
             step("Finding films")
             labels = user_labels(session, user_id)
             exclude = seen(session, user_id)
+            active_content_type = (
+                content_type or getattr(user, "default_content_type", "movies") or "movies"
+            )
             # The LLM's additions from the last build stay candidates until it's asked again.
             added = [p.tmdb_id for p in stored_picks(session, user_id).values() if p.added]
             existing = [
@@ -579,8 +724,9 @@ def build_feed(
                 language,
                 genre,
                 existing,
+                content_type,
             )
-            if language or genre:
+            if language or genre or content_type:
                 candidate_pool = [
                     *new_candidates,
                     *existing,
@@ -598,7 +744,11 @@ def build_feed(
             step(f"Reading details of {len(ids)} films")
             titles = ensure_titles(session, tmdb, [*(label.tmdb_id for label in labels), *ids])
             session.commit()
-            ids = [i for i in ids if i in titles and not is_documentary(titles[i])]
+            ids = [
+                i
+                for i in ids
+                if i in titles and matches_content_type(titles[i], active_content_type)
+            ]
             if imdb.enabled(session):
                 step("Reading IMDb ratings")
                 imdb.update_ratings(session, data_dir)
@@ -638,7 +788,7 @@ def build_feed(
                     if i not in ids
                     and i not in exclude
                     and i in titles
-                    and not is_documentary(titles[i])
+                    and matches_content_type(titles[i], active_content_type)
                 ]
                 availability(session, tmdb, new, user.region)
                 ids = [*ids, *new]
@@ -693,7 +843,8 @@ def score_films(session: Session, user: User, ids: list[int]) -> list[Scored]:
     ids = [i for i in ids if i not in exclude]
     wanted = {*ids, *(label.tmdb_id for label in labels)}
     titles = {t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(wanted)))}
-    ids = [i for i in ids if i in titles and not is_documentary(titles[i])]
+    active_content_type = getattr(user, "default_content_type", "movies") or "movies"
+    ids = [i for i in ids if i in titles and matches_content_type(titles[i], active_content_type)]
     return score(
         titles,
         labels,
@@ -756,10 +907,16 @@ class FeedWorker:
                 select(FeedBuild.user_id).where(FeedBuild.status.in_(["queued", "building"]))
             ).all()
         for user_id in unfinished:
-            self._queue.put(("build", user_id, None, None))
+            self._queue.put(("build", user_id, None, None, None))
         threading.Thread(target=self._loop, name="feed", daemon=True).start()
 
-    def request(self, user_id: int, language: str | None = None, genre: str | None = None) -> None:
+    def request(
+        self,
+        user_id: int,
+        language: str | None = None,
+        genre: str | None = None,
+        content_type: str | None = None,
+    ) -> None:
         """Rebuild the user's feed from scratch, fetching fresh candidates."""
         with Session(self._engine) as session:
             state = session.get(FeedBuild, user_id) or FeedBuild(user_id=user_id, status="")
@@ -770,7 +927,7 @@ class FeedWorker:
                 state.status, state.error = "queued", None
                 session.add(state)
                 session.commit()
-        self._queue.put(("build", user_id, language, genre))
+        self._queue.put(("build", user_id, language, genre, content_type))
 
     def rescore_soon(self, user_id: int) -> None:
         """Rescore the user's feed once they stop rating and giving feedback for a moment."""
@@ -817,6 +974,7 @@ class FeedWorker:
                 if job == "build":
                     language = item[2] if len(item) > 2 else None
                     genre = item[3] if len(item) > 3 else None
+                    content_type = item[4] if len(item) > 4 else None
                     build_feed(
                         self._engine,
                         self._tmdb_base_url,
@@ -824,6 +982,7 @@ class FeedWorker:
                         user_id,
                         language=language,
                         genre=genre,
+                        content_type=content_type,
                     )
                 else:
                     self._rescore(user_id)

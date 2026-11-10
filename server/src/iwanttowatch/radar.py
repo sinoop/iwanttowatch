@@ -22,7 +22,7 @@ from iwanttowatch.children import library_owners
 from iwanttowatch.feed import (
     DOCUMENTARY_GENRE_ID,
     hidden,
-    is_documentary,
+    is_non_movie,
     score_films,
     seen,
     shortlisted,
@@ -167,7 +167,7 @@ def inspect_missing_candidates(
 
     for tmdb_id in sorted_ids:
         t = titles.get(tmdb_id)
-        if not t or is_documentary(t):
+        if not t or is_non_movie(t):
             continue
 
         match_pct = round(scores_by_id.get(tmdb_id, 0.0) * 100)
@@ -307,9 +307,7 @@ def inspect_theatrical_candidates(
     # Ensure titles in catalog
     titles = ensure_titles(session, tmdb, unique_theatrical_ids[:60])
     valid_ids = [
-        tid
-        for tid in unique_theatrical_ids[:60]
-        if tid in titles and not is_documentary(titles[tid])
+        tid for tid in unique_theatrical_ids[:60] if tid in titles and not is_non_movie(titles[tid])
     ]
 
     # Score candidates against user's taste model

@@ -11,6 +11,9 @@ const THIS_YEAR = new Date().getFullYear()
 export function ProfileSettings({ me }: { me: Me }) {
   return (
     <div className="space-y-6">
+      <div id="content-filter" className="scroll-mt-6">
+        <DefaultContentFilter me={me} />
+      </div>
       <div id="birth-year" className="scroll-mt-6">
         <BirthYear me={me} />
       </div>
@@ -28,6 +31,57 @@ export function ProfileSettings({ me }: { me: Me }) {
         </div>
       )}
     </div>
+  )
+}
+
+function DefaultContentFilter({ me }: { me: Me }) {
+  const queryClient = useQueryClient()
+  const [contentType, setContentType] = useState(me.default_content_type ?? 'movies')
+  const save = useMutation({
+    mutationFn: async (default_content_type: string) => {
+      const { data, error } = await api.PUT('/api/v1/me/profile', { body: { default_content_type } })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['me'], data)
+      setContentType(data.default_content_type ?? 'movies')
+      for (const key of ['feed', 'together']) queryClient.invalidateQueries({ queryKey: [key] })
+    },
+  })
+
+  return (
+    <section className="rounded-xl border border-white/10 p-5">
+      <h2 className="font-semibold text-white">Default feed content</h2>
+      <p className="mt-2 text-sm text-white/60">
+        Choose what category Discover displays by default. “Movies only” excludes stand-up comedy specials, concerts,
+        making-of featurettes, and short films. You can still switch categories at any time using the Discover filter bar.
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <select
+          value={contentType}
+          onChange={(e) => {
+            const val = e.target.value
+            setContentType(val)
+            save.mutate(val)
+          }}
+          disabled={save.isPending}
+          className="rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30"
+        >
+          <option value="movies">Movies only (exclude stand-up, concerts, shorts)</option>
+          <option value="standup">Stand-up comedy</option>
+          <option value="concerts">Concerts &amp; Live</option>
+          <option value="all">All content</option>
+        </select>
+        {save.isPending && <span className="text-xs text-white/50">Saving…</span>}
+        {save.isSuccess && <span className="text-xs text-emerald-300">Saved.</span>}
+      </div>
+      {save.error && (
+        <div className="mt-3">
+          <ErrorText>{save.error.message}</ErrorText>
+        </div>
+      )}
+    </section>
   )
 }
 

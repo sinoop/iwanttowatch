@@ -2407,6 +2407,11 @@ export interface components {
             is_child: boolean;
             /** Max Certificate */
             max_certificate?: string | null;
+            /**
+             * Default Content Type
+             * @default movies
+             */
+            default_content_type: string;
         };
         /** MemberMatch */
         MemberMatch: {
@@ -2501,7 +2506,9 @@ export interface components {
         /** ProfileUpdate */
         ProfileUpdate: {
             /** Birth Year */
-            birth_year: number | null;
+            birth_year?: number | null;
+            /** Default Content Type */
+            default_content_type?: string | null;
         };
         /** Provider */
         Provider: {
@@ -4287,6 +4294,7 @@ export interface operations {
                 age_limit?: boolean;
                 sort?: "recommended" | "match" | "rating" | "newest" | "oldest" | "shortest";
                 only?: number[];
+                content_type?: string | null;
                 offset?: number;
                 limit?: number;
             };
@@ -4327,6 +4335,7 @@ export interface operations {
                 shortlist?: boolean;
                 hide_shortlisted?: boolean;
                 age_limit?: boolean;
+                content_type?: string | null;
             };
             header?: never;
             path?: never;
@@ -4363,6 +4372,7 @@ export interface operations {
             query?: {
                 language?: string | null;
                 genre?: string | null;
+                content_type?: string | null;
             };
             header?: never;
             path?: never;
