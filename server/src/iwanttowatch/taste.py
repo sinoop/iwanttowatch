@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import Subquery, func, select
 from sqlalchemy.orm import Session
 
+from iwanttowatch.children import user_watched_titles
 from iwanttowatch.db import utcnow
 from iwanttowatch.llm import LlmError, LlmProvider, llm_order, provider_from_settings
 from iwanttowatch.models import Explanation, Persona, Title, UserTitle
@@ -63,8 +64,40 @@ or genres verbatim (never say "You like films starring..." or "Because it is lik
 Instead, explain what makes the execution click (performance, inventive set pieces, \
 or concept) and give an honest reality check (runtime, tonal detours, or pacing lag). \
 Mention at most one film title or name, taken only from the summary: never invent names. \
-Speak to them as "you". Plain text only: no lists, no markdown, no quotation marks \
-around the answer."""
+Speak to them as "you".
+
+Also provide structured "themes and values" notes in three bullet points:
+- Values: <maximum of 3 or 4 keywords>
+- Remake: <is this a remake of any of the films they watched already or any popular movies \
+from another language? answer under 15 words>
+- Other famous films: <famous other films by the same director or writer, as a comma-separated \
+list under 20 words>
+
+Format your entire reply as:
+<one or two short sentences on fit>
+
+- Values: <keywords>
+- Remake: <answer>
+- Other famous films: <comma-separated titles>
+
+Plain text only: no markdown headings, no intro or outro, no quotes around the answer."""
+
+
+def parse_why_reply(text: str) -> tuple[str, str | None]:
+    """Split the LLM reply into the taste explanation and the themes note."""
+    cleaned = text.strip().strip('"“”').strip()
+    idx = -1
+    for marker in ("- Values:", "- values:", "* Values:", "• Values:"):
+        idx = cleaned.find(marker)
+        if idx != -1:
+            break
+    if idx != -1:
+        fit = cleaned[:idx].strip()
+        themes = cleaned[idx:].strip()
+        if fit.lower().startswith("fit:"):
+            fit = fit[4:].strip()
+        return (fit, themes)
+    return (cleaned, None)
 
 
 @dataclass(frozen=True)
@@ -419,23 +452,45 @@ def explain_match(
     ]
     if moods := moods_for(title):
         lines.append(f"Mood / Feel: {', '.join(moods)}")
+    if title.tagline:
+        lines.append(f'Tagline: "{title.tagline}"')
+    if title.keywords:
+        lines.append("Keywords: " + ", ".join(title.keywords[:15]))
     if title.directors:
-        lines.append("Directed by " + ", ".join(p["name"] for p in title.directors[:2]))
+        directors = [p["name"] for p in title.directors if isinstance(p, dict) and p.get("name")]
+        if directors:
+            lines.append("Directed by " + ", ".join(directors[:2]))
+    if title.writers:
+        writers = [w["name"] for w in title.writers if isinstance(w, dict) and w.get("name")]
+        if writers:
+            lines.append("Written by " + ", ".join(writers[:2]))
     if title.cast:
-        lines.append("Starring " + ", ".join(p["name"] for p in title.cast[:4]))
+        cast = [p["name"] for p in title.cast if isinstance(p, dict) and p.get("name")]
+        if cast:
+            lines.append("Starring " + ", ".join(cast[:4]))
     if title.overview:
         lines.append(f"Overview: {title.overview}")
     if reasons:
         non_ai = [r for r in reasons if not r.startswith("AI")]
         if non_ai:
             lines.append("Recommender match reasons: " + "; ".join(non_ai))
-    text = llm.generate(WHY_SYSTEM, "\n".join(lines)).strip().strip('"“”').strip()
-    if not text:
+    watched = user_watched_titles(session, user_id)
+    if watched:
+        lines.append(f"Films I watched already: {', '.join(watched)}")
+    else:
+        lines.append("Films I watched already: None")
+    raw_text = llm.generate(WHY_SYSTEM, "\n".join(lines)).strip().strip('"“”').strip()
+    if not raw_text:
         raise LlmError("The LLM returned an empty answer")
-    if len(text) > MAX_EXPLANATION_LENGTH:
-        cut = text[:MAX_EXPLANATION_LENGTH]
+    fit, themes_note = parse_why_reply(raw_text)
+    if not fit:
+        fit = raw_text
+    if len(fit) > MAX_EXPLANATION_LENGTH:
+        cut = fit[:MAX_EXPLANATION_LENGTH]
         end = max(cut.rfind(mark) for mark in (". ", "! ", "? "))
-        text = cut[: end + 1] if end > 0 else cut.rsplit(" ", 1)[0] + "…"
-    session.add(Explanation(user_id=user_id, tmdb_id=title.tmdb_id, text=text))
+        fit = cut[: end + 1] if end > 0 else cut.rsplit(" ", 1)[0] + "…"
+    session.add(Explanation(user_id=user_id, tmdb_id=title.tmdb_id, text=fit))
+    if themes_note:
+        title.themes_note = themes_note
     session.commit()
-    return text
+    return fit

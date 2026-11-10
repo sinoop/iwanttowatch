@@ -574,7 +574,12 @@ def test_explain_match_includes_reasons_and_metadata(client: TestClient) -> None
     class DummyLlm:
         def generate(self, system: str, prompt: str, json_reply: bool = False) -> str:
             captured.append((system, prompt))
-            return "A gripping thriller that suits your taste."
+            return (
+                "A gripping thriller that suits your taste.\n\n"
+                "- Values: Ambition, Sacrifice\n"
+                "- Remake: Original film.\n"
+                "- Other famous films: Manam, 13B"
+            )
 
     title = Title(
         tmdb_id=9999,
@@ -597,10 +602,16 @@ def test_explain_match_includes_reasons_and_metadata(client: TestClient) -> None
             reasons=["Like Maanaadu, which you rated highly", "AI: pick reason"],
         )
         assert res == "A gripping thriller that suits your taste."
+        assert title.themes_note == (
+            "- Values: Ambition, Sacrifice\n"
+            "- Remake: Original film.\n"
+            "- Other famous films: Manam, 13B"
+        )
         assert len(captured) == 1
         system, prompt = captured[0]
         assert "well a film fits their taste" in system
         assert "164 min" in prompt
         assert "Mood / Feel: Mind-bending, Thrilling" in prompt
         assert "Recommender match reasons: Like Maanaadu, which you rated highly" in prompt
+        assert "Films I watched already:" in prompt
         assert "AI: pick reason" not in prompt

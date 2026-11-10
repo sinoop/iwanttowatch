@@ -9,10 +9,55 @@ import { Button, ErrorText, Poster } from './ui'
 /** A film's details: why it was suggested, who made it, and where to watch it. */
 export default function TitleDialog({ tmdbId, onClose }: { tmdbId: number | null; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
+  const [history, setHistory] = useState<number[]>([])
+  const [activeId, setActiveId] = useState<number | null>(tmdbId)
+  const [prevTmdbId, setPrevTmdbId] = useState<number | null>(tmdbId)
+  const [searchingTitle, setSearchingTitle] = useState<string | null>(null)
+
+  if (tmdbId !== prevTmdbId) {
+    setPrevTmdbId(tmdbId)
+    setActiveId(tmdbId)
+    setHistory([])
+  }
+
   useEffect(() => {
     if (tmdbId !== null) dialog.current?.showModal()
     else dialog.current?.close()
   }, [tmdbId])
+
+  const handleSelectFilm = async (filmName: string) => {
+    setSearchingTitle(filmName)
+    try {
+      const cleanName = filmName.replace(/\s*\(\d{4}\)/, '').trim()
+      const { data, error } = await api.GET('/api/v1/catalog/search', {
+        params: { query: { query: cleanName || filmName } },
+      })
+      if (!error && data && data.length > 0) {
+        if (activeId !== null) {
+          setHistory((prev) => [...prev, activeId])
+        }
+        setActiveId(data[0].tmdb_id)
+        return
+      }
+    } catch {
+      // Fallback
+    } finally {
+      setSearchingTitle(null)
+    }
+    window.open(`https://www.themoviedb.org/search?query=${encodeURIComponent(filmName)}`, '_blank')
+  }
+
+  const handleBack = () => {
+    setHistory((prev) => {
+      if (prev.length === 0) return prev
+      const nextHistory = [...prev]
+      const prevId = nextHistory.pop()
+      if (prevId !== undefined) {
+        setActiveId(prevId)
+      }
+      return nextHistory
+    })
+  }
 
   return (
     <dialog
@@ -22,12 +67,33 @@ export default function TitleDialog({ tmdbId, onClose }: { tmdbId: number | null
       aria-label="Film details"
       className="m-auto max-h-[calc(100dvh-2rem)] w-[min(40rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#11141b] p-0 text-[#e7e9ee] shadow-2xl backdrop:bg-black/70"
     >
-      {tmdbId !== null && <Details key={tmdbId} tmdbId={tmdbId} onClose={() => dialog.current?.close()} />}
+      {activeId !== null && (
+        <Details
+          key={activeId}
+          tmdbId={activeId}
+          onClose={() => dialog.current?.close()}
+          onSelectFilm={handleSelectFilm}
+          onBack={history.length > 0 ? handleBack : undefined}
+          searchingTitle={searchingTitle}
+        />
+      )}
     </dialog>
   )
 }
 
-function Details({ tmdbId, onClose }: { tmdbId: number; onClose: () => void }) {
+function Details({
+  tmdbId,
+  onClose,
+  onSelectFilm,
+  onBack,
+  searchingTitle,
+}: {
+  tmdbId: number
+  onClose: () => void
+  onSelectFilm?: (title: string) => void
+  onBack?: () => void
+  searchingTitle?: string | null
+}) {
   const queryClient = useQueryClient()
   const me = queryClient.getQueryData<Me>(['me'])
   const children = useChildren(!me?.is_child)
@@ -55,6 +121,15 @@ function Details({ tmdbId, onClose }: { tmdbId: number; onClose: () => void }) {
 
   return (
     <div className="p-5 sm:p-6">
+      {onBack && (
+        <Button
+          variant="ghost"
+          onClick={onBack}
+          className="mb-3 px-2 py-0.5 text-xs text-white/70 hover:text-white"
+        >
+          ← Back
+        </Button>
+      )}
       <div className="flex gap-4 sm:gap-5">
         <div className="w-24 shrink-0 sm:w-32">
           <Poster path={film.poster_path} title={film.title} />
@@ -79,11 +154,9 @@ function Details({ tmdbId, onClose }: { tmdbId: number; onClose: () => void }) {
 
       <RatePicker tmdbId={tmdbId} compact className="mt-4" />
 
-      <WhySection film={film} />
+      <WhySection film={film} onSelectFilm={onSelectFilm} searchingTitle={searchingTitle} />
 
       {film.overview && <p className="mt-5 text-sm leading-relaxed text-white/75">{film.overview}</p>}
-
-      <ThemesSection film={film} />
 
       <dl className="mt-4 space-y-1 text-sm">
         {film.directors.length > 0 && (
@@ -141,8 +214,16 @@ function seenText(seen: NonNullable<TitleDetail['seen']>): string {
   return 'You’ve seen it'
 }
 
-/** The reasons this film fits the user: algorithmic signals, feed-time review, and detailed AI explanation. */
-function WhySection({ film }: { film: TitleDetail }) {
+/** The reasons this film fits the user: algorithmic signals, personal critique, and themes & values. */
+function WhySection({
+  film,
+  onSelectFilm,
+  searchingTitle,
+}: {
+  film: TitleDetail
+  onSelectFilm?: (title: string) => void
+  searchingTitle?: string | null
+}) {
   const queryClient = useQueryClient()
   const settings = useServerSettings()
   const llmConfigured = (settings.data?.llm.order.length ?? 0) > 0
@@ -159,7 +240,10 @@ function WhySection({ film }: { film: TitleDetail }) {
   const aiReviewed = film.reasons.some((r) => r.startsWith('AI'))
   const nonAiReasons = film.reasons.filter((r) => !r.startsWith('AI'))
   const reasonsToShow = film.explanation ? nonAiReasons : film.reasons
-  const hasContent = Boolean(film.explanation || film.reasons.length > 0 || (llmConfigured && !aiReviewed))
+  const hasAiNote = Boolean(film.explanation || film.themes_note)
+  const hasContent = Boolean(
+    film.explanation || film.themes_note || film.reasons.length > 0 || (llmConfigured && !aiReviewed)
+  )
 
   if (!hasContent) return null
 
@@ -167,7 +251,7 @@ function WhySection({ film }: { film: TitleDetail }) {
     <section className="mt-5 rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium text-white/80">Why it suits you</h3>
-        {film.explanation && (
+        {hasAiNote && (
           <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-strong">
             AI-written
           </span>
@@ -190,8 +274,20 @@ function WhySection({ film }: { film: TitleDetail }) {
         </ul>
       )}
 
+      {film.themes_note && (
+        <div
+          className={`${
+            film.explanation || reasonsToShow.length > 0
+              ? 'mt-3 border-t border-white/5 pt-2.5'
+              : 'mt-1.5'
+          }`}
+        >
+          {renderThemesNote(film.themes_note, onSelectFilm, searchingTitle)}
+        </div>
+      )}
+
       {!film.explanation && llmConfigured && !aiReviewed && (
-        <div className={reasonsToShow.length > 0 ? 'mt-3' : 'mt-2'}>
+        <div className={reasonsToShow.length > 0 || film.themes_note ? 'mt-3' : 'mt-2'}>
           <Button
             variant="ghost"
             className="border border-white/10 px-3 py-1 text-xs"
@@ -211,7 +307,55 @@ function WhySection({ film }: { film: TitleDetail }) {
   )
 }
 
-function renderThemesNote(note: string) {
+function parseFilmTitles(text: string): string[] {
+  const cleaned = text.trim().replace(/\.$/, '')
+  return cleaned
+    .split(/,\s*(?:and\s+)?|\s+and\s+/i)
+    .map((t) => t.trim().replace(/^and\s+/i, ''))
+    .filter(Boolean)
+}
+
+function OtherFilmsLinks({
+  text,
+  onSelect,
+  searchingTitle,
+}: {
+  text: string
+  onSelect: (title: string) => void
+  searchingTitle?: string | null
+}) {
+  const titles = parseFilmTitles(text)
+  if (titles.length === 0) return <span>{text}</span>
+
+  return (
+    <span>
+      {titles.map((title, i) => {
+        const isSearching = searchingTitle === title
+        return (
+          <span key={title}>
+            {i > 0 && <span className="text-white/40">, </span>}
+            <button
+              type="button"
+              onClick={() => onSelect(title)}
+              disabled={Boolean(searchingTitle)}
+              title={`View ${title}`}
+              className="inline cursor-pointer underline decoration-accent/40 underline-offset-2 transition-colors hover:text-white hover:decoration-accent focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none disabled:opacity-50"
+            >
+              {title}
+              {isSearching && <span className="ml-1 text-xs text-accent">…</span>}
+            </button>
+          </span>
+        )
+      })}
+    </span>
+  )
+}
+
+function renderThemesNote(
+  note: string,
+  onSelectFilm?: (title: string) => void,
+  searchingTitle?: string | null
+) {
   const lines = note
     .split('\n')
     .map((l) => l.trim())
@@ -219,15 +363,22 @@ function renderThemesNote(note: string) {
   const isBulletList = lines.some((l) => /^[•\-*]\s+/.test(l))
   if (isBulletList) {
     return (
-      <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-white/70">
+      <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-white/70">
         {lines.map((line, idx) => {
           const content = line.replace(/^[•\-*]\s+/, '')
           const match = content.match(/^(\*\*[^*]+?\*\*|[^:]+?:)\s*(.*)$/)
           if (match) {
             const label = match[1].replace(/^\*\*|\*\*$/g, '')
+            const value = match[2]
+            const isOtherFilms = label.toLowerCase().includes('other famous films')
             return (
               <li key={idx}>
-                <span className="font-medium text-white/90">{label}</span> {match[2]}
+                <span className="font-medium text-white/90">{label}</span>{' '}
+                {isOtherFilms && onSelectFilm ? (
+                  <OtherFilmsLinks text={value} onSelect={onSelectFilm} searchingTitle={searchingTitle} />
+                ) : (
+                  value
+                )}
               </li>
             )
           }
@@ -236,74 +387,7 @@ function renderThemesNote(note: string) {
       </ul>
     )
   }
-  return <p className="mt-1.5 text-sm leading-relaxed text-white/70 whitespace-pre-line">{note}</p>
-}
-
-function ThemesSection({ film }: { film: TitleDetail }) {
-  const queryClient = useQueryClient()
-  const settings = useServerSettings()
-  const llmConfigured = (settings.data?.llm.order.length ?? 0) > 0
-  const write = useMutation({
-    mutationFn: async (opts?: { force?: boolean }) => {
-      const { data, error } = await api.POST('/api/v1/titles/{tmdb_id}/themes', {
-        params: {
-          path: { tmdb_id: film.tmdb_id },
-          query: opts?.force ? { force: true } : undefined,
-        },
-      })
-      if (error) throw new Error(errorMessage(error))
-      return data
-    },
-    onSuccess: (data) => queryClient.setQueryData(['title', film.tmdb_id], data),
-  })
-
-  if (!film.themes_note && !llmConfigured) return null
-
-  return (
-    <section className="mt-4 rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-medium text-white/80">Themes and values</h3>
-        <div className="flex items-center gap-2">
-          {film.themes_note && llmConfigured && (
-            <button
-              type="button"
-              className="text-xs text-white/40 hover:text-white transition-colors cursor-pointer"
-              onClick={() => write.mutate({ force: true })}
-              disabled={write.isPending}
-            >
-              {write.isPending ? 'Rewriting…' : 'Rewrite'}
-            </button>
-          )}
-          <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-strong">
-            AI-written
-          </span>
-        </div>
-      </div>
-      {film.themes_note ? (
-        <>
-          <div className={write.isPending ? 'opacity-50 transition-opacity' : undefined}>
-            {renderThemesNote(film.themes_note)}
-          </div>
-          {write.error && (
-            <div className="mt-2">
-              <ErrorText>{write.error.message}</ErrorText>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="mt-2">
-          <Button variant="ghost" className="border border-white/10 px-3 py-1 text-xs" onClick={() => write.mutate()} disabled={write.isPending}>
-            {write.isPending ? 'Writing note…' : 'Write themes and values note'}
-          </Button>
-          {write.error && (
-            <div className="mt-2">
-              <ErrorText>{write.error.message}</ErrorText>
-            </div>
-          )}
-        </div>
-      )}
-    </section>
-  )
+  return <p className="text-sm leading-relaxed text-white/70 whitespace-pre-line">{note}</p>
 }
 
 function WhereToWatch({ film }: { film: TitleDetail }) {
