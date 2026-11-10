@@ -351,6 +351,7 @@ Proposed 2026-11-10: balance smart media acquisition and library decluttering us
     - **Abandoned Play:** playback stopped at $< 20\%$ completion and abandoned for $> 30$ days.
     - **Cold Hoard / Low Taste Match:** unwatched on disk for $> 6$ months with predicted taste match $< 35\%$.
     - **Streaming Redundancy:** watched title currently available on user's active flatrate/free streaming subscriptions (e.g. Netflix, Prime Video), making local disk retention redundant.
+    - **Unplayable in Jellyfin:** downloaded in Radarr with non-zero disk occupied (`sizeOnDisk > 0`), but missing from Jellyfin library (unindexed, unsupported container/codec, or non-playable media file) (2026-11-10).
   - **Household Protection Guardrails:** automatically protects films from pruning suggestions if any other household member has shortlisted, favorited, rated $\ge 7.0$, or has a high unwatched taste match ($\ge 70\%$).
   - **Storage Reclaim Metrics & Safety Controls:** reads file sizes directly from Radarr (`sizeOnDisk`), displays total gigabytes reclaimable, category breakdowns, and provides one-click or batch deletion via Radarr API (`DELETE /api/v3/movie/{id}?deleteFiles=true`) with ignore/keep whitelist actions and confirmation modals.
   - **Web UI:** Dedicated "Declutter Assistant" section in Server Settings (admin-only) with category filters, reclaimed space gauges, safety badges, and bulk actions (2026-11-10).

@@ -1885,6 +1885,11 @@ export interface components {
         DeclutterInspection: {
             /** Radarr Configured */
             radarr_configured: boolean;
+            /**
+             * Jellyfin Configured
+             * @default false
+             */
+            jellyfin_configured: boolean;
             /** Total Candidates */
             total_candidates: number;
             /** Reclaimable Bytes */

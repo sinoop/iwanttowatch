@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from test_imports import KEY
+from test_jellyfin import API_KEY as JELLYFIN_API_KEY
+from test_jellyfin import JELLYFIN, FakeJellyfin
 from test_radarr import API_KEY, RADARR, FakeRadarr
 
 from iwanttowatch.models import (
@@ -287,3 +289,145 @@ def test_declutter_ignore_and_delete(client: TestClient, fake_radarr: FakeRadarr
 
     # Verify movie is deleted from FakeRadarr
     assert 201 not in fake_radarr.movies
+
+
+def test_declutter_unplayable_in_jellyfin(
+    client: TestClient, fake_radarr: FakeRadarr, mock: respx.MockRouter
+) -> None:
+    _setup_radarr(client)
+
+    # Mock Jellyfin
+    fake_jf = FakeJellyfin()
+    mock.route(host="jellyfin.test").mock(side_effect=fake_jf)
+
+    # Configure Jellyfin in Settings
+    client.put(
+        "/api/v1/settings/jellyfin",
+        json={"url": JELLYFIN, "api_key": JELLYFIN_API_KEY},
+    )
+
+    # Movie 301: Present in Radarr and present in Jellyfin (normal, not unplayable)
+    fake_radarr.movies[301] = {
+        "id": 31,
+        "title": "Playable In Jellyfin",
+        "tmdbId": 301,
+        "year": 2020,
+        "hasFile": True,
+        "monitored": True,
+        "sizeOnDisk": 10000000000,
+    }
+    # Movie 302: Present in Radarr but 0 bytes on disk (not downloaded / unplayable)
+    fake_radarr.movies[302] = {
+        "id": 32,
+        "title": "Zero Byte Movie",
+        "tmdbId": 302,
+        "year": 2021,
+        "hasFile": False,
+        "monitored": True,
+        "sizeOnDisk": 0,
+    }
+    # Movie 303: Present in Radarr with non-zero disk occupied (16 GB), but missing from Jellyfin!
+    fake_radarr.movies[303] = {
+        "id": 33,
+        "title": "Corrupt Unplayable File",
+        "tmdbId": 303,
+        "year": 2022,
+        "hasFile": True,
+        "monitored": True,
+        "sizeOnDisk": 16000000000,  # ~16 GB
+    }
+
+    app = client.app
+    engine = app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        admin_user = session.scalars(select(User).where(User.username == "riya")).one()
+        member_user = User(
+            username="anoop2",
+            display_name="Anoop Joy",
+            password_hash="test",
+            region="IN",
+            languages=["en"],
+        )
+        session.add(member_user)
+        session.flush()
+        member_user_id = member_user.id
+
+        session.merge(
+            Title(
+                tmdb_id=303,
+                title="Corrupt Unplayable File",
+                original_title="Corrupt Unplayable File",
+                original_language="en",
+                year=2022,
+                runtime=110,
+            )
+        )
+
+        # Add 301 to Jellyfin library
+        session.merge(
+            LibraryItem(
+                user_id=admin_user.id,
+                item_id="jf-301",
+                tmdb_id=301,
+                name="Playable In Jellyfin",
+                played=False,
+            )
+        )
+        session.commit()
+
+    # Call inspection endpoint
+    res = client.get("/api/v1/library/declutter")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["radarr_configured"] is True
+    assert data["jellyfin_configured"] is True
+
+    # 303 must be detected as unplayable candidate!
+    items = data["items"]
+    by_tmdb = {item["tmdb_id"]: item for item in items}
+    assert 303 in by_tmdb
+    assert by_tmdb[303]["category"] == "unplayable"
+    assert by_tmdb[303]["title"] == "Corrupt Unplayable File"
+    assert by_tmdb[303]["size_bytes"] == 16000000000
+    assert by_tmdb[303]["size_formatted"] == "14.9 GB"
+    assert any("not found in Jellyfin" in r for r in by_tmdb[303]["reasons"])
+    assert by_tmdb[303]["is_protected"] is False
+
+    # 301 is playable in Jellyfin, and not disliked/abandoned/etc., so not a declutter candidate
+    assert 301 not in by_tmdb
+    # 302 has 0 bytes on disk, so not an unplayable candidate
+    assert 302 not in by_tmdb
+
+    # Summary check
+    assert data["categories_summary"]["unplayable"]["count"] == 1
+    assert data["categories_summary"]["unplayable"]["bytes"] == 16000000000
+    assert data["categories_summary"]["unplayable"]["formatted"] == "14.9 GB"
+
+    # Filter to unplayable category
+    unplayable_res = client.get("/api/v1/library/declutter?category=unplayable")
+    assert unplayable_res.status_code == 200
+    unplayable_data = unplayable_res.json()
+    assert len(unplayable_data["items"]) == 1
+    assert unplayable_data["items"][0]["tmdb_id"] == 303
+
+    # Household protection on unplayable movie
+    with Session(engine) as session:
+        session.merge(ShortlistItem(user_id=member_user_id, tmdb_id=303))
+        session.commit()
+
+    prot_res = client.get("/api/v1/library/declutter?category=unplayable")
+    assert prot_res.status_code == 200
+    prot_item = prot_res.json()["items"][0]
+    assert prot_item["is_protected"] is True
+    assert any("Shortlisted by Anoop Joy" in pr for pr in prot_item["protection_reasons"])
+
+    # Delete 303 from Radarr and disk
+    del_res = client.post(
+        "/api/v1/library/declutter/delete",
+        json={"tmdb_ids": [303], "delete_files": True},
+    )
+    assert del_res.status_code == 200
+    del_data = del_res.json()
+    assert del_data["deleted_count"] == 1
+    assert del_data["freed_bytes"] == 16000000000
+    assert 303 not in fake_radarr.movies

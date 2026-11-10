@@ -14,6 +14,7 @@ import { Button, ErrorText, Poster, SegmentedCapsule } from '../ui'
 
 const CATEGORY_TABS = [
   { id: 'all', label: 'All Candidates' },
+  { id: 'unplayable', label: 'Unplayable in Jellyfin', color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
   { id: 'disliked', label: 'Watched & Disliked', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' },
   { id: 'abandoned', label: 'Abandoned Play', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
   { id: 'redundant_streamable', label: 'Streaming Redundant', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' },
@@ -38,6 +39,8 @@ export function DeclutterSettings() {
   const data = candidates.data
   const items = data?.items ?? []
   const radarrConfigured = settings.data?.radarr.configured ?? false
+  const jellyfinConfigured =
+    Boolean(settings.data?.jellyfin?.url) || (data?.jellyfin_configured ?? false)
 
   const nonProtected = items.filter((i) => !i.is_protected).map((i) => i.tmdb_id)
   const allSafeSelected =
@@ -112,7 +115,7 @@ export function DeclutterSettings() {
             </div>
             <p className="mt-1.5 max-w-xl text-sm text-white/60 leading-relaxed">
               Identifies movies in your Jellyfin and Radarr storage that you disliked, abandoned, or haven't watched,
-              as well as films now streaming on your subscriptions. Guarded by multi-user household taste protection.
+              unplayable or missing media files, as well as films now streaming on your subscriptions. Guarded by multi-user household taste protection.
             </p>
           </div>
 
@@ -143,6 +146,20 @@ export function DeclutterSettings() {
               className="ml-4 shrink-0 rounded-lg bg-amber-500/20 px-3 py-1.5 font-semibold text-amber-100 hover:bg-amber-500/30"
             >
               Connect Radarr →
+            </Link>
+          </div>
+        )}
+
+        {!jellyfinConfigured && radarrConfigured && (
+          <div className="mt-4 flex items-center justify-between rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 text-xs text-indigo-200">
+            <span>
+              Jellyfin is not connected. Connect Jellyfin to detect unplayable or missing media files and sync playback history.
+            </span>
+            <Link
+              to="/settings/integrations"
+              className="ml-4 shrink-0 rounded-lg bg-indigo-500/20 px-3 py-1.5 font-semibold text-indigo-100 hover:bg-indigo-500/30"
+            >
+              Connect Jellyfin →
             </Link>
           </div>
         )}
@@ -279,7 +296,9 @@ export function DeclutterSettings() {
           <span className="block text-4xl mb-3">✨</span>
           <p className="font-semibold text-white">Your library is in great shape!</p>
           <p className="mt-1 text-white/50 max-w-md mx-auto">
-            No prune candidates found for this category. Movies in your library have positive taste affinity or are cherished by household members.
+            {selectedCategory === 'unplayable'
+              ? 'No unplayable or missing items found. All downloaded movies in Radarr are recognized and playable in Jellyfin.'
+              : 'No prune candidates found for this category. Movies in your library have positive taste affinity or are cherished by household members.'}
           </p>
         </div>
       ) : (

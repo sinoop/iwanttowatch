@@ -43,6 +43,7 @@ class DeclutterCandidateItem(BaseModel):
 
 class DeclutterInspection(BaseModel):
     radarr_configured: bool
+    jellyfin_configured: bool = False
     total_candidates: int
     reclaimable_bytes: int
     reclaimable_formatted: str

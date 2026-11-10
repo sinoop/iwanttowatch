@@ -5020,6 +5020,11 @@
             "type": "boolean",
             "title": "Radarr Configured"
           },
+          "jellyfin_configured": {
+            "type": "boolean",
+            "title": "Jellyfin Configured",
+            "default": false
+          },
           "total_candidates": {
             "type": "integer",
             "title": "Total Candidates"

@@ -6,6 +6,8 @@ safe deletion based on:
 2. Abandoned Play: playback started but abandoned < 20% completion over 30 days ago.
 3. Cold Hoard / Low Taste Match: unwatched in library with predicted match < 35%.
 4. Streaming Redundancy: watched and currently streamable on active subscriptions.
+5. Unplayable in Jellyfin: present in Radarr with non-zero disk occupied, but missing from
+   Jellyfin library.
 
 Includes Household Protection Guardrails to avoid pruning films shortlisted, favorited,
 or highly matched for other household members.
@@ -22,7 +24,14 @@ from sqlalchemy.orm import Session
 
 from iwanttowatch.availability import availability, watchable
 from iwanttowatch.children import library_owners
+from iwanttowatch.jellyfin import (
+    STATUS_KEY as JELLYFIN_STATUS,
+)
+from iwanttowatch.jellyfin import (
+    client_from_settings as jellyfin_client_from_settings,
+)
 from iwanttowatch.models import (
+    ConnectorStatus,
     Feedback,
     GroupShortlistItem,
     LibraryItem,
@@ -39,6 +48,13 @@ from iwanttowatch.radarr import RadarrError, client_from_settings
 log = logging.getLogger(__name__)
 
 DECLUTTER_IGNORED_SETTING = "declutter_ignored_tmdb_ids"
+DECLUTTER_CATEGORIES = (
+    "disliked",
+    "abandoned",
+    "redundant_streamable",
+    "low_match",
+    "unplayable",
+)
 
 
 def format_bytes(bytes_count: int) -> str:
@@ -113,6 +129,14 @@ def inspect_declutter_candidates(
         if li.tmdb_id:
             lib_by_tmdb[li.tmdb_id].append(li)
 
+    jellyfin_client = jellyfin_client_from_settings(session)
+    jellyfin_configured = jellyfin_client is not None
+    jellyfin_synced = False
+    status_row = session.get(ConnectorStatus, JELLYFIN_STATUS)
+    if status_row and status_row.synced_at is not None:
+        jellyfin_synced = True
+    has_jellyfin_data = jellyfin_configured and (len(lib_items) > 0 or jellyfin_synced)
+
     candidate_ids = set(lib_by_tmdb.keys())
     for tmdb_id, rm in radarr_movies.items():
         if rm.get("hasFile") or rm.get("monitored"):
@@ -125,15 +149,13 @@ def inspect_declutter_candidates(
     if not candidate_ids:
         return {
             "radarr_configured": radarr_configured,
+            "jellyfin_configured": jellyfin_configured,
             "total_candidates": 0,
             "reclaimable_bytes": 0,
             "reclaimable_formatted": "0 B",
             "protected_count": 0,
             "categories_summary": {
-                "disliked": {"count": 0, "bytes": 0, "formatted": "0 B"},
-                "abandoned": {"count": 0, "bytes": 0, "formatted": "0 B"},
-                "redundant_streamable": {"count": 0, "bytes": 0, "formatted": "0 B"},
-                "low_match": {"count": 0, "bytes": 0, "formatted": "0 B"},
+                cat: {"count": 0, "bytes": 0, "formatted": "0 B"} for cat in DECLUTTER_CATEGORIES
             },
             "items": [],
         }
@@ -184,18 +206,26 @@ def inspect_declutter_candidates(
     protected_count = 0
 
     for tmdb_id in candidate_ids:
-        title_obj = titles.get(tmdb_id)
-        title_name = title_obj.title if title_obj else f"Movie {tmdb_id}"
-        year = title_obj.year if title_obj else None
-        poster_path = title_obj.poster_path if title_obj else None
-        original_language = title_obj.original_language if title_obj else None
-        imdb_rating = title_obj.imdb_rating if title_obj else None
-
         radarr_movie = radarr_movies.get(tmdb_id)
         size_bytes = int(radarr_movie.get("sizeOnDisk", 0)) if radarr_movie else 0
         radarr_movie_id = radarr_movie.get("id") if radarr_movie else None
         has_file = bool(radarr_movie.get("hasFile")) if radarr_movie else False
         monitored = bool(radarr_movie.get("monitored")) if radarr_movie else False
+
+        title_obj = titles.get(tmdb_id)
+        title_name = (
+            title_obj.title
+            if title_obj
+            else (
+                radarr_movie.get("title")
+                if radarr_movie and radarr_movie.get("title")
+                else f"Movie {tmdb_id}"
+            )
+        )
+        year = title_obj.year if title_obj else (radarr_movie.get("year") if radarr_movie else None)
+        poster_path = title_obj.poster_path if title_obj else None
+        original_language = title_obj.original_language if title_obj else None
+        imdb_rating = title_obj.imdb_rating if title_obj else None
 
         # --- 1. Disliked ---
         disliked = False
@@ -263,12 +293,36 @@ def inspect_declutter_candidates(
             low_match = True
             low_match_reasons.append(f"Predicted match only {user_match_pct}% · Unwatched on disk")
 
+        # --- 5. Unplayable in Jellyfin ---
+        unplayable = False
+        unplayable_reasons: list[str] = []
+        if (
+            has_jellyfin_data
+            and radarr_movie is not None
+            and size_bytes > 0
+            and tmdb_id not in lib_by_tmdb
+        ):
+            unplayable = True
+            unplayable_reasons.append(
+                f"Present in Radarr ({format_bytes(size_bytes)}) but not found in Jellyfin "
+                "(unindexed or non-playable)"
+            )
+
         # Skip if not qualifying under any category
-        if not (disliked or abandoned or redundant_streamable or low_match):
+        if not (disliked or abandoned or redundant_streamable or low_match or unplayable):
             continue
 
         # Primary category assignment
-        if disliked:
+        if unplayable:
+            primary_cat = "unplayable"
+            reasons = (
+                unplayable_reasons
+                + dislike_reasons
+                + abandon_reasons
+                + stream_reasons
+                + low_match_reasons
+            )
+        elif disliked:
             primary_cat = "disliked"
             reasons = dislike_reasons
         elif abandoned:
@@ -371,11 +425,12 @@ def inspect_declutter_candidates(
             "bytes": category_bytes[cat],
             "formatted": format_bytes(category_bytes[cat]),
         }
-        for cat in ("disliked", "abandoned", "redundant_streamable", "low_match")
+        for cat in DECLUTTER_CATEGORIES
     }
 
     return {
         "radarr_configured": radarr_configured,
+        "jellyfin_configured": jellyfin_configured,
         "total_candidates": len(candidate_results),
         "reclaimable_bytes": total_reclaimable_bytes,
         "reclaimable_formatted": format_bytes(total_reclaimable_bytes),
