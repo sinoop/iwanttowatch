@@ -8,6 +8,7 @@ import {
   useIgnoreDeclutterCandidate,
   useServerSettings,
 } from '../api'
+import TitleDialog from '../TitleDialog'
 import { Button, ErrorText, Poster } from '../ui'
 
 const CATEGORY_TABS = [
@@ -27,6 +28,7 @@ export function DeclutterSettings() {
   const [deleteFiles, setDeleteFiles] = useState(true)
   const [addImportExclusion, setAddImportExclusion] = useState(false)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
+  const [openedTitleId, setOpenedTitleId] = useState<number | null>(null)
 
   const candidates = useDeclutterCandidates(selectedCategory, includeIgnored)
   const deleteMutation = useDeleteDeclutterCandidates()
@@ -302,10 +304,22 @@ export function DeclutterSettings() {
               >
                 {/* Poster with overlay checkbox */}
                 <div className="relative shrink-0 w-16 sm:w-20 self-start">
-                  <Poster path={item.poster_path} title={item.title} />
+                  <button
+                    type="button"
+                    onClick={() => setOpenedTitleId(item.tmdb_id)}
+                    className="group block w-full text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-lg"
+                    aria-label={`View details for ${item.title}`}
+                  >
+                    <Poster
+                      path={item.poster_path}
+                      title={item.title}
+                      className="transition-shadow group-hover:ring-2 group-hover:ring-accent"
+                    />
+                  </button>
                   <label
-                    className="absolute top-1.5 left-1.5 flex items-center justify-center size-5 rounded bg-black/80 backdrop-blur-sm border border-white/30 cursor-pointer hover:border-white/60 transition-colors shadow-sm"
+                    className="absolute top-1.5 left-1.5 z-10 flex items-center justify-center size-5 rounded bg-black/80 backdrop-blur-sm border border-white/30 cursor-pointer hover:border-white/60 transition-colors shadow-sm"
                     title={isSelected ? 'Deselect movie' : 'Select movie'}
+                    onClick={(e) => e.stopPropagation()}
                   >
                     <input
                       type="checkbox"
@@ -335,11 +349,15 @@ export function DeclutterSettings() {
                     </div>
 
                     {/* Movie Title: full width, readable, wraps cleanly without clipping */}
-                    <h3
-                      className="font-bold text-white text-base leading-snug break-words"
-                      title={item.title}
-                    >
-                      {item.title}
+                    <h3 className="font-bold text-white text-base leading-snug break-words">
+                      <button
+                        type="button"
+                        onClick={() => setOpenedTitleId(item.tmdb_id)}
+                        className="cursor-pointer text-left hover:text-accent transition-colors focus-visible:outline-none focus-visible:underline"
+                        title={item.title}
+                      >
+                        {item.title}
+                      </button>
                     </h3>
 
                     {/* Subtitle details: Year, Language, IMDb badge, Match % */}
@@ -500,6 +518,7 @@ export function DeclutterSettings() {
           </div>
         </div>
       )}
+      <TitleDialog tmdbId={openedTitleId} onClose={() => setOpenedTitleId(null)} />
     </div>
   )
 }

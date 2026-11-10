@@ -3,7 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { api, errorMessage, facts, useChildren, useQuickRate, useRadarrBatchSync, useRadarrShortlist, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
-import RateDialog, { QuickTags, ReactionIcon } from './RateDialog'
+import { QuickTags, ReactionIcon } from './RateDialog'
 import { PlatformFilter, WatchBadges } from './Streaming'
 import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, DownloadIcon, ImdbBadge, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
@@ -34,7 +34,6 @@ export default function Discover({ me }: { me: Me }) {
   const ageLimit = ageLimitOffFor !== me.id
   const setAgeLimit = (on: boolean) => setAgeLimitOffFor(on ? null : me.id)
   const [open, setOpen] = useState<number | null>(null)
-  const [rating, setRating] = useState<number | null>(null)
   const [toast, setToast] = useState<Toast | null>(null)
   const [answer, setAnswer] = useState<Answer | null>(null)
   const queryClient = useQueryClient()
@@ -331,7 +330,6 @@ export default function Discover({ me }: { me: Me }) {
       )}
 
       <TitleDialog tmdbId={open} onClose={() => setOpen(null)} />
-      <RateDialog tmdbId={rating} onClose={() => setRating(null)} />
       {toast && (
         <UndoToast
           key={
@@ -349,7 +347,7 @@ export default function Discover({ me }: { me: Me }) {
             setToast(null)
           }}
           onMore={() => {
-            setRating(toast.item.tmdb_id)
+            setOpen(toast.item.tmdb_id)
             setToast(null)
           }}
         />

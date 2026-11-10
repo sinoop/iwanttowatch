@@ -3,7 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { api, errorMessage, ratingToReaction, REACTIONS, TAG_LABELS, useAvailability, useImports, usePeopleTaste, useServerSettings } from './api'
-import RateDialog, { ReactionBadge, ReactionIcon } from './RateDialog'
+import { ReactionBadge, ReactionIcon } from './RateDialog'
 import PersonDialog, { HeartIcon } from './PersonDialog'
 import { FilmSearch } from './Search'
 import { WatchBadges } from './Streaming'
@@ -14,7 +14,6 @@ const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
 const PAGE = 48
 
 export default function Taste({ me }: { me: Me }) {
-  const [rating, setRating] = useState<number | null>(null)
   const [detailId, setDetailId] = useState<number | null>(null)
   const isChild = me.is_child
   const imports = useImports()
@@ -56,18 +55,15 @@ export default function Taste({ me }: { me: Me }) {
         </div>
       )}
 
-      <Ratings onRate={setRating} onSelectFilm={setDetailId} />
-      <RateDialog tmdbId={rating} onClose={() => setRating(null)} />
+      <Ratings onSelectFilm={setDetailId} />
       <TitleDialog tmdbId={detailId} onClose={() => setDetailId(null)} />
     </>
   )
 }
 
 function Ratings({
-  onRate,
   onSelectFilm,
 }: {
-  onRate: (tmdbId: number) => void
   onSelectFilm: (tmdbId: number) => void
 }) {
   const [tab, setTab] = useState<'all' | 'divergent' | 'people'>('all')
@@ -286,7 +282,7 @@ function Ratings({
       </div>
 
       {tab === 'divergent' ? (
-        <DivergentSection onRate={onRate} onSelectFilm={onSelectFilm} />
+        <DivergentSection onSelectFilm={onSelectFilm} />
       ) : tab === 'people' ? (
         <PeopleSection onSelectPerson={(id) => setPersonDetailId(id)} />
       ) : (
@@ -296,7 +292,7 @@ function Ratings({
               placeholder="Rate a film you’ve seen…"
               label="Search for a film to rate"
               prompt="Pick the film to rate"
-              onPick={onRate}
+              onPick={onSelectFilm}
             />
           </div>
 
@@ -563,7 +559,7 @@ function Ratings({
           ) : (
             <ul className="mt-5 grid grid-cols-3 gap-4 sm:grid-cols-4 md:grid-cols-6">
               {items.map((item) => (
-                <RatingCard key={item.tmdb_id} item={item} where={where.get(item.tmdb_id)} onRate={onRate} />
+                <RatingCard key={item.tmdb_id} item={item} where={where.get(item.tmdb_id)} onSelectFilm={onSelectFilm} />
               ))}
             </ul>
           )}
@@ -755,10 +751,8 @@ function PeopleSection({ onSelectPerson }: { onSelectPerson: (id: number) => voi
 }
 
 function DivergentSection({
-  onRate,
   onSelectFilm,
 }: {
-  onRate: (tmdbId: number) => void
   onSelectFilm: (tmdbId: number) => void
 }) {
   const queryClient = useQueryClient()
@@ -814,7 +808,6 @@ function DivergentSection({
             key={item.tmdb_id}
             item={item}
             where={where.get(item.tmdb_id)}
-            onRate={onRate}
             onSelectFilm={onSelectFilm}
             llmConfigured={llmConfigured}
             onAskClash={(id) => askClash.mutate(id)}
@@ -830,7 +823,6 @@ function DivergentSection({
 function DivergentCard({
   item,
   where,
-  onRate,
   onSelectFilm,
   llmConfigured,
   onAskClash,
@@ -839,7 +831,6 @@ function DivergentCard({
 }: {
   item: DivergentTitle
   where: TitleAvailability | undefined
-  onRate: (tmdbId: number) => void
   onSelectFilm: (tmdbId: number) => void
   llmConfigured: boolean
   onAskClash: (tmdbId: number) => void
@@ -880,7 +871,7 @@ function DivergentCard({
             </button>
             <button
               type="button"
-              onClick={() => onRate(item.tmdb_id)}
+              onClick={() => onSelectFilm(item.tmdb_id)}
               title="Edit your rating"
               className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-xs text-white/50 hover:bg-white/10 hover:text-white"
             >
@@ -986,11 +977,11 @@ function DivergentCard({
 function RatingCard({
   item,
   where,
-  onRate,
+  onSelectFilm,
 }: {
   item: RatedTitle
   where: TitleAvailability | undefined
-  onRate: (tmdbId: number) => void
+  onSelectFilm: (tmdbId: number) => void
 }) {
   const showOriginal = item.original_title && item.original_title !== item.title
   const reactionVal =
@@ -1001,9 +992,9 @@ function RatingCard({
     <li className="min-w-0">
       <button
         type="button"
-        onClick={() => onRate(item.tmdb_id)}
-        aria-label={`Rate ${item.title}`}
-        className="group block w-full rounded-lg text-left focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
+        onClick={() => onSelectFilm(item.tmdb_id)}
+        aria-label={`${item.title}${item.year ? `, ${item.year}` : ''}`}
+        className="group block w-full rounded-lg text-left focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none cursor-pointer"
       >
         <div className="relative">
           <Poster path={item.poster_path} title={item.title} className="group-hover:ring-2 group-hover:ring-accent/70" />
