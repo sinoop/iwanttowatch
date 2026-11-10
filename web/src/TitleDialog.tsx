@@ -79,17 +79,6 @@ function Details({ tmdbId, onClose }: { tmdbId: number; onClose: () => void }) {
 
       <RatePicker tmdbId={tmdbId} compact className="mt-4" />
 
-      {film.reasons.length > 0 && (
-        <section className="mt-5">
-          <h3 className="text-sm font-medium text-white/80">Why it suits you</h3>
-          <ul className="mt-1.5 list-disc space-y-1 pl-5 text-sm text-white/65">
-            {film.reasons.map((r) => (
-              <li key={r}>{r}</li>
-            ))}
-          </ul>
-        </section>
-      )}
-
       <WhySection film={film} />
 
       {film.overview && <p className="mt-5 text-sm leading-relaxed text-white/75">{film.overview}</p>}
@@ -152,7 +141,7 @@ function seenText(seen: NonNullable<TitleDetail['seen']>): string {
   return 'You’ve seen it'
 }
 
-/** The AI's take on how the film fits the user, asked for films the AI hasn't reviewed. */
+/** The reasons this film fits the user: algorithmic signals, feed-time review, and detailed AI explanation. */
 function WhySection({ film }: { film: TitleDetail }) {
   const queryClient = useQueryClient()
   const settings = useServerSettings()
@@ -168,37 +157,57 @@ function WhySection({ film }: { film: TitleDetail }) {
     onSuccess: (data) => queryClient.setQueryData(['title', film.tmdb_id], data),
   })
   const aiReviewed = film.reasons.some((r) => r.startsWith('AI'))
+  const nonAiReasons = film.reasons.filter((r) => !r.startsWith('AI'))
+  const reasonsToShow = film.explanation ? nonAiReasons : film.reasons
+  const hasContent = Boolean(film.explanation || film.reasons.length > 0 || (llmConfigured && !aiReviewed))
 
-  if (film.explanation) {
-    return (
-      <section className="mt-4 rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-medium text-white/80">Why this?</h3>
+  if (!hasContent) return null
+
+  return (
+    <section className="mt-5 rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-medium text-white/80">Why it suits you</h3>
+        {film.explanation && (
           <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-strong">
             AI-written
           </span>
-        </div>
+        )}
+      </div>
+
+      {film.explanation && (
         <p className="mt-1.5 text-sm leading-relaxed text-white/70">{film.explanation}</p>
-      </section>
-    )
-  }
-  if (!llmConfigured || aiReviewed) return null
-  return (
-    <div className="mt-4">
-      <Button
-        variant="ghost"
-        className="border border-white/10 px-3 py-1 text-xs"
-        onClick={() => ask.mutate()}
-        disabled={ask.isPending}
-      >
-        {ask.isPending ? 'Asking the AI…' : 'Why this? Ask the AI'}
-      </Button>
-      {ask.error && (
-        <div className="mt-2">
-          <ErrorText>{ask.error.message}</ErrorText>
+      )}
+
+      {reasonsToShow.length > 0 && (
+        <ul
+          className={`list-disc space-y-1 pl-5 text-sm text-white/65 ${
+            film.explanation ? 'mt-3 border-t border-white/5 pt-2.5' : 'mt-1.5'
+          }`}
+        >
+          {reasonsToShow.map((r) => (
+            <li key={r}>{r}</li>
+          ))}
+        </ul>
+      )}
+
+      {!film.explanation && llmConfigured && !aiReviewed && (
+        <div className={reasonsToShow.length > 0 ? 'mt-3' : 'mt-2'}>
+          <Button
+            variant="ghost"
+            className="border border-white/10 px-3 py-1 text-xs"
+            onClick={() => ask.mutate()}
+            disabled={ask.isPending}
+          >
+            {ask.isPending ? 'Asking the AI…' : 'Why this? Ask the AI'}
+          </Button>
+          {ask.error && (
+            <div className="mt-2">
+              <ErrorText>{ask.error.message}</ErrorText>
+            </div>
+          )}
         </div>
       )}
-    </div>
+    </section>
   )
 }
 

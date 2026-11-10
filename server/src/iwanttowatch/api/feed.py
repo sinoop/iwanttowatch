@@ -493,10 +493,31 @@ class TitleDetail(BaseModel):
     explanation: str | None = None
 
 
+def _match_and_reasons(
+    session: DbSession, user: User, title: Title, watched: bool
+) -> tuple[int | None, list[str]]:
+    rec = session.get(Recommendation, (user.id, title.tmdb_id))
+    match, reasons = (round(rec.score * 100), rec.reasons) if rec else (None, [])
+    if rec is None and not watched:
+        # Not in the feed, such as a film the user searched for: score it with the
+        # feed's films, so its match means the same, without adding it to the feed.
+        scored = next(
+            (
+                s
+                for s in score_films(session, user, [*feed_films(session, user), title.tmdb_id])
+                if s.tmdb_id == title.tmdb_id
+            ),
+            None,
+        )
+        if scored is not None:
+            match = round(scored.score * 100)
+            reasons = feed_reasons(scored, stored_picks(session, user.id))
+    return (match, reasons)
+
+
 def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> TitleDetail:
     owners = library_owners(session, user)
     offers = availability(session, tmdb, [title.tmdb_id], user.region).get(title.tmdb_id)
-    rec = session.get(Recommendation, (user.id, title.tmdb_id))
     item_id = session.scalar(
         select(LibraryItem.item_id).where(
             LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id == title.tmdb_id
@@ -516,21 +537,7 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
         select(effective.c.rating, effective.c.reaction).where(effective.c.tmdb_id == title.tmdb_id)
     ).first()
     watched = rated is not None or title.tmdb_id in seen(session, user.id)
-    match, reasons = (round(rec.score * 100), rec.reasons) if rec else (None, [])
-    if rec is None and not watched:
-        # Not in the feed, such as a film the user searched for: score it with the
-        # feed's films, so its match means the same, without adding it to the feed.
-        scored = next(
-            (
-                s
-                for s in score_films(session, user, [*feed_films(session, user), title.tmdb_id])
-                if s.tmdb_id == title.tmdb_id
-            ),
-            None,
-        )
-        if scored is not None:
-            match = round(scored.score * 100)
-            reasons = feed_reasons(scored, stored_picks(session, user.id))
+    match, reasons = _match_and_reasons(session, user, title, watched)
     return TitleDetail(
         tmdb_id=title.tmdb_id,
         title=title.title,
@@ -607,8 +614,14 @@ def explain_title(
     llm = provider_from_settings(session, "why", user.id)
     if llm is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Connect Ollama or Gemini in Settings first")
+    effective = effective_ratings(user.id)
+    rated = session.execute(
+        select(effective.c.rating, effective.c.reaction).where(effective.c.tmdb_id == title.tmdb_id)
+    ).first()
+    watched = rated is not None or title.tmdb_id in seen(session, user.id)
+    _, reasons = _match_and_reasons(session, user, title, watched)
     try:
-        explain_match(session, user.id, title, llm)
+        explain_match(session, user.id, title, llm, reasons=reasons)
     except LlmError as error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
     return _title_detail(session, user, tmdb, title)

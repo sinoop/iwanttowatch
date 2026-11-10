@@ -19,7 +19,7 @@ from iwanttowatch import imdb
 from iwanttowatch.feed import ASK_SYSTEM
 from iwanttowatch.models import Feedback, LibraryItem, Recommendation, Title, User, UserTitle
 from iwanttowatch.moods import MOODS_SYSTEM
-from iwanttowatch.taste import REVIEW_SYSTEM
+from iwanttowatch.taste import REVIEW_SYSTEM, explain_match
 
 base_details = test_imports._details
 
@@ -259,6 +259,8 @@ def test_the_ai_tags_moods_explains_and_answers_requests(
     explanation = "You love quiet family dramas, and this is one, if darker."
     assert detail["explanation"] == explanation
     assert "Godfather" in prompts["why"][0] and "Drishyam" in prompts["why"][0]
+    if detail["reasons"]:
+        assert "Recommender match reasons:" in prompts["why"][0]
     assert "riya" not in prompts["why"][0].lower()
     # Asked once per user and film.
     assert client.get("/api/v1/titles/301").json()["explanation"] == explanation
@@ -563,3 +565,42 @@ def test_refresh_with_targeted_language_and_genre_finds_more_movies(
     all_films = feed(client, available_only=False)
     assert 501 in {i["tmdb_id"] for i in all_films["items"]}
     assert 201 in {i["tmdb_id"] for i in all_films["items"]}
+
+
+def test_explain_match_includes_reasons_and_metadata(client: TestClient) -> None:
+    add_ratings(client, FILMS)
+    captured: list[tuple[str, str]] = []
+
+    class DummyLlm:
+        def generate(self, system: str, prompt: str, json_reply: bool = False) -> str:
+            captured.append((system, prompt))
+            return "A gripping thriller that suits your taste."
+
+    title = Title(
+        tmdb_id=9999,
+        title="24",
+        original_title="24",
+        original_language="ta",
+        year=2016,
+        runtime=164,
+        genres=["Action", "Science Fiction", "Thriller"],
+        ai_moods=["Mind-bending", "Thrilling"],
+    )
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        session.add(title)
+        session.commit()
+        res = explain_match(
+            session,
+            user_id=1,
+            title=title,
+            llm=DummyLlm(),
+            reasons=["Like Maanaadu, which you rated highly", "AI: pick reason"],
+        )
+        assert res == "A gripping thriller that suits your taste."
+        assert len(captured) == 1
+        system, prompt = captured[0]
+        assert "well a film fits their taste" in system
+        assert "164 min" in prompt
+        assert "Mood / Feel: Mind-bending, Thrilling" in prompt
+        assert "Recommender match reasons: Like Maanaadu, which you rated highly" in prompt
+        assert "AI: pick reason" not in prompt

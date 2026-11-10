@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from iwanttowatch.db import utcnow
 from iwanttowatch.llm import LlmError, LlmProvider, llm_order, provider_from_settings
 from iwanttowatch.models import Explanation, Persona, Title, UserTitle
-from iwanttowatch.moods import MAX_MOODS, MOODS, parse_moods
+from iwanttowatch.moods import MAX_MOODS, MOODS, moods_for, parse_moods
 from iwanttowatch.tags import BY_ID
 
 log = logging.getLogger(__name__)
@@ -56,11 +56,15 @@ and why. Answer with only JSON, no markdown, in this form:
 # Room for two long sentences; a longer answer is cut after its last full sentence.
 MAX_EXPLANATION_LENGTH = 600
 
-WHY_SYSTEM = """You tell one person, in one or two short sentences (under 60 words), how
-well a film fits their taste, judging from a summary of their movie ratings. Be honest:
-if parts of it may not suit them, say so. Mention at most two film titles or names,
-taken only from the summary or the film's details: never invent names. Speak to them
-as "you". Plain text only: no lists, no markdown, no quotation marks around the answer."""
+WHY_SYSTEM = """You tell one person how well a film fits their taste in one or two \
+short sentences (under 50 words), judging from their rating history and the recommender's \
+match reasons. Synthesize and critique, never repeat: do not restate the match reasons \
+or genres verbatim (never say "You like films starring..." or "Because it is like..."). \
+Instead, explain what makes the execution click (performance, inventive set pieces, \
+or concept) and give an honest reality check (runtime, tonal detours, or pacing lag). \
+Mention at most one film title or name, taken only from the summary: never invent names. \
+Speak to them as "you". Plain text only: no lists, no markdown, no quotation marks \
+around the answer."""
 
 
 @dataclass(frozen=True)
@@ -182,6 +186,8 @@ def taste_summary(session: Session, user_id: int, exclude: Collection[int] = ())
         )
     )
     ratings = [r.rating for r in rows]
+    if not ratings:
+        return "Rated films: 0."
     average = mean(ratings)
 
     def by_average(groups: dict[str, list[float]], minimum: int) -> list[tuple[str, float, int]]:
@@ -393,22 +399,36 @@ def review_films(
     return Review(ratings, additions[:MAX_ADDITIONS])
 
 
-def explain_match(session: Session, user_id: int, title: Title, llm: LlmProvider) -> str:
+def explain_match(
+    session: Session,
+    user_id: int,
+    title: Title,
+    llm: LlmProvider,
+    reasons: Sequence[str] | None = None,
+) -> str:
     """The LLM's answer to "Why this?" for a film, written once per user and film."""
     cached = session.get(Explanation, (user_id, title.tmdb_id))
     if cached is not None:
         return cached.text
     about = [str(title.year or "?"), title.original_language, *title.genres]
+    if title.runtime:
+        about.append(f"{title.runtime} min")
     lines = [
         taste_summary(session, user_id),
         f"Film: {title.title} ({', '.join(about)})",
     ]
+    if moods := moods_for(title):
+        lines.append(f"Mood / Feel: {', '.join(moods)}")
     if title.directors:
         lines.append("Directed by " + ", ".join(p["name"] for p in title.directors[:2]))
     if title.cast:
         lines.append("Starring " + ", ".join(p["name"] for p in title.cast[:4]))
     if title.overview:
         lines.append(f"Overview: {title.overview}")
+    if reasons:
+        non_ai = [r for r in reasons if not r.startswith("AI")]
+        if non_ai:
+            lines.append("Recommender match reasons: " + "; ".join(non_ai))
     text = llm.generate(WHY_SYSTEM, "\n".join(lines)).strip().strip('"“”').strip()
     if not text:
         raise LlmError("The LLM returned an empty answer")
