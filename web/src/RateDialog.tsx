@@ -342,3 +342,45 @@ export function ReactionIcon({ reaction, className = '' }: { reaction: Reaction;
     </svg>
   )
 }
+
+/** Standard pill badge for a 3-scale personal rating reaction. */
+export function ReactionBadge({
+  reaction,
+  label,
+  className = '',
+  size = 'sm',
+}: {
+  reaction: Reaction
+  label?: string
+  className?: string
+  size?: 'xs' | 'sm'
+}) {
+  const styles: Record<Reaction, { badge: string; defaultLabel: string }> = {
+    loved: {
+      badge: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
+      defaultLabel: 'Loved',
+    },
+    liked: {
+      badge: 'border-accent/20 bg-accent/10 text-accent',
+      defaultLabel: 'Liked',
+    },
+    disliked: {
+      badge: 'border-red-500/20 bg-red-500/10 text-red-300',
+      defaultLabel: 'Didn’t like',
+    },
+  }
+  const config = styles[reaction]
+  const text = label !== undefined ? label : config.defaultLabel
+  const iconSize = size === 'xs' ? 'size-3' : 'size-3.5'
+  const padding = size === 'xs' ? 'px-1.5 py-0.2 text-[11px]' : 'px-2 py-0.5 text-xs'
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-md border font-medium ${config.badge} ${padding} ${className}`}
+    >
+      <ReactionIcon reaction={reaction} className={iconSize} />
+      {text ? <span>{text}</span> : null}
+    </span>
+  )
+}
+

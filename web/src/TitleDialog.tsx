@@ -1,8 +1,8 @@
-import type { ChildProfile, Me, TitleDetail } from '@iwanttowatch/api-client'
+import type { ChildProfile, Me, Reaction, TitleDetail } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { api, errorMessage, facts, REACTIONS, useAssignToChild, useChildren, useServerSettings, useShortlist } from './api'
-import { RatePicker } from './RateDialog'
+import { api, errorMessage, facts, ratingToReaction, useAssignToChild, useChildren, useServerSettings, useShortlist } from './api'
+import { RatePicker, ReactionBadge } from './RateDialog'
 import { JellyfinLogo, JustWatchCredit, ProviderLogo } from './Streaming'
 import { Button, ErrorText, Poster } from './ui'
 import PersonDialog from './PersonDialog'
@@ -251,8 +251,7 @@ function Details({
   )
 }
 
-function seenText(seen: NonNullable<TitleDetail['seen']>): string {
-  if (seen.rating !== null) return `You’ve seen it · rated ${Number.isInteger(seen.rating) ? seen.rating : seen.rating.toFixed(1)}/10`
+function seenText(_seen: NonNullable<TitleDetail['seen']>): string {
   return 'You’ve seen it'
 }
 
@@ -370,7 +369,9 @@ function ClashSection({ film }: { film: TitleDetail }) {
 
   const userRating = film.seen?.rating
   const audienceRating = film.imdb?.rating
-  const reaction = film.seen?.reaction ? REACTIONS.find((r) => r.value === film.seen?.reaction) : null
+  const reactionValue =
+    (film.seen?.reaction as Reaction | undefined) ||
+    (userRating != null ? ratingToReaction(userRating) : undefined)
   const isDivergent =
     userRating !== null &&
     userRating !== undefined &&
@@ -385,9 +386,11 @@ function ClashSection({ film }: { film: TitleDetail }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium text-accent-strong flex items-center gap-1.5">
           <span>⚡ Conflicting opinion</span>
-          {audienceRating !== null && audienceRating !== undefined && (reaction || (userRating !== null && userRating !== undefined)) && (
-            <span className="text-xs text-white/60 font-normal">
-              (You: {reaction ? reaction.label : userRating?.toFixed(1)} vs Audience: {audienceRating.toFixed(1)})
+          {audienceRating !== null && audienceRating !== undefined && (reactionValue || userRating != null) && (
+            <span className="text-xs text-white/60 font-normal flex items-center gap-1.5">
+              <span>(You:</span>
+              {reactionValue && <ReactionBadge reaction={reactionValue} size="xs" />}
+              <span>vs Audience: {audienceRating.toFixed(1)})</span>
             </span>
           )}
         </h3>

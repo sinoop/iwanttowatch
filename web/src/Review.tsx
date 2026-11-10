@@ -2,7 +2,8 @@ import type { Candidate, ImportRow } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
-import { api, errorMessage } from './api'
+import { api, errorMessage, ratingToReaction } from './api'
+import { ReactionBadge } from './RateDialog'
 import { Button, ErrorText, Poster } from './ui'
 
 const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
@@ -78,10 +79,15 @@ function ReviewRow({ jobId, row }: { jobId: number; row: ImportRow }) {
           <p className="font-semibold">
             {row.title} <span className="font-normal text-white/45">{row.year}</span>
           </p>
-          <p className="text-sm text-white/55">
-            {row.message}
-            {row.rating != null && ` · you rated it ${row.rating}`}
-          </p>
+          <div className="flex flex-wrap items-center gap-1.5 text-sm text-white/55">
+            <span>{row.message}</span>
+            {row.rating != null && (
+              <>
+                <span>· your rating:</span>
+                <ReactionBadge reaction={ratingToReaction(row.rating)} size="xs" />
+              </>
+            )}
+          </div>
         </div>
         <Button variant="ghost" onClick={() => resolve.mutate(null)} disabled={resolve.isPending}>
           Skip

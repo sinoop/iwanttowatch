@@ -60,7 +60,13 @@ from iwanttowatch.models import (
     get_setting,
 )
 from iwanttowatch.moods import moods_for
-from iwanttowatch.taste import REACTION_FALLBACK, effective_ratings, explain_clash, explain_match
+from iwanttowatch.taste import (
+    REACTION_FALLBACK,
+    effective_ratings,
+    explain_clash,
+    explain_match,
+    rating_to_reaction,
+)
 from iwanttowatch.tmdb import client_from_settings
 
 router = APIRouter(prefix="/api/v1")
@@ -644,11 +650,17 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
         ],
         match=match,
         reasons=reasons,
-        seen=SeenStatus(rating=rated.rating, reaction=rated.reaction)
-        if rated
-        else SeenStatus(rating=None, reaction=None)
-        if watched
-        else None,
+        seen=(
+            SeenStatus(
+                rating=rated.rating,
+                reaction=rated.reaction
+                or (rating_to_reaction(rated.rating) if rated.rating is not None else None),
+            )
+            if rated
+            else SeenStatus(rating=None, reaction=None)
+            if watched
+            else None
+        ),
         availability=title_availability(
             title.tmdb_id, offers, item_id is not None, user.subscriptions, with_others=True
         ),

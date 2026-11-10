@@ -1,9 +1,9 @@
-import type { DivergentTitle, Me, RatedTitle, TitleAvailability } from '@iwanttowatch/api-client'
+import type { DivergentTitle, Me, RatedTitle, Reaction, TitleAvailability } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { api, errorMessage, REACTIONS, TAG_LABELS, useAvailability, useImports, usePeopleTaste, useServerSettings } from './api'
-import RateDialog, { ReactionIcon } from './RateDialog'
+import { api, errorMessage, ratingToReaction, REACTIONS, TAG_LABELS, useAvailability, useImports, usePeopleTaste, useServerSettings } from './api'
+import RateDialog, { ReactionBadge, ReactionIcon } from './RateDialog'
 import PersonDialog, { HeartIcon } from './PersonDialog'
 import { FilmSearch } from './Search'
 import { WatchBadges } from './Streaming'
@@ -690,14 +690,15 @@ function PeopleSection({ onSelectPerson }: { onSelectPerson: (id: number) => voi
                     <span>{dir.rated_count} films rated</span>
                   </div>
                 </div>
-                <div className="shrink-0 flex flex-col items-end gap-1">
-                  <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-400">
-                    ★ {dir.average_rating}
-                  </span>
-                  {(dir.loved_count > 0 || dir.liked_count > 0) && (
-                    <span className="text-[11px] text-white/40">
-                      {dir.loved_count > 0 ? `${dir.loved_count} loved` : `${dir.liked_count} liked`}
-                    </span>
+                <div className="shrink-0 flex flex-wrap items-center gap-1.5">
+                  {dir.loved_count > 0 && (
+                    <ReactionBadge reaction="loved" label={`${dir.loved_count}`} size="xs" />
+                  )}
+                  {dir.liked_count > 0 && (
+                    <ReactionBadge reaction="liked" label={`${dir.liked_count}`} size="xs" />
+                  )}
+                  {dir.disliked_count > 0 && (
+                    <ReactionBadge reaction="disliked" label={`${dir.disliked_count}`} size="xs" />
                   )}
                 </div>
               </button>
@@ -733,14 +734,15 @@ function PeopleSection({ onSelectPerson }: { onSelectPerson: (id: number) => voi
                     <span>{actor.rated_count} films rated</span>
                   </div>
                 </div>
-                <div className="shrink-0 flex flex-col items-end gap-1">
-                  <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-400">
-                    ★ {actor.average_rating}
-                  </span>
-                  {(actor.loved_count > 0 || actor.liked_count > 0) && (
-                    <span className="text-[11px] text-white/40">
-                      {actor.loved_count > 0 ? `${actor.loved_count} loved` : `${actor.liked_count} liked`}
-                    </span>
+                <div className="shrink-0 flex flex-wrap items-center gap-1.5">
+                  {actor.loved_count > 0 && (
+                    <ReactionBadge reaction="loved" label={`${actor.loved_count}`} size="xs" />
+                  )}
+                  {actor.liked_count > 0 && (
+                    <ReactionBadge reaction="liked" label={`${actor.liked_count}`} size="xs" />
+                  )}
+                  {actor.disliked_count > 0 && (
+                    <ReactionBadge reaction="disliked" label={`${actor.disliked_count}`} size="xs" />
                   )}
                 </div>
               </button>
@@ -845,7 +847,9 @@ function DivergentCard({
   error: string | null | undefined
 }) {
   const showOriginal = item.original_title && item.original_title !== item.title
-  const reaction = REACTIONS.find((r) => r.value === item.reaction)
+  const reactionValue =
+    (item.reaction as Reaction | null) ||
+    (item.user_rating !== null && item.user_rating !== undefined ? ratingToReaction(item.user_rating) : null)
   const lovedMore = item.divergence > 0
 
   return (
@@ -903,11 +907,9 @@ function DivergentCard({
           </div>
 
           <div className="mt-1.5 flex items-center gap-3 text-xs text-white/70">
-            <span className="flex items-center gap-1">
+            <span className="flex items-center gap-1.5">
               <span className="text-white/40">You:</span>
-              <span className="font-semibold text-white">
-                {reaction ? reaction.label : item.user_rating.toFixed(1)}
-              </span>
+              {reactionValue && <ReactionBadge reaction={reactionValue} size="xs" />}
             </span>
             <span className="flex items-center gap-1">
               <span className="text-white/40">Audience:</span>
@@ -991,7 +993,10 @@ function RatingCard({
   onRate: (tmdbId: number) => void
 }) {
   const showOriginal = item.original_title && item.original_title !== item.title
-  const reaction = REACTIONS.find((r) => r.value === item.reaction)
+  const reactionVal =
+    (item.reaction as Reaction | undefined) ||
+    (item.rating != null ? ratingToReaction(item.rating) : undefined)
+  const reaction = reactionVal ? REACTIONS.find((r) => r.value === reactionVal) : null
   return (
     <li className="min-w-0">
       <button
@@ -1003,19 +1008,21 @@ function RatingCard({
         <div className="relative">
           <Poster path={item.poster_path} title={item.title} className="group-hover:ring-2 group-hover:ring-accent/70" />
           <span
-            className="absolute top-1.5 right-1.5 flex items-center gap-1 rounded-md bg-black/80 px-1.5 py-0.5 text-xs font-semibold text-accent-strong [--thumb-bg:#000]"
+            className={`absolute top-1.5 right-1.5 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold backdrop-blur-xs border ${
+              reaction?.value === 'loved'
+                ? 'border-emerald-500/30 bg-emerald-950/80 text-emerald-300'
+                : reaction?.value === 'disliked'
+                ? 'border-red-500/30 bg-red-950/80 text-red-300'
+                : 'border-white/10 bg-black/80 text-accent-strong'
+            }`}
             title={reaction?.label}
           >
             {item.favorite && <span aria-label="Liked on Letterboxd">♥</span>}
-            {reaction ? (
+            {reaction && (
               <>
                 <ReactionIcon reaction={reaction.value} className="h-3.5" />
                 <span className="sr-only">{reaction.label}</span>
               </>
-            ) : Number.isInteger(item.rating) ? (
-              item.rating
-            ) : (
-              item.rating.toFixed(1)
             )}
           </span>
         </div>

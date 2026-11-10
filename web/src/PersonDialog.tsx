@@ -1,7 +1,7 @@
 import type { Reaction } from '@iwanttowatch/api-client'
 import { useEffect, useRef, useState } from 'react'
-import { useFavoritePerson, usePerson } from './api'
-import { ReactionIcon } from './RateDialog'
+import { ratingToReaction, useFavoritePerson, usePerson } from './api'
+import { ReactionBadge } from './RateDialog'
 import { Button, ErrorText, Poster } from './ui'
 
 export function HeartIcon({ filled, className = 'size-4' }: { filled: boolean; className?: string }) {
@@ -185,36 +185,20 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                 </p>
               </div>
 
-              {person.affinity.average_rating !== null && (
-                <div className="flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-400 font-bold text-sm shadow-sm">
-                  <span>★</span>
-                  <span>{person.affinity.average_rating} / 10</span>
+              {person.affinity.rated_count > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {person.affinity.loved_count > 0 && (
+                    <ReactionBadge reaction="loved" label={`${person.affinity.loved_count} Loved`} />
+                  )}
+                  {person.affinity.liked_count > 0 && (
+                    <ReactionBadge reaction="liked" label={`${person.affinity.liked_count} Liked`} />
+                  )}
+                  {person.affinity.disliked_count > 0 && (
+                    <ReactionBadge reaction="disliked" label={`${person.affinity.disliked_count} Disliked`} />
+                  )}
                 </div>
               )}
             </div>
-
-            {person.affinity.rated_count > 0 && (
-              <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-white/5">
-                {person.affinity.loved_count > 0 && (
-                  <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-300">
-                    <ReactionIcon reaction="loved" className="size-3.5" />
-                    <span>{person.affinity.loved_count} Loved</span>
-                  </span>
-                )}
-                {person.affinity.liked_count > 0 && (
-                  <span className="inline-flex items-center gap-1.5 rounded-md border border-accent/20 bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
-                    <ReactionIcon reaction="liked" className="size-3.5" />
-                    <span>{person.affinity.liked_count} Liked</span>
-                  </span>
-                )}
-                {person.affinity.disliked_count > 0 && (
-                  <span className="inline-flex items-center gap-1.5 rounded-md border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-300">
-                    <ReactionIcon reaction="disliked" className="size-3.5" />
-                    <span>{person.affinity.disliked_count} Disliked</span>
-                  </span>
-                )}
-              </div>
-            )}
           </div>
 
           {/* Filmography Section with Tabs */}
@@ -319,23 +303,26 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                       </div>
                     </div>
 
-                    {/* Right status: user rating or watched pill */}
+                    {/* Right status: personal reaction or watched pill */}
                     <div className="shrink-0 flex items-center gap-2 text-right">
-                      {film.user_rating !== null && film.user_rating !== undefined && (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-0.5 text-xs font-semibold text-accent">
-                          ★ {film.user_rating}
-                        </span>
-                      )}
-                      {film.user_reaction && (
-                        <span className="text-white/80">
-                          <ReactionIcon reaction={film.user_reaction as Reaction} className="size-4" />
-                        </span>
-                      )}
-                      {!film.user_rating && !film.user_reaction && film.watched && (
-                        <span className="rounded bg-white/5 px-2 py-0.5 text-xs text-white/40">
-                          ✓ Watched
-                        </span>
-                      )}
+                      {(() => {
+                        const reaction =
+                          (film.user_reaction as Reaction | null) ||
+                          (film.user_rating !== null && film.user_rating !== undefined
+                            ? ratingToReaction(film.user_rating)
+                            : null)
+                        if (reaction) {
+                          return <ReactionBadge reaction={reaction} />
+                        }
+                        if (film.watched) {
+                          return (
+                            <span className="rounded bg-white/5 px-2 py-0.5 text-xs text-white/40">
+                              ✓ Watched
+                            </span>
+                          )
+                        }
+                        return null
+                      })()}
                       <svg
                         viewBox="0 0 20 20"
                         fill="currentColor"

@@ -13,7 +13,7 @@ from iwanttowatch.children import library_owners
 from iwanttowatch.db import utcnow
 from iwanttowatch.feed import seen
 from iwanttowatch.models import Availability, FavoritePerson, LibraryItem, Title
-from iwanttowatch.taste import effective_ratings
+from iwanttowatch.taste import effective_ratings, rating_to_reaction
 from iwanttowatch.tmdb import TmdbNotFound
 
 router = APIRouter(prefix="/api/v1/people", tags=["people"])
@@ -368,6 +368,8 @@ def get_person(
     filmography: list[PersonCredit] = []
     for mid, m in movies.items():
         rating, reaction = ratings_map.get(mid, (None, None))
+        if reaction is None and rating is not None:
+            reaction = rating_to_reaction(rating)
         is_watched = mid in ratings_map or mid in watched_set
         is_in_library = mid in library_set
         services = avail_map.get(mid, [])

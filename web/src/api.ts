@@ -124,6 +124,13 @@ export const REACTIONS: { value: Reaction; label: string }[] = [
   { value: 'loved', label: 'Loved' },
 ]
 
+/** Converts a numeric 0–10 rating to the 3-point reaction scale. */
+export function ratingToReaction(rating: number): Reaction {
+  if (rating >= 9.0) return 'loved'
+  if (rating >= 6.0) return 'liked'
+  return 'disliked'
+}
+
 export const TAG_LABELS: Record<string, string> = {
   great_story: 'Great story',
   great_acting: 'Great acting',

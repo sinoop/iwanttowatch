@@ -13,7 +13,7 @@ from iwanttowatch.api.deps import CurrentUser, DbSession
 from iwanttowatch.catalog import ensure_title
 from iwanttowatch.models import Title, User, UserTitle
 from iwanttowatch.tags import BY_ID, MAX_NOTE, MAX_TAGS, Group, options_for
-from iwanttowatch.taste import REACTION_FALLBACK, refresh_reaction_ratings
+from iwanttowatch.taste import REACTION_FALLBACK, rating_to_reaction, refresh_reaction_ratings
 from iwanttowatch.tmdb import TmdbError, client_from_settings
 
 router = APIRouter(prefix="/api/v1/titles")
@@ -89,7 +89,12 @@ def _out(title: Title, entry: UserTitle | None) -> TitleReaction:
         ]
 
     # Only this router writes app reactions, always one of the Reaction values.
-    reaction = cast(Reaction | None, entry.reaction if entry else None)
+    reaction = cast(
+        Reaction | None,
+        entry.reaction
+        if entry and entry.reaction
+        else (rating_to_reaction(entry.rating) if entry and entry.rating is not None else None),
+    )
     return TitleReaction(
         tmdb_id=title.tmdb_id,
         title=title.title,

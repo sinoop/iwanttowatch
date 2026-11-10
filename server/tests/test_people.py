@@ -105,6 +105,7 @@ def test_person_details_affinity_and_filmography(client: TestClient) -> None:
     assert films[157336]["streaming_services"] == ["Netflix"]
     # Inception
     assert films[27205]["user_rating"] == 8.0
+    assert films[27205]["user_reaction"] == "liked"
     assert films[27205]["watched"] is True
     # Memento
     assert films[77]["in_library"] is True
