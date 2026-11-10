@@ -182,6 +182,24 @@ export function ProviderLogo({ path, name, className = '' }: { path: string | nu
   )
 }
 
+const JELLYFIN_PATH =
+  'M12 .002C8.826.002-1.398 18.537.16 21.666c1.56 3.129 22.14 3.094 23.682 0S15.177 0 12 0zm7.76 18.949c-1.008 2.028-14.493 2.05-15.514 0C3.224 16.9 9.92 4.755 12.003 4.755c2.081 0 8.77 12.166 7.759 14.196zM12 9.198c-1.054 0-4.446 6.15-3.93 7.189c.518 1.04 7.348 1.027 7.86 0c.511-1.027-2.874-7.19-3.93-7.19z'
+
+/** Official Jellyfin brand logo badge. */
+export function JellyfinLogo({ className = 'size-5' }: { className?: string }) {
+  return (
+    <span
+      aria-hidden
+      title="Jellyfin"
+      className={`inline-flex shrink-0 items-center justify-center rounded-md bg-gradient-to-tr from-[#00a4dc] to-[#aa5cc3] text-white shadow-xs ${className}`}
+    >
+      <svg viewBox="0 0 24 24" className="size-[70%] fill-current" aria-hidden="true">
+        <path d={JELLYFIN_PATH} />
+      </svg>
+    </span>
+  )
+}
+
 /** "On Jellyfin" and the logos of services the user can play a title on. */
 export function WatchBadges({ availability }: { availability: TitleAvailability | undefined }) {
   if (!availability || (!availability.on_jellyfin && availability.offers.length === 0)) return null
@@ -192,8 +210,9 @@ export function WatchBadges({ availability }: { availability: TitleAvailability 
   return (
     <ul className="mt-1.5 flex flex-wrap items-center gap-1" aria-label="Where to watch">
       {availability.on_jellyfin && (
-        <li className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[11px] leading-4 font-medium text-violet-200">
-          Jellyfin
+        <li title="On Jellyfin">
+          <JellyfinLogo className="size-5" />
+          <span className="sr-only">On Jellyfin</span>
         </li>
       )}
       {availability.offers.map((offer) => (
@@ -217,12 +236,8 @@ function PlatformStackIcon({
 }) {
   if (item.key === 'jellyfin') {
     return (
-      <span
-        aria-hidden
-        title="Jellyfin"
-        className="flex size-5 shrink-0 items-center justify-center rounded-full bg-violet-500 text-[10px] font-bold text-white ring-2 ring-[#0c0e13]"
-      >
-        J
+      <span title="Jellyfin" className="inline-flex rounded-full ring-2 ring-[#0c0e13]">
+        <JellyfinLogo className="size-5 rounded-full!" />
       </span>
     )
   }
@@ -373,7 +388,7 @@ export function PlatformFilter({
                 }`}
               >
                 {p.key === 'jellyfin' ? (
-                  <span aria-hidden className="size-2.5 shrink-0 rounded-full bg-violet-400" />
+                  <JellyfinLogo className="size-4 rounded" />
                 ) : (
                   <ProviderLogo path={p.logo_path} name={p.name} className="size-4 rounded" />
                 )}

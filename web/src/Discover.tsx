@@ -699,57 +699,77 @@ function FeedCard({
 }) {
   return (
     <li className="flex flex-col">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="group relative block rounded-lg text-left focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
-        aria-label={`${item.title}, ${item.match}% match${item.imdb ? `, IMDb ${item.imdb.rating.toFixed(1)}` : ''}`}
-      >
-        <Poster
-          path={item.poster_path}
-          title={item.title}
-          className="transition-shadow group-hover:ring-2 group-hover:ring-accent"
-        />
-        <div className="absolute top-2 left-2 flex items-center gap-1.5">
-          <MatchBadge match={item.match} className="shadow-lg shadow-black/50" />
-          {item.imdb && <ImdbBadge imdb={item.imdb} className="shadow-lg shadow-black/50" />}
-        </div>
-      </button>
-      <div className="mt-1.5 flex items-center justify-between" role="group" aria-label={`Actions for ${item.title}`}>
-        <div className="flex items-center rounded-full border border-white/10 bg-white/[0.03] p-0.5">
-          <CardAction label="Didn’t like" disabled={busy} onClick={() => onRate('disliked')}>
+      <div className="group relative rounded-lg">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="block w-full rounded-lg text-left focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
+          aria-label={`${item.title}, ${item.match}% match${item.imdb ? `, IMDb ${item.imdb.rating.toFixed(1)}` : ''}`}
+        >
+          <Poster
+            path={item.poster_path}
+            title={item.title}
+            className="transition-shadow group-hover:ring-2 group-hover:ring-accent"
+          />
+          <div className="absolute top-2 left-2 flex items-center gap-1.5">
+            <MatchBadge match={item.match} className="shadow-lg shadow-black/50" />
+            {item.imdb && <ImdbBadge imdb={item.imdb} className="shadow-lg shadow-black/50" />}
+          </div>
+        </button>
+        <div
+          className="absolute bottom-2 left-2 z-10 flex items-center gap-0.5 rounded-full border border-white/15 bg-black/60 p-0.5 shadow-xl shadow-black/50 backdrop-blur-md"
+          role="group"
+          aria-label={`Rate ${item.title}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <CardAction
+            label="Didn’t like"
+            disabled={busy}
+            onClick={() => onRate('disliked')}
+            className="text-white/70 hover:bg-white/15"
+          >
             <ReactionIcon reaction="disliked" className="size-4" />
           </CardAction>
-          <CardAction label="Liked" disabled={busy} onClick={() => onRate('liked')}>
+          <CardAction
+            label="Liked"
+            disabled={busy}
+            onClick={() => onRate('liked')}
+            className="text-white/70 hover:bg-white/15"
+          >
             <ReactionIcon reaction="liked" className="size-4" />
           </CardAction>
-          <CardAction label="Loved" disabled={busy} onClick={() => onRate('loved')}>
+          <CardAction
+            label="Loved"
+            disabled={busy}
+            onClick={() => onRate('loved')}
+            className="text-white/70 hover:bg-white/15"
+          >
             <ReactionIcon reaction="loved" className="size-4" />
           </CardAction>
         </div>
-        <div className="flex items-center">
-          <CardAction
-            label={item.shortlisted ? 'Remove from shortlist' : 'Add to shortlist'}
-            pressed={item.shortlisted}
-            disabled={busy}
-            onClick={onShortlist}
-          >
-            <BookmarkIcon filled={item.shortlisted} />
-          </CardAction>
-          <AssignToChildButton
-            compact
-            tmdbId={item.tmdb_id}
-            title={item.title}
-            assigned={item.assigned_children ?? []}
-            childProfiles={childProfiles}
-          />
-          <CardAction label="Not now (hide for 30 days)" disabled={busy} onClick={() => onAct('snoozed')}>
-            <Icon d="M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2" />
-          </CardAction>
-          <CardAction label="Not interested" disabled={busy} onClick={() => onAct('dismissed')}>
-            <Icon d="M18 6 6 18M6 6l12 12" />
-          </CardAction>
-        </div>
+      </div>
+      <div className="mt-1.5 flex items-center justify-end" role="group" aria-label={`Actions for ${item.title}`}>
+        <CardAction
+          label={item.shortlisted ? 'Remove from shortlist' : 'Add to shortlist'}
+          pressed={item.shortlisted}
+          disabled={busy}
+          onClick={onShortlist}
+        >
+          <BookmarkIcon filled={item.shortlisted} />
+        </CardAction>
+        <AssignToChildButton
+          compact
+          tmdbId={item.tmdb_id}
+          title={item.title}
+          assigned={item.assigned_children ?? []}
+          childProfiles={childProfiles}
+        />
+        <CardAction label="Not now (hide for 30 days)" disabled={busy} onClick={() => onAct('snoozed')}>
+          <Icon d="M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0M12 6v6l4 2" />
+        </CardAction>
+        <CardAction label="Not interested" disabled={busy} onClick={() => onAct('dismissed')}>
+          <Icon d="M18 6 6 18M6 6l12 12" />
+        </CardAction>
       </div>
       <h2 className="mt-1 text-sm leading-snug font-medium">{item.title}</h2>
       <p className="text-xs text-white/50">{facts(item).join(' · ')}</p>
@@ -770,12 +790,14 @@ function CardAction({
   disabled,
   onClick,
   children,
+  className = '',
 }: {
   label: string
   pressed?: boolean
   disabled: boolean
   onClick: () => void
   children: ReactNode
+  className?: string
 }) {
   return (
     <button
@@ -787,7 +809,7 @@ function CardAction({
       onClick={onClick}
       className={`flex size-8 items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none disabled:opacity-40 ${
         pressed ? 'bg-accent/15 text-accent-strong' : 'text-white/45 hover:bg-white/10 hover:text-white'
-      }`}
+      } ${className}`}
     >
       {children}
     </button>

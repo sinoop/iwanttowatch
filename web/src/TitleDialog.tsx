@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { api, errorMessage, facts, useAssignToChild, useChildren, useServerSettings, useShortlist } from './api'
 import { RatePicker } from './RateDialog'
-import { JustWatchCredit, ProviderLogo } from './Streaming'
+import { JellyfinLogo, JustWatchCredit, ProviderLogo } from './Streaming'
 import { Button, ErrorText, Poster } from './ui'
 
 /** A film's details: why it was suggested, who made it, and where to watch it. */
@@ -510,10 +510,12 @@ function WhereToWatch({ film }: { film: TitleDetail }) {
                 rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded-full bg-violet-500/20 px-3 py-1 text-sm font-medium text-violet-100 hover:bg-violet-500/30"
               >
-                ▶ Play on Jellyfin
+                <JellyfinLogo className="size-4.5 rounded-full" />
+                Play on Jellyfin
               </a>
             ) : (
-              <span className="inline-flex rounded-full bg-violet-500/20 px-3 py-1 text-sm text-violet-100">
+              <span className="inline-flex items-center gap-2 rounded-full bg-violet-500/20 px-3 py-1 text-sm text-violet-100">
+                <JellyfinLogo className="size-4.5 rounded-full" />
                 On Jellyfin
               </span>
             )}
