@@ -31,27 +31,8 @@ export default function Taste({ me }: { me: Me }) {
 
   return (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">My taste</h1>
-          <p className="mt-2 max-w-prose text-white/60">
-            {isChild
-              ? 'Everything iWantToWatch knows about what you like.'
-              : 'Everything iWantToWatch knows about what you like. Rate movies below or import your history from IMDb, Letterboxd, or Netflix in Settings.'}
-          </p>
-        </div>
-        {!isChild && (
-          <Link
-            to="/settings/imports"
-            className="rounded-lg border border-white/10 px-3.5 py-1.5 text-sm font-medium text-white/75 transition-colors hover:border-white/25 hover:bg-white/5 hover:text-white"
-          >
-            Import ratings
-          </Link>
-        )}
-      </div>
-
       {runningJob && (
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent/10 p-4 text-sm">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent/10 p-4 text-sm">
           <div className="flex items-center gap-2.5">
             <span className="size-2 animate-pulse rounded-full bg-accent" />
             <span className="text-white/90">
@@ -65,7 +46,7 @@ export default function Taste({ me }: { me: Me }) {
       )}
 
       {reviewCount > 0 && !runningJob && (
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-4 text-sm">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-4 text-sm">
           <span className="text-white/80">
             You have <span className="font-medium text-white">{reviewCount}</span> imported {reviewCount === 1 ? 'rating' : 'ratings'} to review.
           </span>
@@ -211,44 +192,73 @@ function Ratings({
   if (!first) return null
 
   return (
-    <section className="mt-10">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setTab('all')}
-            className={`cursor-pointer text-lg font-semibold transition-colors ${
-              tab === 'all' ? 'text-white' : 'text-white/40 hover:text-white/70'
-            }`}
-          >
-            Your ratings <span className="font-normal text-white/45">{first.total_unfiltered || first.total}</span>
-          </button>
-          <span className="text-white/20">|</span>
-          <button
-            type="button"
-            onClick={() => setTab('divergent')}
-            className={`cursor-pointer text-lg font-semibold transition-colors flex items-center gap-1.5 ${
-              tab === 'divergent' ? 'text-accent-strong' : 'text-white/40 hover:text-white/70'
-            }`}
-          >
-            <span>Against the grain</span>
-            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs text-accent">Hot takes</span>
-          </button>
-          <span className="text-white/20">|</span>
-          <button
-            type="button"
-            onClick={() => setTab('people')}
-            className={`cursor-pointer text-lg font-semibold transition-colors flex items-center gap-1.5 ${
-              tab === 'people' ? 'text-accent-strong' : 'text-white/40 hover:text-white/70'
-            }`}
-          >
-            <span>Directors & Cast</span>
-            {(peopleTaste.data?.favorites?.length ?? 0) > 0 && (
-              <span className="rounded-full bg-red-500/15 px-2 py-0.5 text-xs text-red-400 font-medium">
-                {peopleTaste.data?.favorites?.length} fav
+    <section>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="max-w-full overflow-x-auto pb-1">
+          <div className="inline-flex items-center gap-1.5 rounded-2xl border border-white/10 bg-white/[0.04] p-1.5 shadow-lg shadow-black/20 backdrop-blur-md">
+            <button
+              type="button"
+              onClick={() => setTab('all')}
+              className={`flex cursor-pointer items-center gap-2.5 rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap transition-all ${
+                tab === 'all'
+                  ? 'border border-white/15 bg-white/15 text-white shadow-sm'
+                  : 'border border-transparent text-white/60 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <span>Your ratings</span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[11px] font-bold leading-none transition-colors ${
+                  tab === 'all' ? 'bg-accent text-black' : 'bg-white/10 text-white/60'
+                }`}
+              >
+                {first.total_unfiltered || first.total}
               </span>
-            )}
-          </button>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('divergent')}
+              className={`flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap transition-all ${
+                tab === 'divergent'
+                  ? 'border border-white/15 bg-white/15 text-white shadow-sm'
+                  : 'border border-transparent text-white/60 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <span>Against the grain</span>
+              <span
+                className={`rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none transition-colors ${
+                  tab === 'divergent'
+                    ? 'border-accent/50 bg-accent/25 font-semibold text-accent-strong'
+                    : 'border-accent/30 bg-accent/15 text-accent'
+                }`}
+              >
+                Hot takes
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab('people')}
+              className={`flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold whitespace-nowrap transition-all ${
+                tab === 'people'
+                  ? 'border border-white/15 bg-white/15 text-white shadow-sm'
+                  : 'border border-transparent text-white/60 hover:bg-white/5 hover:text-white'
+              }`}
+            >
+              <span>Directors & Cast</span>
+              {(peopleTaste.data?.favorites?.length ?? 0) > 0 && (
+                <span
+                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium leading-none transition-colors ${
+                    tab === 'people'
+                      ? 'border-red-500/50 bg-red-500/25 font-semibold text-red-300'
+                      : 'border-red-500/30 bg-red-500/15 text-red-400'
+                  }`}
+                >
+                  {peopleTaste.data?.favorites?.length} fav
+                </span>
+              )}
+            </button>
+          </div>
         </div>
         {tab === 'all' && first.languages.length > 0 && (
           <ul className="flex flex-wrap gap-2" aria-label="Languages you rated">
