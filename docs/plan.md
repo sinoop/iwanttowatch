@@ -371,11 +371,14 @@ Proposed 2026-11-09: bridge recommendation discovery and media acquisition for f
 - [x] Multi-arch images: each push to `main` that passes CI publishes `ghcr.io/sinoop/iwanttowatch` for amd64 and arm64 (`latest` and the commit SHA). The web app is built on the runner's own platform and only the Python stage runs under QEMU. The compose file pulls the image and can still build from the checkout, so updating a Pi is `docker compose pull && docker compose up -d` (pulled forward, 2026-11-08)
 - [x] Install docs with screenshots (`docs/install.md`), release notes (`CHANGELOG.md`), and version tags: each merge to `main` automatically increments the patch version (unless `server/pyproject.toml` was bumped higher), creates a `vX.Y.Z` GitHub release with generated notes, stamps the version into the container, and publishes `ghcr.io/sinoop/iwanttowatch` as `latest`, the commit SHA, `X.Y.Z`, and `X.Y` (revised 2026-11-09)
 
-### After the Web App: mobile
+### After the Web App: mobile and multi-device roadmap
 
-The mobile apps talk to the same self-hosted API. Two routes, to decide after v0.1: **Capacitor** wrapping the web app (fastest, one codebase), or **Expo / React Native** sharing `packages/api-client` (more native feel). Both reuse the backend unchanged.
+Detailed analysis and trade-offs are documented in [`docs/multi-device-architecture.md`](multi-device-architecture.md).
 
-A TV app (Android TV first) follows the mobile apps; until then the installable web app works on TV browsers. Its buttons open the film's page in the streaming app or Jellyfin; most services don't let other apps start playback directly.
+- **Phase 1 — Dedicated Mobile App (Client-Server):** Native iOS and Android app connecting to the self-hosted Docker server via `packages/api-client`. Provides deep links to streaming apps (Netflix, Prime, Disney+) and Jellyfin, offline caching of the current feed, push notifications, and fast touch UX.
+- **Phase 2 — TV 10-Foot Client & Casting:** Android TV and Apple TV client connecting directly to the Docker server with D-pad navigation; mobile app acts as a Cast/AirPlay target for standalone users.
+- **Phase 3 — Desktop Standalone App (Windows / macOS):** Packaged local Python runtime + SQLite database (Tauri / PyInstaller) allowing zero-Docker local operation or connection to a remote server.
+- **Phase 4 — Standalone Mobile Engine (Local-First):** Lightweight client-side candidate gathering and ported scoring algorithm (TS/WASM) for standalone phone use without a server, with one-click export/migration to a self-hosted Docker instance.
 
 ## 10. Risks
 
