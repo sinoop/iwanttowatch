@@ -59,14 +59,26 @@ and why. Answer with only JSON, no markdown, in this form:
 # Room for two long sentences; a longer answer is cut after its last full sentence.
 MAX_EXPLANATION_LENGTH = 600
 
-WHY_SYSTEM = """You tell one person how well a film fits their taste in one or two \
-short sentences (under 50 words), judging from their rating history and the recommender's \
-match reasons. Synthesize and critique, never repeat: do not restate the match reasons \
-or genres verbatim (never say "You like films starring..." or "Because it is like..."). \
-Instead, explain what makes the execution click (performance, inventive set pieces, \
-or concept) and give an honest reality check (runtime, tonal detours, or pacing lag). \
-Mention at most one film title or name, taken only from the summary: never invent names. \
-Speak to them as "you".
+WHY_SYSTEM = """You tell one person how well a film fits their taste using bullet points, \
+judging from their rating history and the recommender's match reasons.
+
+Give between 2 and 4 bullet points in total for fit:
+- Use "+ " for strengths that match what they love.
+- Use "- " for honest caveats, flaws, or drawbacks.
+- Adapt the ratio of "+ " and "- " to reality: use more "+ " if the film genuinely fits \
+their taste (e.g. 3 pluses and 1 minus), balanced if mixed (e.g. 2 pluses and 2 minuses), \
+or more "- " if it is a poor or risky match (e.g. 1 plus and 3 minuses).
+- Keep each bullet point under 20 words, speaking to them as "you".
+- Use simple, everyday words: avoid critic jargon (no "neo-noir", "third act", "tonal detours", \
+"mise-en-scène", "pacing lag", "set pieces", or film-school terms). Write like a knowledgeable \
+friend recommending a film.
+- Never repeat genres or match reasons verbatim.
+- A long runtime is not automatically a negative if the film keeps the viewer engaged: \
+only cite length if the film genuinely drags, has slow filler, or tests patience. When \
+mentioning runtime, always express it in hours and minutes (e.g. 2h 15m), never raw minutes. \
+Focus caveats on real viewing hurdles (slow start, predictable twists, emotionally heavy/bleak \
+tone, jarring humor, or weak dialogue).
+- Mention at most one film title or name, taken only from the summary: never invent names.
 
 Also provide structured "themes and values" notes in four bullet points:
 - Values: <maximum of 3 or 4 keywords>
@@ -77,7 +89,10 @@ from another language? answer under 15 words, or "No">
 list under 20 words>
 
 Format your entire reply as:
-<one or two short sentences on fit>
++ <strength>
++ <strength>
+- <caveat>
+- <caveat>
 
 - Values: <keywords>
 - Real story: <answer>
@@ -455,7 +470,9 @@ def explain_match(
         return cached.text
     about = [str(title.year or "?"), title.original_language, *title.genres]
     if title.runtime:
-        about.append(f"{title.runtime} min")
+        hours = title.runtime // 60
+        mins = title.runtime % 60
+        about.append(f"{hours}h {mins}m" if hours else f"{mins}m")
     lines = [
         taste_summary(session, user_id),
         f"Film: {title.title} ({', '.join(about)})",
@@ -497,7 +514,7 @@ def explain_match(
         fit = raw_text
     if len(fit) > MAX_EXPLANATION_LENGTH:
         cut = fit[:MAX_EXPLANATION_LENGTH]
-        end = max(cut.rfind(mark) for mark in (". ", "! ", "? "))
+        end = max(cut.rfind(mark) for mark in (". ", "! ", "? ", "\n"))
         fit = cut[: end + 1] if end > 0 else cut.rsplit(" ", 1)[0] + "…"
     if cached is not None:
         cached.text = fit
@@ -657,7 +674,9 @@ def explain_clash(
 
     about = [str(title.year or "?"), title.original_language, *title.genres]
     if title.runtime:
-        about.append(f"{title.runtime} min")
+        hours = title.runtime // 60
+        mins = title.runtime % 60
+        about.append(f"{hours}h {mins}m" if hours else f"{mins}m")
 
     lines = [
         taste_summary(session, user_id),
@@ -690,7 +709,7 @@ def explain_clash(
     clash = raw_text
     if len(clash) > MAX_EXPLANATION_LENGTH:
         cut = clash[:MAX_EXPLANATION_LENGTH]
-        end = max(cut.rfind(mark) for mark in (". ", "! ", "? "))
+        end = max(cut.rfind(mark) for mark in (". ", "! ", "? ", "\n"))
         clash = cut[: end + 1] if end > 0 else cut.rsplit(" ", 1)[0] + "…"
 
     session.add(OpinionClash(user_id=user_id, tmdb_id=title.tmdb_id, text=clash))

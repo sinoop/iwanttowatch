@@ -617,8 +617,10 @@ def test_explain_match_includes_reasons_and_metadata(client: TestClient) -> None
         def generate(self, system: str, prompt: str, json_reply: bool = False) -> str:
             captured.append((system, prompt))
             return (
-                "A gripping thriller that suits your taste.\n\n"
+                "+ Fast-paced story that matches what you loved about Maanaadu.\n"
+                "- Pacing slows down in the middle section.\n\n"
                 "- Values: Ambition, Sacrifice\n"
+                "- Real story: No\n"
                 "- Remake: Original film.\n"
                 "- Other famous films: Manam, 13B"
             )
@@ -643,17 +645,22 @@ def test_explain_match_includes_reasons_and_metadata(client: TestClient) -> None
             llm=DummyLlm(),
             reasons=["Like Maanaadu, which you rated highly", "AI: pick reason"],
         )
-        assert res == "A gripping thriller that suits your taste."
+        assert res == (
+            "+ Fast-paced story that matches what you loved about Maanaadu.\n"
+            "- Pacing slows down in the middle section."
+        )
         assert title.themes_note == (
             "- Values: Ambition, Sacrifice\n"
+            "- Real story: No\n"
             "- Remake: Original film.\n"
             "- Other famous films: Manam, 13B"
         )
         assert len(captured) == 1
         system, prompt = captured[0]
         assert "well a film fits their taste" in system
+        assert "hours and minutes" in system
         assert "Real story:" in system
-        assert "164 min" in prompt
+        assert "2h 44m" in prompt
         assert "Mood / Feel: Mind-bending, Thrilling" in prompt
         assert "Recommender match reasons: Like Maanaadu, which you rated highly" in prompt
         assert "Films I watched already:" in prompt

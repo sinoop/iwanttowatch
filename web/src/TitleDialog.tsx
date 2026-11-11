@@ -257,6 +257,42 @@ function seenText(_seen: NonNullable<TitleDetail['seen']>): string {
   return 'You’ve seen it'
 }
 
+function renderFitExplanation(explanation: string) {
+  const lines = explanation
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  const isBulletList = lines.some((l) => /^[+–—-]\s+/.test(l))
+
+  if (isBulletList) {
+    return (
+      <ul className="space-y-1.5 text-sm leading-relaxed">
+        {lines.map((line, idx) => {
+          const isNegative = /^[-–—]\s+/.test(line)
+          const text = line.replace(/^[+–—-]\s+/, '')
+          return (
+            <li key={idx} className="flex items-start gap-2">
+              <span
+                className={`mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full text-xs font-bold leading-none ${
+                  isNegative
+                    ? 'bg-amber-500/15 text-amber-300'
+                    : 'bg-emerald-500/15 text-emerald-400'
+                }`}
+                aria-label={isNegative ? 'Drawback' : 'Strength'}
+              >
+                {isNegative ? '−' : '+'}
+              </span>
+              <span className={isNegative ? 'text-white/70' : 'text-white/85'}>{text}</span>
+            </li>
+          )
+        })}
+      </ul>
+    )
+  }
+
+  return <p className="text-sm leading-relaxed text-white/70">{explanation}</p>
+}
+
 /** The reasons this film fits the user: algorithmic signals, personal critique, and themes & values. */
 function WhySection({
   film,
@@ -299,7 +335,7 @@ function WhySection({
   return (
     <section className="mt-5 rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-medium text-white/80">Why it suits you</h3>
+        <h3 className="text-sm font-medium text-white/80">How it fits you</h3>
         {hasAiNote && (
           <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-strong">
             AI-written
@@ -312,13 +348,13 @@ function WhySection({
       )}
 
       {film.explanation && (
-        <p
-          className={`text-sm leading-relaxed text-white/70 ${
+        <div
+          className={`${
             film.overview ? 'mt-3 border-t border-white/5 pt-2.5' : 'mt-1.5'
           }`}
         >
-          {film.explanation}
-        </p>
+          {renderFitExplanation(film.explanation)}
+        </div>
       )}
 
       {reasonsToShow.length > 0 && (
@@ -360,10 +396,10 @@ function WhySection({
             disabled={ask.isPending}
           >
             {ask.isPending
-              ? 'Asking the AI…'
+              ? 'Evaluating with AI…'
               : film.explanation
-                ? 'Rerun Why it suits you'
-                : 'Why this? Ask the AI'}
+                ? 'Re-evaluate with AI'
+                : 'How does it fit? Ask AI'}
           </Button>
           {ask.error && (
             <div className="mt-2">
