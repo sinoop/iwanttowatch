@@ -37,6 +37,7 @@ from iwanttowatch.models import (
     Feedback,
     FeedBuild,
     LibraryItem,
+    OutlierReview,
     Recommendation,
     ShortlistItem,
     Title,
@@ -84,6 +85,7 @@ FAVOURITE_LABEL, FAVOURITE_WEIGHT = 0.85, 0.5
 # Thumbs on a feed card, for a film the user hasn't seen: "more" or "less like this".
 THUMB_LABELS = {"up": 0.8, "down": 0.2}
 THUMB_WEIGHT = 0.5
+CONFIRMED_DISLIKE_WEIGHT = 1.5
 SNOOZE = timedelta(days=30)
 # Rescore this long after the user's last rating or feedback, so a burst of clicks
 # costs one rescore.
@@ -99,13 +101,21 @@ def user_labels(session: Session, user_id: int) -> list[Label]:
     rows = session.execute(
         select(effective.c.tmdb_id, effective.c.rating, effective.c.reaction)
     ).all()
+    confirmed_outliers = set(
+        session.scalars(select(OutlierReview.tmdb_id).where(OutlierReview.user_id == user_id))
+    )
     ratings: set[int] = set()
     labels: list[Label] = []
     for tmdb_id, rating, reaction in rows:
         ratings.add(tmdb_id)
         rx = reaction or (rating_to_reaction(rating) if rating is not None else None)
         if rx in REACTION_PERCENTILES:
-            labels.append(Label(tmdb_id, REACTION_PERCENTILES[rx], explicit=True))
+            weight = (
+                CONFIRMED_DISLIKE_WEIGHT
+                if (rx == "disliked" and tmdb_id in confirmed_outliers)
+                else 1.0
+            )
+            labels.append(Label(tmdb_id, REACTION_PERCENTILES[rx], weight=weight, explicit=True))
     watched = session.execute(
         select(UserTitle.tmdb_id, func.max(UserTitle.favorite))
         .where(UserTitle.user_id == user_id, UserTitle.watched)
@@ -889,6 +899,10 @@ def score_films(session: Session, user: User, ids: list[int]) -> list[Scored]:
 
 
 _RATED_MATCHES_CACHE: dict[int, tuple[int, Any, dict[int, int]]] = {}
+
+
+def clear_user_rated_matches_cache(user_id: int) -> None:
+    _RATED_MATCHES_CACHE.pop(user_id, None)
 
 
 def user_rated_matches(session: Session, user: User) -> dict[int, int]:

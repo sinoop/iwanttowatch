@@ -1105,7 +1105,7 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 15,
+              "maximum": 50,
               "minimum": 1,
               "default": 15,
               "title": "Limit"
@@ -1118,11 +1118,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/OutlierTitle"
-                  },
-                  "title": "Response List Outliers Api V1 Ratings Outliers Get"
+                  "$ref": "#/components/schemas/OutliersOut"
                 }
               }
             }
@@ -7495,6 +7491,27 @@
           "disliked_tags"
         ],
         "title": "OutlierTitle"
+      },
+      "OutliersOut": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OutlierTitle"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "items"
+        ],
+        "title": "OutliersOut"
       },
       "PeopleTasteOverview": {
         "properties": {

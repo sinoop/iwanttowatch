@@ -1,7 +1,7 @@
 from collections import Counter
 from datetime import date, datetime
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy import String, case, cast, func, or_, select
 
@@ -10,7 +10,7 @@ from iwanttowatch.api.imports import Candidate
 from iwanttowatch.api.reactions import TagOption
 from iwanttowatch.catalog import search_movies
 from iwanttowatch.children import library_owners
-from iwanttowatch.feed import user_rated_matches
+from iwanttowatch.feed import clear_user_rated_matches_cache, user_rated_matches
 from iwanttowatch.llm import LlmError, llm_order, provider_from_settings
 from iwanttowatch.models import (
     Availability,
@@ -325,23 +325,28 @@ class OutlierTitle(BaseModel):
     disliked_tags: list[TagOption]
 
 
+class OutliersOut(BaseModel):
+    total: int
+    items: list[OutlierTitle]
+
+
 @router.get("/ratings/outliers")
 def list_outliers(
     user: CurrentUser,
     session: DbSession,
-    limit: int = Query(15, ge=1, le=15),
-) -> list[OutlierTitle]:
+    limit: int = Query(15, ge=1, le=50),
+) -> OutliersOut:
     """Films where the user's rating strongly diverged from the recommender's predicted match."""
     effective = effective_ratings(user.id)
     rows = session.execute(
         select(effective, Title).join(Title, Title.tmdb_id == effective.c.tmdb_id)
     ).all()
     if not rows:
-        return []
+        return OutliersOut(total=0, items=[])
 
     matches = user_rated_matches(session, user)
     if not matches:
-        return []
+        return OutliersOut(total=0, items=[])
 
     reviewed = set(
         session.scalars(select(OutlierReview.tmdb_id).where(OutlierReview.user_id == user.id))
@@ -413,16 +418,23 @@ def list_outliers(
         candidates.append((priority, item))
 
     candidates.sort(key=lambda pair: pair[0], reverse=True)
-    return [item for _, item in candidates[:limit]]
+    return OutliersOut(
+        total=len(candidates),
+        items=[item for _, item in candidates[:limit]],
+    )
 
 
 @router.post("/ratings/outliers/{tmdb_id}/confirm", status_code=status.HTTP_204_NO_CONTENT)
-def confirm_outlier(tmdb_id: int, user: CurrentUser, session: DbSession) -> Response:
+def confirm_outlier(
+    tmdb_id: int, user: CurrentUser, session: DbSession, request: Request
+) -> Response:
     """Mark an outlier film as reviewed and confirmed so it leaves the outlier queue."""
     existing = session.get(OutlierReview, (user.id, tmdb_id))
     if existing is None:
         session.add(OutlierReview(user_id=user.id, tmdb_id=tmdb_id))
         session.commit()
+    clear_user_rated_matches_cache(user.id)
+    request.app.state.feed_worker.rescore_soon(user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

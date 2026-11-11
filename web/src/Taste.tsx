@@ -75,7 +75,7 @@ function Ratings({
 
   const outliers = useQuery({
     queryKey: ['outlier-ratings'],
-    queryFn: async () => (await api.GET('/api/v1/ratings/outliers')).data ?? [],
+    queryFn: async () => (await api.GET('/api/v1/ratings/outliers')).data,
   })
 
   // Filter & sort states
@@ -244,29 +244,39 @@ function Ratings({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setReviewOutliersOpen(true)}
-            className={`group relative inline-flex cursor-pointer items-center gap-2.5 rounded-2xl border px-4 py-2 text-sm font-semibold transition-all active:scale-[0.98] ${
-              (outliers.data?.length ?? 0) > 0
-                ? 'border-accent/80 bg-gradient-to-r from-accent/25 via-accent/35 to-accent/20 text-accent-strong shadow-lg shadow-accent/25 ring-1 ring-accent/40 animate-pulse hover:animate-none hover:scale-[1.03] hover:border-accent hover:shadow-accent/40 hover:brightness-110'
-                : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
-            }`}
-            title="Review ratings that diverged widely from predicted match"
-          >
-            {(outliers.data?.length ?? 0) > 0 ? (
-              <span className="relative flex size-2.5">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-accent opacity-75" />
-                <span className="relative inline-flex size-2.5 rounded-full bg-accent shadow-xs" />
-              </span>
-            ) : null}
-            <span>🎯 Review Outliers</span>
-            {(outliers.data?.length ?? 0) > 0 ? (
-              <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-bold leading-none text-black shadow-xs transition-transform group-hover:scale-105">
-                {outliers.data?.length}
-              </span>
-            ) : null}
-          </button>
+          {(() => {
+            const totalOutliers = outliers.data?.total ?? 0
+            const batchSize = outliers.data?.items?.length ?? 0
+            return (
+              <button
+                type="button"
+                onClick={() => setReviewOutliersOpen(true)}
+                className={`group relative inline-flex cursor-pointer items-center gap-2.5 rounded-2xl border px-4 py-2 text-sm font-semibold transition-all active:scale-[0.98] ${
+                  totalOutliers > 0
+                    ? 'border-accent/80 bg-gradient-to-r from-accent/25 via-accent/35 to-accent/20 text-accent-strong shadow-lg shadow-accent/25 ring-1 ring-accent/40 animate-pulse hover:animate-none hover:scale-[1.03] hover:border-accent hover:shadow-accent/40 hover:brightness-110'
+                    : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                }`}
+                title={
+                  totalOutliers > 0
+                    ? `Review top ${batchSize} of ${totalOutliers} ratings that diverged widely from predicted match`
+                    : 'Review ratings that diverged widely from predicted match'
+                }
+              >
+                {totalOutliers > 0 ? (
+                  <span className="relative flex size-2.5">
+                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-accent opacity-75" />
+                    <span className="relative inline-flex size-2.5 rounded-full bg-accent shadow-xs" />
+                  </span>
+                ) : null}
+                <span>🎯 Review Outliers</span>
+                {totalOutliers > 0 ? (
+                  <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-bold leading-none text-black shadow-xs transition-transform group-hover:scale-105">
+                    {totalOutliers}
+                  </span>
+                ) : null}
+              </button>
+            )
+          })()}
         </div>
 
         {tab === 'all' && first.languages.length > 0 && (

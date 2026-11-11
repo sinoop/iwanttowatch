@@ -23,6 +23,10 @@ export default function OutlierReviewDialog({
 
   const handleClose = () => {
     queryClient.invalidateQueries({ queryKey: ['outlier-ratings'] })
+    queryClient.invalidateQueries({ queryKey: ['ratings'] })
+    queryClient.invalidateQueries({ queryKey: ['taste-summary'] })
+    queryClient.invalidateQueries({ queryKey: ['persona'] })
+    queryClient.invalidateQueries({ queryKey: ['feed'] })
     onClose()
   }
 
@@ -53,7 +57,7 @@ function OutlierReviewContent({
 }) {
   const outliersQuery = useQuery({
     queryKey: ['outlier-ratings'],
-    queryFn: async () => (await api.GET('/api/v1/ratings/outliers')).data ?? [],
+    queryFn: async () => (await api.GET('/api/v1/ratings/outliers')).data,
     refetchOnWindowFocus: false,
   })
 
@@ -66,7 +70,8 @@ function OutlierReviewContent({
     )
   }
 
-  const initialItems = outliersQuery.data ?? []
+  const initialItems = outliersQuery.data?.items ?? []
+  const totalCount = outliersQuery.data?.total ?? initialItems.length
 
   if (initialItems.length === 0) {
     return (
@@ -86,6 +91,7 @@ function OutlierReviewContent({
   return (
     <OutlierReviewSession
       initialItems={initialItems}
+      totalCount={totalCount}
       onClose={onClose}
       onSelectFilm={onSelectFilm}
     />
@@ -94,10 +100,12 @@ function OutlierReviewContent({
 
 function OutlierReviewSession({
   initialItems,
+  totalCount,
   onClose,
   onSelectFilm,
 }: {
   initialItems: OutlierTitle[]
+  totalCount: number
   onClose: () => void
   onSelectFilm?: (tmdbId: number) => void
 }) {
@@ -131,14 +139,21 @@ function OutlierReviewSession({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/10 pb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-base font-bold text-white">Review Outliers</span>
             <span className="rounded-full bg-accent/20 px-2.5 py-0.5 text-xs font-semibold text-accent-strong">
               {index + 1} of {items.length}
             </span>
+            {totalCount > items.length && (
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/60">
+                Top {items.length} of {totalCount} total
+              </span>
+            )}
           </div>
           <p className="mt-0.5 text-xs text-white/50">
-            Ratings that varied widely from our calculated match percentage.
+            {totalCount > items.length
+              ? `Reviewing the top ${items.length} most divergent ratings in this batch.`
+              : 'Ratings that differed widely from what our recommender calculated.'}
           </p>
         </div>
         <button
@@ -156,6 +171,7 @@ function OutlierReviewSession({
         item={current}
         index={index}
         total={items.length}
+        totalCount={totalCount}
         onPrev={handlePrev}
         onNext={handleNext}
         onItemUpdated={handleItemUpdated}
@@ -169,6 +185,7 @@ function OutlierCard({
   item,
   index,
   total,
+  totalCount,
   onPrev,
   onNext,
   onItemUpdated,
@@ -177,6 +194,7 @@ function OutlierCard({
   item: OutlierTitle
   index: number
   total: number
+  totalCount: number
   onPrev: () => void
   onNext: () => void
   onItemUpdated: (tmdbId: number, reaction: Reaction, tags: string[]) => void
@@ -525,7 +543,11 @@ function OutlierCard({
 
         <div className="flex items-center gap-2">
           <Button onClick={onNext} className="text-xs py-1.5">
-            {index < total - 1 ? 'Next Outlier →' : 'Finish & Close'}
+            {index < total - 1
+              ? 'Next Outlier →'
+              : totalCount > total
+              ? `Finish Batch (${total} of ${totalCount})`
+              : 'Finish & Close'}
           </Button>
         </div>
       </div>

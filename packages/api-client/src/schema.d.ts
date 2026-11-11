@@ -2706,6 +2706,13 @@ export interface components {
             /** Disliked Tags */
             disliked_tags: components["schemas"]["TagOption"][];
         };
+        /** OutliersOut */
+        OutliersOut: {
+            /** Total */
+            total: number;
+            /** Items */
+            items: components["schemas"]["OutlierTitle"][];
+        };
         /** PeopleTasteOverview */
         PeopleTasteOverview: {
             /** Favorites */
@@ -4320,7 +4327,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OutlierTitle"][];
+                    "application/json": components["schemas"]["OutliersOut"];
                 };
             };
             /** @description Validation Error */
