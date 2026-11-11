@@ -15,6 +15,7 @@ or highly matched for other household members.
 
 import json
 import logging
+import re
 from collections import defaultdict
 from datetime import date
 from typing import Any
@@ -49,6 +50,7 @@ log = logging.getLogger(__name__)
 
 DECLUTTER_IGNORED_SETTING = "declutter_ignored_tmdb_ids"
 DECLUTTER_CATEGORIES = (
+    "low_quality",
     "disliked",
     "abandoned",
     "redundant_streamable",
@@ -69,6 +71,82 @@ def format_bytes(bytes_count: int) -> str:
         return f"{mb:.1f} MB"
     gb = mb / 1024
     return f"{gb:.1f} GB"
+
+
+def is_low_quality_movie(radarr_movie: dict[str, Any] | None) -> tuple[bool, list[str]]:
+    """Detect if a Radarr movie is low quality (CAM/telesync print or sub-720p resolution)."""
+    if not radarr_movie:
+        return False, []
+
+    movie_file = radarr_movie.get("movieFile")
+    quality_wrapper = (
+        (movie_file.get("quality") if isinstance(movie_file, dict) else None)
+        or radarr_movie.get("quality")
+        or {}
+    )
+    quality_dict = quality_wrapper.get("quality") or {} if isinstance(quality_wrapper, dict) else {}
+    quality_name = str(quality_dict.get("name", "")).strip()
+    quality_source = str(quality_dict.get("source", "")).lower().strip()
+    resolution_val = quality_dict.get("resolution")
+
+    media_info = movie_file.get("mediaInfo") if isinstance(movie_file, dict) else None
+    height = media_info.get("height") if isinstance(media_info, dict) else None
+
+    path_str = ""
+    if isinstance(movie_file, dict):
+        path_str += (
+            " "
+            + str(movie_file.get("relativePath", ""))
+            + " "
+            + str(movie_file.get("sceneName", ""))
+        )
+    path_str += " " + str(radarr_movie.get("path", "")) + " " + str(radarr_movie.get("title", ""))
+    path_upper = path_str.upper()
+
+    reasons: list[str] = []
+
+    # 1. CAM / Telesync / Screener prints
+    cam_sources = {"cam", "telesync", "telecine", "workprint", "screener"}
+    is_cam = False
+    if (
+        quality_source in cam_sources
+        or any(
+            tok in quality_name.upper()
+            for tok in ("CAM", "TELESYNC", "TELECINE", "WORKPRINT", "SCREENER", "SCR")
+        )
+        or re.search(
+            r"\b(HDCAM|CAMRIP|CAM-RIP|TELESYNC|TELE-SYNC|\.TS\.|-TS\b|TELECINE|DVDSCR|DVD-SCR|SCREENER|WORKPRINT)\b",
+            path_upper,
+        )
+    ):
+        is_cam = True
+
+    if is_cam:
+        tag = quality_name or "CAM"
+        reasons.append(f"Low quality CAM release: {tag} print")
+
+    # 2. Sub-720p resolution (<720p)
+    is_sub_720 = False
+    sub_res_str = ""
+    if isinstance(resolution_val, (int, float)) and 0 < resolution_val < 720:
+        is_sub_720 = True
+        sub_res_str = f"{int(resolution_val)}p"
+    elif isinstance(height, (int, float)) and 0 < height < 700:
+        is_sub_720 = True
+        sub_res_str = f"{int(height)}p"
+    elif any(sd in quality_name.upper() for sd in ("SDTV", "DVD", "480P", "576P", "360P")):
+        is_sub_720 = True
+        sub_res_str = quality_name or "SD"
+    elif re.search(r"\b(480P|576P|360P|DVDRIP|DVD-RIP|WEBDL-480P)\b", path_upper):
+        is_sub_720 = True
+        sub_res_str = "Sub-720p"
+
+    if is_sub_720 and not is_cam:
+        reasons.append(f"Sub-HD resolution: {sub_res_str} (<720p)")
+    elif is_sub_720 and is_cam:
+        reasons.append(f"Sub-HD resolution: {sub_res_str}")
+
+    return (is_cam or is_sub_720), reasons
 
 
 def get_ignored_tmdb_ids(session: Session) -> set[int]:
@@ -103,6 +181,7 @@ def inspect_declutter_candidates(
     user: User,
     category_filter: str | None = None,
     include_ignored: bool = False,
+    whitelist_filter: str | None = None,
 ) -> dict[str, Any]:
     """Inspect library and Radarr to identify prune candidates with household safety guards."""
     client = client_from_settings(session, timeout=3.0)
@@ -137,16 +216,46 @@ def inspect_declutter_candidates(
         jellyfin_synced = True
     has_jellyfin_data = jellyfin_configured and (len(lib_items) > 0 or jellyfin_synced)
 
-    candidate_ids = set(lib_by_tmdb.keys())
+    all_candidate_ids = set(lib_by_tmdb.keys())
     for tmdb_id, rm in radarr_movies.items():
         if rm.get("hasFile") or rm.get("monitored"):
-            candidate_ids.add(tmdb_id)
+            all_candidate_ids.add(tmdb_id)
 
     ignored_ids = get_ignored_tmdb_ids(session)
-    if not include_ignored:
-        candidate_ids -= ignored_ids
+    ignored_candidates = all_candidate_ids & ignored_ids
+
+    def _size_of(tid: int) -> int:
+        rm = radarr_movies.get(tid)
+        if rm and rm.get("sizeOnDisk"):
+            return int(rm["sizeOnDisk"])
+        items = lib_by_tmdb.get(tid, [])
+        return sum(getattr(li, "size_bytes", 0) or 0 for li in items)
+
+    ignored_bytes = sum(_size_of(tid) for tid in ignored_candidates)
+
+    effective_whitelist = whitelist_filter
+    if category_filter == "whitelisted":
+        effective_whitelist = "only"
+        category_filter = "all"
+    elif effective_whitelist is None:
+        effective_whitelist = "all" if include_ignored else "hide"
+
+    if effective_whitelist == "only":
+        candidate_ids = set(ignored_candidates)
+    elif effective_whitelist == "all":
+        candidate_ids = set(all_candidate_ids)
+    else:
+        candidate_ids = all_candidate_ids - ignored_ids
 
     if not candidate_ids:
+        summary = {
+            cat: {"count": 0, "bytes": 0, "formatted": "0 B"} for cat in DECLUTTER_CATEGORIES
+        }
+        summary["whitelisted"] = {
+            "count": len(ignored_candidates),
+            "bytes": ignored_bytes,
+            "formatted": format_bytes(ignored_bytes),
+        }
         return {
             "radarr_configured": radarr_configured,
             "jellyfin_configured": jellyfin_configured,
@@ -154,9 +263,7 @@ def inspect_declutter_candidates(
             "reclaimable_bytes": 0,
             "reclaimable_formatted": "0 B",
             "protected_count": 0,
-            "categories_summary": {
-                cat: {"count": 0, "bytes": 0, "formatted": "0 B"} for cat in DECLUTTER_CATEGORIES
-            },
+            "categories_summary": summary,
             "items": [],
         }
 
@@ -226,6 +333,14 @@ def inspect_declutter_candidates(
         poster_path = title_obj.poster_path if title_obj else None
         original_language = title_obj.original_language if title_obj else None
         imdb_rating = title_obj.imdb_rating if title_obj else None
+
+        # Skip 0B or unfiled movies when Radarr is configured: movies deleted from Radarr
+        # or lacking physical files on disk have no storage to reclaim.
+        if radarr_configured and (size_bytes <= 0 or not has_file):
+            continue
+
+        # --- 0. Low Quality / CAM (<720p) ---
+        low_quality, low_quality_reasons = is_low_quality_movie(radarr_movie)
 
         # --- 1. Disliked ---
         disliked = False
@@ -309,7 +424,9 @@ def inspect_declutter_candidates(
             )
 
         # Skip if not qualifying under any category
-        if not (disliked or abandoned or redundant_streamable or low_match or unplayable):
+        if not (
+            disliked or abandoned or redundant_streamable or low_match or unplayable or low_quality
+        ):
             continue
 
         # Primary category assignment
@@ -317,6 +434,16 @@ def inspect_declutter_candidates(
             primary_cat = "unplayable"
             reasons = (
                 unplayable_reasons
+                + low_quality_reasons
+                + dislike_reasons
+                + abandon_reasons
+                + stream_reasons
+                + low_match_reasons
+            )
+        elif low_quality:
+            primary_cat = "low_quality"
+            reasons = (
+                low_quality_reasons
                 + dislike_reasons
                 + abandon_reasons
                 + stream_reasons
@@ -386,12 +513,21 @@ def inspect_declutter_candidates(
         if is_protected:
             protected_count += 1
 
+        is_ignored = tmdb_id in ignored_ids
+        if effective_whitelist == "only" and not is_ignored:
+            continue
+        if effective_whitelist == "hide" and is_ignored:
+            continue
+        if (
+            category_filter
+            and category_filter not in ("all", "whitelisted")
+            and primary_cat != category_filter
+        ):
+            continue
+
         category_counts[primary_cat] += 1
         category_bytes[primary_cat] += size_bytes
         total_reclaimable_bytes += size_bytes
-
-        if category_filter and category_filter != "all" and primary_cat != category_filter:
-            continue
 
         candidate_results.append(
             {
@@ -412,7 +548,7 @@ def inspect_declutter_candidates(
                 "is_protected": is_protected,
                 "protection_reasons": protection_reasons,
                 "streaming_offers": streaming_offers,
-                "is_ignored": tmdb_id in ignored_ids,
+                "is_ignored": is_ignored,
             }
         )
 
@@ -426,6 +562,11 @@ def inspect_declutter_candidates(
             "formatted": format_bytes(category_bytes[cat]),
         }
         for cat in DECLUTTER_CATEGORIES
+    }
+    summary["whitelisted"] = {
+        "count": len(ignored_candidates),
+        "bytes": ignored_bytes,
+        "formatted": format_bytes(ignored_bytes),
     }
 
     return {

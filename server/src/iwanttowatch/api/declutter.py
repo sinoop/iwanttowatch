@@ -84,6 +84,7 @@ def get_declutter_candidates(
     tmdb: Tmdb,
     category: str | None = Query(None, description="Filter to a specific category"),
     include_ignored: bool = Query(False, description="Include previously ignored titles"),
+    whitelist: str | None = Query(None, description="Whitelist filter: 'hide', 'only', or 'all'"),
 ) -> DeclutterInspection:
     """Inspect the library and Radarr to identify safe prune candidates."""
     data = inspect_declutter_candidates(
@@ -92,6 +93,7 @@ def get_declutter_candidates(
         user=user,
         category_filter=category,
         include_ignored=include_ignored,
+        whitelist_filter=whitelist,
     )
     return DeclutterInspection(**data)
 

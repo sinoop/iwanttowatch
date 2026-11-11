@@ -7,23 +7,26 @@ import {
   useDeleteDeclutterCandidates,
   useIgnoreDeclutterCandidate,
   useServerSettings,
+  type DeclutterWhitelistFilter,
 } from '../api'
 import TitleDialog from '../TitleDialog'
 import { Button, ErrorText, Poster } from '../ui'
 
 const CATEGORY_OPTIONS = [
   { id: 'all', label: 'All Candidates', color: 'text-white/70 bg-white/10 border-white/20' },
+  { id: 'low_quality', label: 'Low Quality (<720p / CAM)', color: 'text-orange-400 bg-orange-500/10 border-orange-500/20' },
   { id: 'unplayable', label: 'Unplayable in Jellyfin', color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
   { id: 'disliked', label: 'Watched & Disliked', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' },
   { id: 'abandoned', label: 'Abandoned Play', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
   { id: 'redundant_streamable', label: 'Streaming Redundant', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' },
   { id: 'low_match', label: 'Low Taste Match', color: 'text-sky-400 bg-sky-500/10 border-sky-500/20' },
+  { id: 'whitelisted', label: 'Whitelisted / Kept', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
 ] as const
 
 export function DeclutterSettings() {
   const settings = useServerSettings()
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
-  const [includeIgnored, setIncludeIgnored] = useState<boolean>(false)
+  const [whitelistFilter, setWhitelistFilter] = useState<DeclutterWhitelistFilter>('hide')
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [confirmModalOpen, setConfirmModalOpen] = useState(false)
   const [deleteFiles, setDeleteFiles] = useState(true)
@@ -31,12 +34,17 @@ export function DeclutterSettings() {
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
   const [openedTitleId, setOpenedTitleId] = useState<number | null>(null)
 
-  const candidates = useDeclutterCandidates(selectedCategory, includeIgnored)
+  const candidates = useDeclutterCandidates(
+    selectedCategory === 'whitelisted' ? undefined : selectedCategory,
+    selectedCategory === 'whitelisted' ? 'only' : whitelistFilter,
+  )
   const deleteMutation = useDeleteDeclutterCandidates()
   const ignoreMutation = useIgnoreDeclutterCandidate()
 
   const data = candidates.data
-  const items = data?.items ?? []
+  const items = (data?.items ?? []).filter((item) => item.size_bytes > 0)
+  const whitelistedCount = data?.categories_summary?.whitelisted?.count ?? 0
+  const whitelistedBytes = data?.categories_summary?.whitelisted?.formatted ?? null
   const radarrConfigured = settings.data?.radarr.configured ?? false
   const jellyfinConfigured =
     Boolean(settings.data?.jellyfin?.url) || (data?.jellyfin_configured ?? false)
@@ -178,18 +186,24 @@ export function DeclutterSettings() {
         </div>
       )}
 
-      {/* Category Filter & Options */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
-        <div className="flex flex-wrap items-center gap-3">
+      {/* Category Filter & Whitelist Options */}
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
           <div className="flex items-center gap-2 text-xs">
             <label htmlFor="declutter-category-filter" className="font-medium text-white/50">
-              Filter by category:
+              Category:
             </label>
             <select
               id="declutter-category-filter"
               value={selectedCategory}
               onChange={(e) => {
-                setSelectedCategory(e.target.value)
+                const val = e.target.value
+                setSelectedCategory(val)
+                if (val === 'whitelisted') {
+                  setWhitelistFilter('only')
+                } else if (whitelistFilter === 'only') {
+                  setWhitelistFilter('hide')
+                }
                 setSelectedIds([])
               }}
               className="cursor-pointer rounded-lg border border-white/10 bg-[#12161f] px-3 py-1.5 text-xs font-semibold text-white transition focus:border-accent focus:outline-none"
@@ -212,6 +226,38 @@ export function DeclutterSettings() {
             </select>
           </div>
 
+          <div className="flex items-center gap-2 text-xs">
+            <label htmlFor="declutter-whitelist-filter" className="font-medium text-white/50">
+              Whitelist:
+            </label>
+            <select
+              id="declutter-whitelist-filter"
+              value={selectedCategory === 'whitelisted' ? 'only' : whitelistFilter}
+              onChange={(e) => {
+                const val = e.target.value as DeclutterWhitelistFilter
+                setWhitelistFilter(val)
+                if (selectedCategory === 'whitelisted' && val !== 'only') {
+                  setSelectedCategory('all')
+                }
+                setSelectedIds([])
+              }}
+              className="cursor-pointer rounded-lg border border-white/10 bg-[#12161f] px-3 py-1.5 text-xs font-semibold text-white transition focus:border-accent focus:outline-none"
+            >
+              <option value="hide" className="bg-[#151922] text-white">
+                Actionable only (hide whitelisted)
+              </option>
+              <option value="only" className="bg-[#151922] text-white">
+                Whitelisted only {whitelistedCount > 0 ? `(${whitelistedCount}${whitelistedBytes && whitelistedBytes !== '0 B' ? ` · ${whitelistedBytes}` : ''})` : ''}
+              </option>
+              <option value="all" className="bg-[#151922] text-white">
+                Include whitelisted
+              </option>
+            </select>
+          </div>
+        </div>
+
+        {/* Active Filter Tags */}
+        <div className="flex flex-wrap items-center gap-2">
           {selectedCategory !== 'all' && (
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${
@@ -219,33 +265,42 @@ export function DeclutterSettings() {
                 'text-white/70 border-white/10 bg-white/5'
               }`}
             >
-              <span>{CATEGORY_OPTIONS.find((c) => c.id === selectedCategory)?.label}</span>
+              <span>Category: {CATEGORY_OPTIONS.find((c) => c.id === selectedCategory)?.label}</span>
               <button
                 type="button"
                 onClick={() => {
                   setSelectedCategory('all')
+                  if (selectedCategory === 'whitelisted') {
+                    setWhitelistFilter('hide')
+                  }
                   setSelectedIds([])
                 }}
                 className="ml-1 cursor-pointer text-white/40 hover:text-white"
-                title="Reset to All Candidates"
-                aria-label="Reset to All Candidates"
+                title="Clear category filter"
+                aria-label="Clear category filter"
               >
                 ✕
               </button>
             </span>
           )}
-        </div>
 
-        <div className="flex items-center gap-3 text-xs text-white/60">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={includeIgnored}
-              onChange={(e) => setIncludeIgnored(e.target.checked)}
-              className="size-4 rounded border-white/20 bg-black/40 text-accent focus:ring-accent/40"
-            />
-            <span>Show whitelisted ({includeIgnored ? 'active' : 'hidden'})</span>
-          </label>
+          {whitelistFilter !== 'hide' && selectedCategory !== 'whitelisted' && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">
+              <span>{whitelistFilter === 'only' ? '🛡️ Whitelisted only' : '🛡️ Including whitelisted'}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setWhitelistFilter('hide')
+                  setSelectedIds([])
+                }}
+                className="ml-1 cursor-pointer text-white/40 hover:text-white"
+                title="Reset to actionable only"
+                aria-label="Reset to actionable only"
+              >
+                ✕
+              </button>
+            </span>
+          )}
         </div>
       </div>
 
@@ -316,9 +371,13 @@ export function DeclutterSettings() {
           <span className="block text-4xl mb-3">✨</span>
           <p className="font-semibold text-white">Your library is in great shape!</p>
           <p className="mt-1 text-white/50 max-w-md mx-auto">
-            {selectedCategory === 'unplayable'
-              ? 'No unplayable or missing items found. All downloaded movies in Radarr are recognized and playable in Jellyfin.'
-              : 'No prune candidates found for this category. Movies in your library have positive taste affinity or are cherished by household members.'}
+            {selectedCategory === 'whitelisted' || whitelistFilter === 'only'
+              ? 'No whitelisted movies found. Movies you choose to "Keep / Whitelist" will be preserved here and excluded from deletion suggestions.'
+              : selectedCategory === 'low_quality'
+                ? 'No low quality or CAM releases found. Movies in your library meet quality standards (≥ 720p, non-CAM).'
+                : selectedCategory === 'unplayable'
+                  ? 'No unplayable or missing items found. All downloaded movies in Radarr are recognized and playable in Jellyfin.'
+                  : 'No prune candidates found for this category. Movies in your library have positive taste affinity or are cherished by household members.'}
           </p>
         </div>
       ) : (
@@ -370,15 +429,21 @@ export function DeclutterSettings() {
                   <div className="min-w-0">
                     {/* Top meta row: Category pill on the left, Reclaimable Size on the right */}
                     <div className="flex items-center justify-between gap-2 mb-1">
-                      {catMeta && 'color' in catMeta ? (
-                        <span
-                          className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-semibold truncate ${catMeta.color}`}
-                        >
-                          {catMeta.label}
-                        </span>
-                      ) : (
-                        <span />
-                      )}
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {catMeta && 'color' in catMeta ? (
+                          <span
+                            className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-semibold truncate ${catMeta.color}`}
+                          >
+                            {catMeta.label}
+                          </span>
+                        ) : null}
+                        {item.is_ignored && (
+                          <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 shrink-0">
+                            <span>🛡️</span>
+                            <span>Whitelisted</span>
+                          </span>
+                        )}
+                      </div>
                       <span className="shrink-0 text-xs font-bold text-accent font-mono">
                         {item.size_formatted}
                       </span>

@@ -274,6 +274,22 @@ def test_declutter_ignore_and_delete(client: TestClient, fake_radarr: FakeRadarr
     assert len(insp3.json()["items"]) == 1
     assert insp3.json()["items"][0]["is_ignored"] is True
 
+    # Filter by category=whitelisted or whitelist=only
+    insp_wl = client.get("/api/v1/library/declutter?category=whitelisted")
+    assert insp_wl.status_code == 200
+    assert len(insp_wl.json()["items"]) == 1
+    assert insp_wl.json()["items"][0]["tmdb_id"] == 201
+
+    insp_wl2 = client.get("/api/v1/library/declutter?whitelist=only")
+    assert insp_wl2.status_code == 200
+    assert len(insp_wl2.json()["items"]) == 1
+    assert insp_wl2.json()["items"][0]["tmdb_id"] == 201
+    assert insp_wl2.json()["categories_summary"]["whitelisted"]["count"] == 1
+
+    insp_all = client.get("/api/v1/library/declutter?whitelist=all")
+    assert insp_all.status_code == 200
+    assert len(insp_all.json()["items"]) == 1
+
     # Un-ignore
     client.post("/api/v1/library/declutter/ignore", json={"tmdb_id": 201, "ignored": False})
 
@@ -289,6 +305,87 @@ def test_declutter_ignore_and_delete(client: TestClient, fake_radarr: FakeRadarr
 
     # Verify movie is deleted from FakeRadarr
     assert 201 not in fake_radarr.movies
+
+    # Verify that once deleted from Radarr, it no longer appears in Declutter candidates
+    insp_after_delete = client.get("/api/v1/library/declutter")
+    assert insp_after_delete.status_code == 200
+    assert not any(item["tmdb_id"] == 201 for item in insp_after_delete.json()["items"])
+
+
+def test_declutter_low_quality_cam_and_sub_720p(
+    client: TestClient, fake_radarr: FakeRadarr
+) -> None:
+    _setup_radarr(client)
+
+    # 1. CAM release
+    fake_radarr.movies[301] = {
+        "id": 31,
+        "title": "Gladiator II",
+        "tmdbId": 301,
+        "year": 2024,
+        "hasFile": True,
+        "sizeOnDisk": 2500000000,
+        "movieFile": {
+            "quality": {
+                "quality": {
+                    "id": 1,
+                    "name": "CAM",
+                    "source": "cam",
+                    "resolution": 720,
+                }
+            },
+            "relativePath": "Gladiator.II.2024.HDCAM.x264.mkv",
+        },
+    }
+
+    # 2. Sub-720p release (e.g. 480p DVD)
+    fake_radarr.movies[302] = {
+        "id": 32,
+        "title": "Old Movie",
+        "tmdbId": 302,
+        "year": 1999,
+        "hasFile": True,
+        "sizeOnDisk": 1200000000,
+        "movieFile": {
+            "quality": {"quality": {"id": 5, "name": "DVD", "resolution": 480}},
+            "mediaInfo": {"height": 480, "width": 720},
+            "relativePath": "Old.Movie.1999.DVDRip.x264.mkv",
+        },
+    }
+
+    # 3. Deleted/0B movie in Radarr: hasFile=False, sizeOnDisk=0
+    fake_radarr.movies[303] = {
+        "id": 33,
+        "title": "Deleted Ghost Movie",
+        "tmdbId": 303,
+        "year": 2020,
+        "hasFile": False,
+        "sizeOnDisk": 0,
+    }
+
+    insp = client.get("/api/v1/library/declutter")
+    assert insp.status_code == 200
+    items = insp.json()["items"]
+    by_tmdb = {item["tmdb_id"]: item for item in items}
+
+    # 303 must NOT be displayed because it has 0B / no file
+    assert 303 not in by_tmdb
+
+    # 301 is classified as low_quality
+    assert 301 in by_tmdb
+    assert by_tmdb[301]["category"] == "low_quality"
+    assert any("CAM" in r for r in by_tmdb[301]["reasons"])
+
+    # 302 is classified as low_quality
+    assert 302 in by_tmdb
+    assert by_tmdb[302]["category"] == "low_quality"
+    assert any("Sub-HD" in r or "480p" in r for r in by_tmdb[302]["reasons"])
+
+    # Filter by category=low_quality
+    filtered = client.get("/api/v1/library/declutter?category=low_quality")
+    assert filtered.status_code == 200
+    filtered_items = filtered.json()["items"]
+    assert {it["tmdb_id"] for it in filtered_items} == {301, 302}
 
 
 def test_declutter_unplayable_in_jellyfin(

@@ -6252,6 +6252,8 @@ export interface operations {
                 category?: string | null;
                 /** @description Include previously ignored titles */
                 include_ignored?: boolean;
+                /** @description Whitelist filter: 'hide', 'only', or 'all' */
+                whitelist?: string | null;
             };
             header?: never;
             path?: never;
