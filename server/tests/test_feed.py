@@ -17,7 +17,15 @@ from test_persona import FILMS, GEMINI, add_ratings, gemini_reply
 from iwanttowatch import feed as feed_module
 from iwanttowatch import imdb
 from iwanttowatch.feed import ASK_SYSTEM
-from iwanttowatch.models import Feedback, LibraryItem, Recommendation, Title, User, UserTitle
+from iwanttowatch.models import (
+    Feedback,
+    FeedBuild,
+    LibraryItem,
+    Recommendation,
+    Title,
+    User,
+    UserTitle,
+)
 from iwanttowatch.moods import MOODS_SYSTEM
 from iwanttowatch.taste import REVIEW_SYSTEM, explain_match
 
@@ -59,6 +67,7 @@ def test_feed_suggests_unseen_films_the_user_can_play(
     assert by_id[302]["availability"]["on_jellyfin"] is True
     assert all(1 <= i["match"] <= 99 for i in page["items"])
     assert {lang["language"] for lang in page["languages"]} == {"ml", "en"}
+    assert page["decades"] == [2010]
 
     everything = feed(client, available_only=False)
     assert {i["tmdb_id"] for i in everything["items"]} == {201, 301, 302, 401, 402}
@@ -822,3 +831,83 @@ def test_feed_content_type_filtering(client: TestClient, monkeypatch: pytest.Mon
     page_pref = feed(client, available_only=False)
     assert 701 in {i["tmdb_id"] for i in page_pref["items"]}
     assert 702 not in {i["tmdb_id"] for i in page_pref["items"]}
+
+
+def test_feed_filters_by_decade(client: TestClient) -> None:
+    assert client.put("/api/v1/settings/tmdb", json={"api_key": KEY}).status_code == 200
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        session.add(FeedBuild(user_id=1, status="ready", built_at=datetime.now(UTC)))
+        session.add_all(
+            [
+                Title(
+                    tmdb_id=801,
+                    title="80s Film",
+                    original_title="80s Film",
+                    original_language="en",
+                    year=1985,
+                    genres=["Adventure"],
+                ),
+                Title(
+                    tmdb_id=802,
+                    title="90s Film",
+                    original_title="90s Film",
+                    original_language="en",
+                    year=1994,
+                    genres=["Crime"],
+                ),
+                Title(
+                    tmdb_id=803,
+                    title="00s Film",
+                    original_title="00s Film",
+                    original_language="en",
+                    year=2008,
+                    genres=["Action"],
+                ),
+                Title(
+                    tmdb_id=804,
+                    title="20s Film",
+                    original_title="20s Film",
+                    original_language="en",
+                    year=2023,
+                    genres=["Drama"],
+                ),
+            ]
+        )
+        session.flush()
+        session.add_all(
+            [
+                Recommendation(user_id=1, tmdb_id=801, score=0.90, rank=0, reasons=["Classic"]),
+                Recommendation(user_id=1, tmdb_id=802, score=0.85, rank=1, reasons=["Classic"]),
+                Recommendation(user_id=1, tmdb_id=803, score=0.80, rank=2, reasons=["Hit"]),
+                Recommendation(user_id=1, tmdb_id=804, score=0.75, rank=3, reasons=["Recent"]),
+            ]
+        )
+        session.commit()
+
+    # 1. Unfiltered feed includes all decades in descending order
+    page = feed(client, available_only=False)
+    assert page["decades"] == [2020, 2000, 1990, 1980]
+    assert {i["tmdb_id"] for i in page["items"]} >= {801, 802, 803, 804}
+
+    # 2. Filter by decade=1980 returns only the 80s film
+    page_80s = feed(client, available_only=False, decade=1980)
+    assert {i["tmdb_id"] for i in page_80s["items"]} == {801}
+
+    # 3. Filter by decade=1990 returns only the 90s film
+    page_90s = feed(client, available_only=False, decade=1990)
+    assert {i["tmdb_id"] for i in page_90s["items"]} == {802}
+
+    # 4. Filter by decade=2000 returns only the 00s film
+    page_00s = feed(client, available_only=False, decade=2000)
+    assert {i["tmdb_id"] for i in page_00s["items"]} == {803}
+
+    # 5. Filter by decade=2020 returns only the 20s film
+    page_20s = feed(client, available_only=False, decade=2020)
+    assert {i["tmdb_id"] for i in page_20s["items"]} == {804}
+
+    # 6. Combining decade with genre
+    page_80s_adventure = feed(client, available_only=False, decade=1980, genre="Adventure")
+    assert {i["tmdb_id"] for i in page_80s_adventure["items"]} == {801}
+
+    page_80s_crime = feed(client, available_only=False, decade=1980, genre="Crime")
+    assert len(page_80s_crime["items"]) == 0

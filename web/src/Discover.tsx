@@ -27,6 +27,7 @@ export default function Discover({ me }: { me: Me }) {
   const [contentType, setContentType] = useState<string>(me.default_content_type ?? 'movies')
   const [language, setLanguage] = useState<string | null>(null)
   const [genre, setGenre] = useState<string | null>(null)
+  const [decade, setDecade] = useState<number | null>(null)
   const [certificate, setCertificate] = useState<string | null>(null)
   const [shortlistFilter, setShortlistFilter] = useState<ShortlistFilter>('all')
   const [sort, setSort] = useState<FeedSort>('recommended')
@@ -86,6 +87,7 @@ export default function Discover({ me }: { me: Me }) {
     ...watchOnQuery(watchOn),
     language: language ?? undefined,
     genre: genre ?? undefined,
+    decade: decade ?? undefined,
     content_type: contentType,
     max_certificate: !me.is_child ? (certificate ?? undefined) : undefined,
     shortlist: shortlistFilter === 'only' || undefined,
@@ -108,7 +110,7 @@ export default function Discover({ me }: { me: Me }) {
   // While an answer is shown, the feed lists only the AI's picks, in the feed's order.
   const only = answer?.picks.map((p) => p.tmdb_id)
   const feed = useInfiniteQuery({
-    queryKey: ['feed', me.id, watchOn, language, genre, contentType, certificate, shortlistFilter, sort, ageLimit, only],
+    queryKey: ['feed', me.id, watchOn, language, genre, decade, contentType, certificate, shortlistFilter, sort, ageLimit, only],
     queryFn: async ({ pageParam }) => {
       const { data, error } = await api.GET('/api/v1/feed', {
         params: {
@@ -247,6 +249,8 @@ export default function Discover({ me }: { me: Me }) {
           onLanguage={setLanguage}
           genre={genre}
           onGenre={setGenre}
+          decade={decade}
+          onDecade={setDecade}
           certificate={!me.is_child ? certificate : null}
           onCertificate={setCertificate}
           shortlistFilter={shortlistFilter}
@@ -275,6 +279,7 @@ export default function Discover({ me }: { me: Me }) {
           filtered={
             language !== null ||
             genre !== null ||
+            decade !== null ||
             (!me.is_child && certificate !== null) ||
             shortlistFilter === 'hide'
           }
@@ -283,6 +288,7 @@ export default function Discover({ me }: { me: Me }) {
           onClearFilters={() => {
             setLanguage(null)
             setGenre(null)
+            setDecade(null)
             setCertificate(null)
             if (shortlistFilter === 'hide') setShortlistFilter('all')
           }}
@@ -422,6 +428,8 @@ function Filters({
   onLanguage,
   genre,
   onGenre,
+  decade,
+  onDecade,
   certificate,
   onCertificate,
   shortlistFilter,
@@ -443,6 +451,8 @@ function Filters({
   onLanguage: (value: string | null) => void
   genre: string | null
   onGenre: (value: string | null) => void
+  decade: number | null
+  onDecade: (value: number | null) => void
   certificate: string | null
   onCertificate: (value: string | null) => void
   shortlistFilter: ShortlistFilter
@@ -462,6 +472,11 @@ function Filters({
   const languages = page.languages.map((l) => l.language)
   if (language && !languages.includes(language)) languages.push(language)
   const genres = genre && !page.genres.includes(genre) ? [...page.genres, genre] : page.genres
+  const pageDecades = page.decades ?? []
+  const decades =
+    decade !== null && !pageDecades.includes(decade)
+      ? [...pageDecades, decade].sort((a, b) => b - a)
+      : pageDecades
   const certificates =
     certificate && !page.certificates.includes(certificate)
       ? [...page.certificates, certificate]
@@ -553,6 +568,21 @@ function Filters({
           {genres.map((g) => (
             <option key={g} value={g}>
               {g}
+            </option>
+          ))}
+        </select>
+      )}
+      {decades.length > 0 && (
+        <select
+          value={decade ?? ''}
+          onChange={(e) => onDecade(e.target.value ? Number(e.target.value) : null)}
+          aria-label="Decade"
+          className={selectClass(decade !== null)}
+        >
+          <option value="">All decades</option>
+          {decades.map((d) => (
+            <option key={d} value={d}>
+              {d}s
             </option>
           ))}
         </select>

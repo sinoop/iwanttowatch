@@ -1742,6 +1742,22 @@
             }
           },
           {
+            "name": "decade",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decade"
+            }
+          },
+          {
             "name": "max_certificate",
             "in": "query",
             "required": false,
@@ -1942,6 +1958,22 @@
                 }
               ],
               "title": "Genre"
+            }
+          },
+          {
+            "name": "decade",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decade"
             }
           },
           {
@@ -5928,6 +5960,13 @@
             "type": "array",
             "title": "Genres"
           },
+          "decades": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Decades"
+          },
           "certificates": {
             "items": {
               "type": "string"
@@ -5958,6 +5997,7 @@
           "items",
           "languages",
           "genres",
+          "decades",
           "certificates",
           "platforms",
           "shortlist_count"

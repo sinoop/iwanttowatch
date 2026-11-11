@@ -111,9 +111,11 @@ class FeedPage(BaseModel):
     rescoring: bool
     total: int
     items: list[FeedItem]
-    # Languages and genres among the feed (before the language and genre filters).
+    # Languages, genres, and decades among the feed (before those filters).
     languages: list[LanguageCount]
     genres: list[str]
+    # Decades among the feed (before the decade filter), newest first.
+    decades: list[int]
     # Film certificates in the user's region, mildest first.
     certificates: list[str]
     # Where the feed's films can be played (before the platform filter).
@@ -153,6 +155,7 @@ def read_feed(
     platforms: Annotated[list[str], Query()] = [],  # noqa: B006 (FastAPI copies defaults)
     language: str | None = None,
     genre: str | None = None,
+    decade: int | None = None,
     # Maximum film certificate in the user's region, e.g. "U/A 13+" or "PG-13".
     max_certificate: str | None = None,
     # Only the user's shortlist, which may hold films the feed would hide.
@@ -251,11 +254,16 @@ def read_feed(
     shown = [row for row in listed if shown_for(row[2], available_only, platforms)]
     languages = Counter(title.original_language for _, title, _ in shown)
     genres = Counter(g for _, title, _ in shown for g in title.genres)
+    decades = sorted(
+        {title.year // 10 * 10 for _, title, _ in shown if title.year is not None},
+        reverse=True,
+    )
     matching = [
         (rec, title, where)
         for rec, title, where in shown
         if (language is None or title.original_language == language)
         and (genre is None or genre in title.genres)
+        and (decade is None or (title.year is not None and decade <= title.year < decade + 10))
         and allowed_for(title, user.region, cert_limit)
     ]
     if sort != "recommended":
@@ -291,6 +299,7 @@ def read_feed(
         ],
         languages=[LanguageCount(language=k, count=n) for k, n in languages.most_common(10)],
         genres=[g for g, _ in genres.most_common(12)],
+        decades=decades,
         certificates=region_certificates(user.region, tmdb),
         platforms=platform_counts([where for _, _, where in listed]),
         shortlist_count=shortlist_count,
@@ -325,6 +334,7 @@ def ask_feed(
     platforms: Annotated[list[str], Query()] = [],  # noqa: B006
     language: str | None = None,
     genre: str | None = None,
+    decade: int | None = None,
     max_certificate: str | None = None,
     shortlist: bool = False,
     hide_shortlisted: bool = False,
@@ -344,10 +354,11 @@ def ask_feed(
         platforms,
         language,
         genre,
-        max_certificate,
-        shortlist,
-        hide_shortlisted,
-        age_limit,
+        decade=decade,
+        max_certificate=max_certificate,
+        shortlist=shortlist,
+        hide_shortlisted=hide_shortlisted,
+        age_limit=age_limit,
         sort="recommended",
         only=[],
         content_type=content_type,

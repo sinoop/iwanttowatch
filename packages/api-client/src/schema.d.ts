@@ -2189,6 +2189,8 @@ export interface components {
             languages: components["schemas"]["LanguageCount"][];
             /** Genres */
             genres: string[];
+            /** Decades */
+            decades: number[];
             /** Certificates */
             certificates: string[];
             /** Platforms */
@@ -4812,6 +4814,7 @@ export interface operations {
                 platforms?: string[];
                 language?: string | null;
                 genre?: string | null;
+                decade?: number | null;
                 max_certificate?: string | null;
                 shortlist?: boolean;
                 hide_shortlisted?: boolean;
@@ -4855,6 +4858,7 @@ export interface operations {
                 platforms?: string[];
                 language?: string | null;
                 genre?: string | null;
+                decade?: number | null;
                 max_certificate?: string | null;
                 shortlist?: boolean;
                 hide_shortlisted?: boolean;
