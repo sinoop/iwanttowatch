@@ -1873,6 +1873,8 @@ export interface components {
             imdb_rating: number | null;
             /** Category */
             category: string;
+            /** Categories */
+            categories?: string[];
             /** Reasons */
             reasons: string[];
             /** Size Bytes */
@@ -6304,8 +6306,10 @@ export interface operations {
     get_declutter_candidates_api_v1_library_declutter_get: {
         parameters: {
             query?: {
-                /** @description Filter to a specific category */
+                /** @description Filter to a specific category or comma-separated list of categories */
                 category?: string | null;
+                /** @description Combine mode for multiple categories: 'all' (AND) or 'any' (OR) */
+                categories_mode?: string;
                 /** @description Include previously ignored titles */
                 include_ignored?: boolean;
                 /** @description Whitelist filter: 'hide', 'only', or 'all' */

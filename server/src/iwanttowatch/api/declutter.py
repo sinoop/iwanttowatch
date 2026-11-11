@@ -1,7 +1,7 @@
 """Declutter Assistant API: inspect and delete prune candidates."""
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from iwanttowatch.api.deps import AdminUser, CurrentUser, DbSession, Tmdb
 from iwanttowatch.declutter import (
@@ -29,6 +29,7 @@ class DeclutterCandidateItem(BaseModel):
     original_language: str | None
     imdb_rating: float | None
     category: str
+    categories: list[str] = Field(default_factory=list)
     reasons: list[str]
     size_bytes: int
     size_formatted: str
@@ -82,7 +83,12 @@ def get_declutter_candidates(
     user: CurrentUser,
     session: DbSession,
     tmdb: Tmdb,
-    category: str | None = Query(None, description="Filter to a specific category"),
+    category: str | None = Query(
+        None, description="Filter to a specific category or comma-separated list of categories"
+    ),
+    categories_mode: str = Query(
+        "any", description="Combine mode for multiple categories: 'all' (AND) or 'any' (OR)"
+    ),
     include_ignored: bool = Query(False, description="Include previously ignored titles"),
     whitelist: str | None = Query(None, description="Whitelist filter: 'hide', 'only', or 'all'"),
 ) -> DeclutterInspection:
@@ -92,6 +98,7 @@ def get_declutter_candidates(
         tmdb=tmdb,
         user=user,
         category_filter=category,
+        categories_mode=categories_mode,
         include_ignored=include_ignored,
         whitelist_filter=whitelist,
     )

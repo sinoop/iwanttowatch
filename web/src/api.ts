@@ -368,19 +368,28 @@ export function useRadarrBatchSync() {
 
 /** Declutter inspection: fetch library prune candidates and storage metrics. */
 export type DeclutterWhitelistFilter = 'hide' | 'only' | 'all'
+export type DeclutterCategoriesMode = 'all' | 'any'
 
 export function useDeclutterCandidates(
-  category?: string,
+  category?: string | string[],
   whitelistFilter: DeclutterWhitelistFilter = 'hide',
+  categoriesMode: DeclutterCategoriesMode = 'all',
   enabled = true,
 ) {
+  const categoryParam = Array.isArray(category)
+    ? category.filter((c) => c && c !== 'all').join(',')
+    : category && category !== 'all'
+      ? category
+      : undefined
+
   return useQuery({
-    queryKey: ['declutter', category, whitelistFilter],
+    queryKey: ['declutter', categoryParam, whitelistFilter, categoriesMode],
     queryFn: async () => {
       const { data, error } = await api.GET('/api/v1/library/declutter', {
         params: {
           query: {
-            category: category && category !== 'all' ? category : undefined,
+            category: categoryParam || undefined,
+            categories_mode: categoriesMode,
             whitelist: whitelistFilter,
             include_ignored: whitelistFilter !== 'hide',
           },

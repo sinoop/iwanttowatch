@@ -710,3 +710,149 @@ def test_declutter_jellyfin_unmatched_items_self_heal_and_not_unplayable(
         )
         assert ut_304 is not None
         assert ut_304.watched is True
+
+
+def test_declutter_combinable_categories(client: TestClient, fake_radarr: FakeRadarr) -> None:
+    _setup_radarr(client)
+
+    # 401: CAM release AND Low Match (<35%)
+    fake_radarr.movies[401] = {
+        "id": 41,
+        "title": "Low Quality Low Match Movie",
+        "tmdbId": 401,
+        "year": 2024,
+        "hasFile": True,
+        "monitored": True,
+        "sizeOnDisk": 2000000000,
+        "movieFile": {
+            "quality": {"quality": {"id": 1, "name": "CAM", "resolution": 720}},
+            "relativePath": "Movie.401.CAM.mkv",
+        },
+    }
+
+    # 402: Low Quality only (480p DVD)
+    fake_radarr.movies[402] = {
+        "id": 42,
+        "title": "Low Quality Only Movie",
+        "tmdbId": 402,
+        "year": 2005,
+        "hasFile": True,
+        "monitored": True,
+        "sizeOnDisk": 1500000000,
+        "movieFile": {
+            "quality": {"quality": {"id": 5, "name": "DVD", "resolution": 480}},
+            "mediaInfo": {"height": 480},
+            "relativePath": "Movie.402.DVDRip.mkv",
+        },
+    }
+
+    # 403: Low Match only (1080p, predicted score 20%)
+    fake_radarr.movies[403] = {
+        "id": 43,
+        "title": "Low Match Only Movie",
+        "tmdbId": 403,
+        "year": 2022,
+        "hasFile": True,
+        "monitored": True,
+        "sizeOnDisk": 8000000000,
+        "movieFile": {
+            "quality": {"quality": {"id": 8, "name": "Bluray-1080p", "resolution": 1080}},
+            "mediaInfo": {"height": 1080},
+            "relativePath": "Movie.403.1080p.mkv",
+        },
+    }
+
+    app = client.app
+    engine = app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        admin_user = session.scalars(select(User).where(User.username == "riya")).one()
+        for tmdb_id, title in [
+            (401, "Low Quality Low Match Movie"),
+            (402, "Low Quality Only Movie"),
+            (403, "Low Match Only Movie"),
+        ]:
+            session.merge(
+                Title(
+                    tmdb_id=tmdb_id,
+                    title=title,
+                    original_title=title,
+                    original_language="en",
+                    year=2022,
+                )
+            )
+
+        # 401 has low recommendation score (15%)
+        session.merge(
+            Recommendation(
+                user_id=admin_user.id,
+                tmdb_id=401,
+                score=0.15,
+                rank=1,
+            )
+        )
+        # 403 has low recommendation score (20%)
+        session.merge(
+            Recommendation(
+                user_id=admin_user.id,
+                tmdb_id=403,
+                score=0.20,
+                rank=2,
+            )
+        )
+        # 402 has high score (80%) so it is NOT low_match
+        session.merge(
+            Recommendation(
+                user_id=admin_user.id,
+                tmdb_id=402,
+                score=0.80,
+                rank=3,
+            )
+        )
+        session.commit()
+
+    # 1. Unfiltered inspection: all 3 movies returned
+    res = client.get("/api/v1/library/declutter")
+    assert res.status_code == 200
+    data = res.json()
+    items_by_tmdb = {item["tmdb_id"]: item for item in data["items"]}
+    assert 401 in items_by_tmdb
+    assert 402 in items_by_tmdb
+    assert 403 in items_by_tmdb
+
+    # Movie 401 qualifies under both low_quality and low_match
+    assert "low_quality" in items_by_tmdb[401]["categories"]
+    assert "low_match" in items_by_tmdb[401]["categories"]
+    assert items_by_tmdb[402]["categories"] == ["low_quality"]
+    assert items_by_tmdb[403]["categories"] == ["low_match"]
+
+    # Categories summary counts accurately reflect multi-category memberships
+    assert data["categories_summary"]["low_quality"]["count"] == 2  # 401 + 402
+    assert data["categories_summary"]["low_match"]["count"] == 2  # 401 + 403
+
+    # 2. Combined filter with mode="all" (AND): Low Quality AND Low Match
+    both_all = client.get(
+        "/api/v1/library/declutter?category=low_quality,low_match&categories_mode=all"
+    )
+    assert both_all.status_code == 200
+    both_all_items = both_all.json()["items"]
+    assert len(both_all_items) == 1
+    assert both_all_items[0]["tmdb_id"] == 401
+
+    # 3. Combined filter with mode="any" (OR): Low Quality OR Low Match
+    both_any = client.get(
+        "/api/v1/library/declutter?category=low_quality,low_match&categories_mode=any"
+    )
+    assert both_any.status_code == 200
+    both_any_items = both_any.json()["items"]
+    assert len(both_any_items) == 3
+    assert {it["tmdb_id"] for it in both_any_items} == {401, 402, 403}
+
+    # 4. Filter by single category: low_match finds both 401 and 403
+    match_only = client.get("/api/v1/library/declutter?category=low_match")
+    assert match_only.status_code == 200
+    assert {it["tmdb_id"] for it in match_only.json()["items"]} == {401, 403}
+
+    # 5. Filter by single category: low_quality finds both 401 and 402
+    qual_only = client.get("/api/v1/library/declutter?category=low_quality")
+    assert qual_only.status_code == 200
+    assert {it["tmdb_id"] for it in qual_only.json()["items"]} == {401, 402}

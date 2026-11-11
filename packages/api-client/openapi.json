@@ -3905,10 +3905,22 @@
                   "type": "null"
                 }
               ],
-              "description": "Filter to a specific category",
+              "description": "Filter to a specific category or comma-separated list of categories",
               "title": "Category"
             },
-            "description": "Filter to a specific category"
+            "description": "Filter to a specific category or comma-separated list of categories"
+          },
+          {
+            "name": "categories_mode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Combine mode for multiple categories: 'all' (AND) or 'any' (OR)",
+              "default": "any",
+              "title": "Categories Mode"
+            },
+            "description": "Combine mode for multiple categories: 'all' (AND) or 'any' (OR)"
           },
           {
             "name": "include_ignored",
@@ -4957,6 +4969,13 @@
           "category": {
             "type": "string",
             "title": "Category"
+          },
+          "categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Categories"
           },
           "reasons": {
             "items": {

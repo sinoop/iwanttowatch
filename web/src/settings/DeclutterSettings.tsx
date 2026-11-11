@@ -7,25 +7,25 @@ import {
   useDeleteDeclutterCandidates,
   useIgnoreDeclutterCandidate,
   useServerSettings,
+  type DeclutterCategoriesMode,
   type DeclutterWhitelistFilter,
 } from '../api'
 import TitleDialog from '../TitleDialog'
 import { Button, ErrorText, Poster } from '../ui'
 
 const CATEGORY_OPTIONS = [
-  { id: 'all', label: 'All Candidates', color: 'text-white/70 bg-white/10 border-white/20' },
   { id: 'low_quality', label: 'Low Quality (<720p / CAM)', color: 'text-orange-400 bg-orange-500/10 border-orange-500/20' },
   { id: 'unplayable', label: 'Unplayable in Jellyfin', color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
   { id: 'disliked', label: 'Watched & Disliked', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' },
   { id: 'abandoned', label: 'Abandoned Play', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
   { id: 'redundant_streamable', label: 'Streaming Redundant', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' },
   { id: 'low_match', label: 'Low Taste Match', color: 'text-sky-400 bg-sky-500/10 border-sky-500/20' },
-  { id: 'whitelisted', label: 'Whitelisted / Kept', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
 ] as const
 
 export function DeclutterSettings() {
   const settings = useServerSettings()
-  const [selectedCategory, setSelectedCategory] = useState<string>('all')
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
+  const [categoriesMode, setCategoriesMode] = useState<DeclutterCategoriesMode>('all')
   const [whitelistFilter, setWhitelistFilter] = useState<DeclutterWhitelistFilter>('hide')
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [confirmModalOpen, setConfirmModalOpen] = useState(false)
@@ -35,8 +35,9 @@ export function DeclutterSettings() {
   const [openedTitleId, setOpenedTitleId] = useState<number | null>(null)
 
   const candidates = useDeclutterCandidates(
-    selectedCategory === 'whitelisted' ? undefined : selectedCategory,
-    selectedCategory === 'whitelisted' ? 'only' : whitelistFilter,
+    selectedCategories.length > 0 ? selectedCategories : undefined,
+    whitelistFilter,
+    categoriesMode,
   )
   const deleteMutation = useDeleteDeclutterCandidates()
   const ignoreMutation = useIgnoreDeclutterCandidate()
@@ -52,6 +53,18 @@ export function DeclutterSettings() {
   const nonProtected = items.filter((i) => !i.is_protected).map((i) => i.tmdb_id)
   const allSafeSelected =
     nonProtected.length > 0 && nonProtected.every((id) => selectedIds.includes(id))
+
+  const toggleCategory = (catId: string) => {
+    setSelectedCategories((prev) => {
+      if (catId === 'all') return []
+      if (prev.includes(catId)) {
+        return prev.filter((id) => id !== catId)
+      } else {
+        return [...prev, catId]
+      }
+    })
+    setSelectedIds([])
+  }
 
   const toggleSelect = (tmdbId: number) => {
     setSelectedIds((prev) =>
@@ -187,43 +200,41 @@ export function DeclutterSettings() {
       )}
 
       {/* Category Filter & Whitelist Options */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
-        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-          <div className="flex items-center gap-2 text-xs">
-            <label htmlFor="declutter-category-filter" className="font-medium text-white/50">
-              Category:
-            </label>
-            <select
-              id="declutter-category-filter"
-              value={selectedCategory}
-              onChange={(e) => {
-                const val = e.target.value
-                setSelectedCategory(val)
-                if (val === 'whitelisted') {
-                  setWhitelistFilter('only')
-                } else if (whitelistFilter === 'only') {
-                  setWhitelistFilter('hide')
-                }
-                setSelectedIds([])
-              }}
-              className="cursor-pointer rounded-lg border border-white/10 bg-[#12161f] px-3 py-1.5 text-xs font-semibold text-white transition focus:border-accent focus:outline-none"
-            >
-              {CATEGORY_OPTIONS.map((cat) => {
-                const count =
-                  cat.id === 'all'
-                    ? (data?.total_candidates ?? 0)
-                    : (data?.categories_summary[cat.id]?.count ?? 0)
-                const formattedBytes =
-                  cat.id !== 'all' ? data?.categories_summary[cat.id]?.formatted : null
-                const sizeSuffix =
-                  formattedBytes && formattedBytes !== '0 B' ? ` · ${formattedBytes}` : ''
-                return (
-                  <option key={cat.id} value={cat.id} className="bg-[#151922] text-white">
-                    {cat.label} ({count}{sizeSuffix})
-                  </option>
-                )
-              })}
-            </select>
+      <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-white/50">
+              Filter by category:
+            </span>
+            {selectedCategories.length >= 2 && (
+              <div className="inline-flex items-center rounded-lg border border-white/10 bg-[#12161f] p-0.5 text-xs">
+                <span className="px-2 text-[11px] font-medium text-white/40">Combine:</span>
+                <button
+                  type="button"
+                  onClick={() => setCategoriesMode('all')}
+                  className={`cursor-pointer rounded-md px-2 py-0.5 text-xs font-semibold transition ${
+                    categoriesMode === 'all'
+                      ? 'bg-accent text-white shadow-sm'
+                      : 'text-white/60 hover:text-white'
+                  }`}
+                  title="Show movies matching ALL of the selected categories (AND)"
+                >
+                  ALL (AND)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCategoriesMode('any')}
+                  className={`cursor-pointer rounded-md px-2 py-0.5 text-xs font-semibold transition ${
+                    categoriesMode === 'any'
+                      ? 'bg-accent text-white shadow-sm'
+                      : 'text-white/60 hover:text-white'
+                  }`}
+                  title="Show movies matching ANY of the selected categories (OR)"
+                >
+                  ANY (OR)
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 text-xs">
@@ -232,13 +243,9 @@ export function DeclutterSettings() {
             </label>
             <select
               id="declutter-whitelist-filter"
-              value={selectedCategory === 'whitelisted' ? 'only' : whitelistFilter}
+              value={whitelistFilter}
               onChange={(e) => {
-                const val = e.target.value as DeclutterWhitelistFilter
-                setWhitelistFilter(val)
-                if (selectedCategory === 'whitelisted' && val !== 'only') {
-                  setSelectedCategory('all')
-                }
+                setWhitelistFilter(e.target.value as DeclutterWhitelistFilter)
                 setSelectedIds([])
               }}
               className="cursor-pointer rounded-lg border border-white/10 bg-[#12161f] px-3 py-1.5 text-xs font-semibold text-white transition focus:border-accent focus:outline-none"
@@ -256,52 +263,106 @@ export function DeclutterSettings() {
           </div>
         </div>
 
-        {/* Active Filter Tags */}
-        <div className="flex flex-wrap items-center gap-2">
-          {selectedCategory !== 'all' && (
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${
-                CATEGORY_OPTIONS.find((c) => c.id === selectedCategory)?.color ??
-                'text-white/70 border-white/10 bg-white/5'
-              }`}
-            >
-              <span>Category: {CATEGORY_OPTIONS.find((c) => c.id === selectedCategory)?.label}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedCategory('all')
-                  if (selectedCategory === 'whitelisted') {
-                    setWhitelistFilter('hide')
-                  }
-                  setSelectedIds([])
-                }}
-                className="ml-1 cursor-pointer text-white/40 hover:text-white"
-                title="Clear category filter"
-                aria-label="Clear category filter"
-              >
-                ✕
-              </button>
+        {/* Combinable Category Chips */}
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pt-0.5">
+          <button
+            type="button"
+            onClick={() => toggleCategory('all')}
+            className={`cursor-pointer inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-medium transition ${
+              selectedCategories.length === 0
+                ? 'border-accent/40 bg-accent/20 text-accent font-semibold shadow-sm'
+                : 'border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/[0.08] hover:border-white/20'
+            }`}
+          >
+            <span>All Categories</span>
+            <span className="rounded-full bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-white/70">
+              {data?.total_candidates ?? 0}
             </span>
-          )}
+          </button>
 
-          {whitelistFilter !== 'hide' && selectedCategory !== 'whitelisted' && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">
-              <span>{whitelistFilter === 'only' ? '🛡️ Whitelisted only' : '🛡️ Including whitelisted'}</span>
+          {CATEGORY_OPTIONS.map((cat) => {
+            const isSelected = selectedCategories.includes(cat.id)
+            const count = data?.categories_summary[cat.id]?.count ?? 0
+            const formattedBytes = data?.categories_summary[cat.id]?.formatted
+            const sizeSuffix =
+              formattedBytes && formattedBytes !== '0 B' ? ` · ${formattedBytes}` : ''
+
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => toggleCategory(cat.id)}
+                className={`cursor-pointer inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                  isSelected
+                    ? `${cat.color} ring-1 ring-white/20 font-semibold shadow-sm brightness-110`
+                    : 'border-white/10 bg-white/[0.03] text-white/70 hover:bg-white/[0.08] hover:border-white/20'
+                }`}
+                title={`Toggle ${cat.label}${sizeSuffix}`}
+              >
+                {isSelected && <span className="text-[11px]">✓</span>}
+                <span>{cat.label}</span>
+                <span className="rounded-full bg-black/40 px-1.5 py-0.2 text-[10px] font-mono text-white/70">
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Active Filter Tags */}
+        {(selectedCategories.length > 0 || whitelistFilter !== 'hide') && (
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5 text-xs text-white/60">
+            <span className="text-[11px] text-white/40 font-medium">Active:</span>
+            {selectedCategories.map((catId) => {
+              const meta = CATEGORY_OPTIONS.find((c) => c.id === catId)
+              return (
+                <span
+                  key={catId}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${
+                    meta?.color ?? 'text-white/70 border-white/10 bg-white/5'
+                  }`}
+                >
+                  <span>{meta?.label ?? catId}</span>
+                  <button
+                    type="button"
+                    onClick={() => toggleCategory(catId)}
+                    className="cursor-pointer text-white/40 hover:text-white"
+                    title={`Remove ${meta?.label ?? catId} filter`}
+                    aria-label={`Remove ${meta?.label ?? catId} filter`}
+                  >
+                    ✕
+                  </button>
+                </span>
+              )
+            })}
+            {whitelistFilter !== 'hide' && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300">
+                <span>{whitelistFilter === 'only' ? '🛡️ Whitelisted only' : '🛡️ Including whitelisted'}</span>
+                <button
+                  type="button"
+                  onClick={() => setWhitelistFilter('hide')}
+                  className="cursor-pointer text-white/40 hover:text-white"
+                  title="Reset to actionable only"
+                  aria-label="Reset to actionable only"
+                >
+                  ✕
+                </button>
+              </span>
+            )}
+            {selectedCategories.length > 0 && (
               <button
                 type="button"
                 onClick={() => {
-                  setWhitelistFilter('hide')
+                  setSelectedCategories([])
                   setSelectedIds([])
                 }}
-                className="ml-1 cursor-pointer text-white/40 hover:text-white"
-                title="Reset to actionable only"
-                aria-label="Reset to actionable only"
+                className="cursor-pointer text-[11px] text-white/40 hover:text-white underline underline-offset-2 ml-1"
               >
-                ✕
+                Clear categories
               </button>
-            </span>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bulk Action Bar */}
@@ -371,20 +432,23 @@ export function DeclutterSettings() {
           <span className="block text-4xl mb-3">✨</span>
           <p className="font-semibold text-white">Your library is in great shape!</p>
           <p className="mt-1 text-white/50 max-w-md mx-auto">
-            {selectedCategory === 'whitelisted' || whitelistFilter === 'only'
+            {whitelistFilter === 'only'
               ? 'No whitelisted movies found. Movies you choose to "Keep / Whitelist" will be preserved here and excluded from deletion suggestions.'
-              : selectedCategory === 'low_quality'
-                ? 'No low quality or CAM releases found. Movies in your library meet quality standards (≥ 720p, non-CAM).'
-                : selectedCategory === 'unplayable'
-                  ? 'No unplayable or missing items found. All downloaded movies in Radarr are recognized and playable in Jellyfin.'
-                  : 'No prune candidates found for this category. Movies in your library have positive taste affinity or are cherished by household members.'}
+              : selectedCategories.length > 1
+                ? `No movies match the combined filter (${selectedCategories.map((c) => CATEGORY_OPTIONS.find((o) => o.id === c)?.label ?? c).join(categoriesMode === 'all' ? ' + ' : ' or ')}).`
+                : selectedCategories.length === 1 && selectedCategories[0] === 'low_quality'
+                  ? 'No low quality or CAM releases found. Movies in your library meet quality standards (≥ 720p, non-CAM).'
+                  : selectedCategories.length === 1 && selectedCategories[0] === 'unplayable'
+                    ? 'No unplayable or missing items found. All downloaded movies in Radarr are recognized and playable in Jellyfin.'
+                    : 'No prune candidates found for this selection. Movies in your library have positive taste affinity or are cherished by household members.'}
           </p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
           {items.map((item) => {
             const isSelected = selectedIds.includes(item.tmdb_id)
-            const catMeta = CATEGORY_OPTIONS.find((t) => t.id === item.category)
+            const itemCategories =
+              item.categories && item.categories.length > 0 ? item.categories : [item.category]
 
             return (
               <div
@@ -429,14 +493,19 @@ export function DeclutterSettings() {
                   <div className="min-w-0">
                     {/* Top meta row: Category pill on the left, Reclaimable Size on the right */}
                     <div className="flex items-center justify-between gap-2 mb-1">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        {catMeta && 'color' in catMeta ? (
-                          <span
-                            className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-semibold truncate ${catMeta.color}`}
-                          >
-                            {catMeta.label}
-                          </span>
-                        ) : null}
+                      <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                        {itemCategories.map((catId) => {
+                          const catMeta = CATEGORY_OPTIONS.find((t) => t.id === catId)
+                          if (!catMeta) return null
+                          return (
+                            <span
+                              key={catId}
+                              className={`inline-block rounded-md border px-2 py-0.5 text-[10px] font-semibold truncate ${catMeta.color}`}
+                            >
+                              {catMeta.label}
+                            </span>
+                          )
+                        })}
                         {item.is_ignored && (
                           <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 shrink-0">
                             <span>🛡️</span>

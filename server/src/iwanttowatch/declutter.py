@@ -184,6 +184,7 @@ def inspect_declutter_candidates(
     tmdb: Any,
     user: User,
     category_filter: str | None = None,
+    categories_mode: str = "any",
     include_ignored: bool = False,
     whitelist_filter: str | None = None,
 ) -> dict[str, Any]:
@@ -300,6 +301,10 @@ def inspect_declutter_candidates(
         category_filter = "all"
     elif effective_whitelist is None:
         effective_whitelist = "all" if include_ignored else "hide"
+
+    target_categories: set[str] = set()
+    if category_filter and category_filter not in ("all", "whitelisted"):
+        target_categories = {c.strip() for c in category_filter.split(",") if c.strip()}
 
     if effective_whitelist == "only":
         candidate_ids = set(ignored_candidates)
@@ -529,44 +534,34 @@ def inspect_declutter_candidates(
                 "(unindexed or non-playable)"
             )
 
+        matching_categories: list[str] = []
+        all_reasons: list[str] = []
+
+        if unplayable:
+            matching_categories.append("unplayable")
+            all_reasons.extend(unplayable_reasons)
+        if low_quality:
+            matching_categories.append("low_quality")
+            all_reasons.extend(low_quality_reasons)
+        if disliked:
+            matching_categories.append("disliked")
+            all_reasons.extend(dislike_reasons)
+        if abandoned:
+            matching_categories.append("abandoned")
+            all_reasons.extend(abandon_reasons)
+        if redundant_streamable:
+            matching_categories.append("redundant_streamable")
+            all_reasons.extend(stream_reasons)
+        if low_match:
+            matching_categories.append("low_match")
+            all_reasons.extend(low_match_reasons)
+
         # Skip if not qualifying under any category
-        if not (
-            disliked or abandoned or redundant_streamable or low_match or unplayable or low_quality
-        ):
+        if not matching_categories:
             continue
 
-        # Primary category assignment
-        if unplayable:
-            primary_cat = "unplayable"
-            reasons = (
-                unplayable_reasons
-                + low_quality_reasons
-                + dislike_reasons
-                + abandon_reasons
-                + stream_reasons
-                + low_match_reasons
-            )
-        elif low_quality:
-            primary_cat = "low_quality"
-            reasons = (
-                low_quality_reasons
-                + dislike_reasons
-                + abandon_reasons
-                + stream_reasons
-                + low_match_reasons
-            )
-        elif disliked:
-            primary_cat = "disliked"
-            reasons = dislike_reasons
-        elif abandoned:
-            primary_cat = "abandoned"
-            reasons = abandon_reasons
-        elif redundant_streamable:
-            primary_cat = "redundant_streamable"
-            reasons = stream_reasons
-        else:
-            primary_cat = "low_match"
-            reasons = low_match_reasons
+        primary_cat = matching_categories[0]
+        reasons = all_reasons
 
         # Household Protection Check
         is_protected = False
@@ -616,23 +611,28 @@ def inspect_declutter_candidates(
                         f"{round(other_rec.score * 100)}% match for {u.display_name}"
                     )
 
-        if is_protected:
-            protected_count += 1
-
         is_ignored = tmdb_id in ignored_ids
         if effective_whitelist == "only" and not is_ignored:
             continue
         if effective_whitelist == "hide" and is_ignored:
             continue
-        if (
-            category_filter
-            and category_filter not in ("all", "whitelisted")
-            and primary_cat != category_filter
-        ):
-            continue
 
-        category_counts[primary_cat] += 1
-        category_bytes[primary_cat] += size_bytes
+        # Tally counts across matching categories for candidates in current whitelist scope
+        for cat in matching_categories:
+            category_counts[cat] += 1
+            category_bytes[cat] += size_bytes
+
+        if target_categories:
+            if categories_mode == "all":
+                if not target_categories.issubset(matching_categories):
+                    continue
+            else:
+                if not any(cat in target_categories for cat in matching_categories):
+                    continue
+
+        if is_protected:
+            protected_count += 1
+
         total_reclaimable_bytes += size_bytes
 
         candidate_results.append(
@@ -645,6 +645,7 @@ def inspect_declutter_candidates(
                 "original_language": original_language,
                 "imdb_rating": imdb_rating,
                 "category": primary_cat,
+                "categories": matching_categories,
                 "reasons": reasons,
                 "size_bytes": size_bytes,
                 "size_formatted": format_bytes(size_bytes),
