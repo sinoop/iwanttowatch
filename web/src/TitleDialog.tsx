@@ -269,6 +269,7 @@ function Details({
   const me = queryClient.getQueryData<Me>(['me'])
   const children = useChildren(!me?.is_child)
   const shortlist = useShortlist()
+  const [whereToWatchOpen, setWhereToWatchOpen] = useState(false)
   const title = useQuery({
     queryKey: ['title', tmdbId],
     queryFn: async () => {
@@ -375,7 +376,10 @@ function Details({
             <StreamingDock
               film={film}
               onNavigateToWhereToWatch={() => {
-                document.getElementById('where-to-watch')?.scrollIntoView({ behavior: 'smooth' })
+                setWhereToWatchOpen(true)
+                setTimeout(() => {
+                  document.getElementById('where-to-watch')?.scrollIntoView({ behavior: 'smooth' })
+                }, 50)
               }}
             />
 
@@ -444,9 +448,11 @@ function Details({
         <Chips genres={film.genres} moods={film.moods} />
 
         {/* Full Where to Watch Section */}
-        <div id="where-to-watch">
-          <WhereToWatch film={film} />
-        </div>
+        <WhereToWatch
+          film={film}
+          open={whereToWatchOpen}
+          onToggle={() => setWhereToWatchOpen((v) => !v)}
+        />
 
         {shortlist.error && (
           <div>
@@ -820,9 +826,21 @@ function renderThemesNote(
   return <p className="text-sm leading-relaxed text-white/70 whitespace-pre-line">{note}</p>
 }
 
-function WhereToWatch({ film }: { film: TitleDetail }) {
+function WhereToWatch({
+  film,
+  open,
+  onToggle,
+}: {
+  film: TitleDetail
+  open?: boolean
+  onToggle?: () => void
+}) {
   const queryClient = useQueryClient()
   const me = queryClient.getQueryData<Me>(['me'])
+  const [internalOpen, setInternalOpen] = useState(false)
+  const isOpen = open !== undefined ? open : internalOpen
+  const toggle = onToggle ?? (() => setInternalOpen((v) => !v))
+
   const { availability } = film
   const nothing = !availability.on_jellyfin && availability.offers.length === 0
   const others = availability.other_offers ?? []
@@ -848,118 +866,162 @@ function WhereToWatch({ film }: { film: TitleDetail }) {
     },
   })
 
+  // Summary labels for collapsed state
+  const summaryParts: string[] = []
+  if (availability.on_jellyfin) summaryParts.push('Jellyfin')
+  if (availability.offers.length > 0) summaryParts.push(`${availability.offers.length} streaming`)
+  if (hasRentOrBuy) summaryParts.push(rentBuyLabel)
+
   return (
-    <section className="mt-5 rounded-xl border border-white/10 p-4">
-      <h3 className="text-sm font-medium text-white/80">Where to watch</h3>
-      {nothing && (
-        <p className="mt-1.5 text-sm text-white/55">Not on your Jellyfin server or your streaming services.</p>
-      )}
-      <ul className="mt-2 flex flex-wrap gap-2">
-        {availability.on_jellyfin && (
-          <li>
-            {film.jellyfin_url ? (
-              <a
-                href={film.jellyfin_url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 rounded-full bg-violet-500/20 px-3 py-1 text-sm font-medium text-violet-100 hover:bg-violet-500/30"
-              >
-                <JellyfinLogo className="size-4.5 rounded-full" />
-                Play on Jellyfin
-              </a>
-            ) : (
-              <span className="inline-flex items-center gap-2 rounded-full bg-violet-500/20 px-3 py-1 text-sm text-violet-100">
-                <JellyfinLogo className="size-4.5 rounded-full" />
-                On Jellyfin
-              </span>
+    <section id="where-to-watch" className="mt-5 rounded-xl border border-white/10 bg-white/[0.02]">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={isOpen}
+        className="flex w-full items-center justify-between p-3.5 text-left transition-colors hover:bg-white/[0.02] sm:p-4"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-medium text-white/80">Where to watch</h3>
+          {!isOpen && (
+            <span className="text-xs text-white/45">
+              {nothing && !hasRentOrBuy
+                ? '(Unavailable)'
+                : summaryParts.length > 0
+                  ? `(${summaryParts.join(' · ')})`
+                  : null}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-white/50">
+          <span>{isOpen ? 'Hide' : 'Show details'}</span>
+          <svg
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className={`size-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          >
+            <path
+              fillRule="evenodd"
+              d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </div>
+      </button>
+
+      {isOpen && (
+        <div className="border-t border-white/5 p-4 pt-3.5">
+          {nothing && (
+            <p className="mt-1 text-sm text-white/55">Not on your Jellyfin server or your streaming services.</p>
+          )}
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {availability.on_jellyfin && (
+              <li>
+                {film.jellyfin_url ? (
+                  <a
+                    href={film.jellyfin_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 rounded-full bg-violet-500/20 px-3 py-1 text-sm font-medium text-violet-100 hover:bg-violet-500/30"
+                  >
+                    <JellyfinLogo className="size-4.5 rounded-full" />
+                    Play on Jellyfin
+                  </a>
+                ) : (
+                  <span className="inline-flex items-center gap-2 rounded-full bg-violet-500/20 px-3 py-1 text-sm text-violet-100">
+                    <JellyfinLogo className="size-4.5 rounded-full" />
+                    On Jellyfin
+                  </span>
+                )}
+              </li>
             )}
-          </li>
-        )}
-        {!availability.on_jellyfin && film.radarr?.configured && (
-          <li>
-            {film.radarr.has_file ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-sm font-medium text-emerald-300">
-                ✓ Downloaded in Radarr
-              </span>
-            ) : film.radarr.monitored ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 text-sm font-medium text-amber-300">
-                ⏳ Downloading in Radarr
-              </span>
-            ) : (
+            {!availability.on_jellyfin && film.radarr?.configured && (
+              <li>
+                {film.radarr.has_file ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-sm font-medium text-emerald-300">
+                    ✓ Downloaded in Radarr
+                  </span>
+                ) : film.radarr.monitored ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 text-sm font-medium text-amber-300">
+                    ⏳ Downloading in Radarr
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={download.isPending || me?.is_child}
+                    onClick={() => download.mutate()}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/20 px-3 py-1 text-sm font-medium text-sky-200 hover:bg-sky-500/30 disabled:opacity-50"
+                  >
+                    <DownloadIcon className="size-4" />
+                    {download.isPending ? 'Requesting…' : 'Download via Radarr'}
+                  </button>
+                )}
+              </li>
+            )}
+            {film.radarr?.radarr_url && (
+              <li>
+                <a
+                  href={film.radarr.radarr_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 text-xs text-white/50 hover:bg-white/5 hover:text-white/80"
+                >
+                  Open in Radarr ↗
+                </a>
+              </li>
+            )}
+            {availability.offers.map((offer) => (
+              <li
+                key={offer.provider_id}
+                className="flex items-center gap-2 rounded-full border border-white/10 py-1 pr-3 pl-1 text-sm"
+              >
+                <ProviderLogo path={offer.logo_path} name={offer.name} className="size-6" />
+                {offer.name}
+                {offer.kind !== 'flatrate' && <span className="text-white/45">free</span>}
+              </li>
+            ))}
+          </ul>
+          {download.error && (
+            <div className="mt-2">
+              <ErrorText>{download.error.message}</ErrorText>
+            </div>
+          )}
+          <OtherOffers label="On other streaming services" offers={elsewhere} />
+          {showRentBuy && (
+            <>
+              <OtherOffers label="Rent" offers={rent} />
+              <OtherOffers label="Buy" offers={buy} />
+            </>
+          )}
+          {hasRentOrBuy && (
+            <div className="mt-3">
               <button
                 type="button"
-                disabled={download.isPending || me?.is_child}
-                onClick={() => download.mutate()}
-                className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/20 px-3 py-1 text-sm font-medium text-sky-200 hover:bg-sky-500/30 disabled:opacity-50"
+                onClick={() => setShowRentBuy((v) => !v)}
+                className="text-xs text-white/50 underline-offset-2 hover:text-white/80 hover:underline"
               >
-                <DownloadIcon className="size-4" />
-                {download.isPending ? 'Requesting…' : 'Download via Radarr'}
+                {showRentBuy ? `Hide ${rentBuyLabel} options` : `Show ${rentBuyLabel} options`}
               </button>
+            </div>
+          )}
+          {availability.stale && availability.checked_at && (
+            <p className="mt-2 text-xs text-amber-300/80">
+              Last checked {new Date(availability.checked_at).toLocaleDateString()}
+            </p>
+          )}
+          <p className="mt-3 text-xs text-white/40">
+            {availability.link && (
+              <>
+                <a href={availability.link} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+                  All options on TMDb
+                </a>
+                {' · '}
+              </>
             )}
-          </li>
-        )}
-        {film.radarr?.radarr_url && (
-          <li>
-            <a
-              href={film.radarr.radarr_url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 text-xs text-white/50 hover:bg-white/5 hover:text-white/80"
-            >
-              Open in Radarr ↗
-            </a>
-          </li>
-        )}
-        {availability.offers.map((offer) => (
-          <li
-            key={offer.provider_id}
-            className="flex items-center gap-2 rounded-full border border-white/10 py-1 pr-3 pl-1 text-sm"
-          >
-            <ProviderLogo path={offer.logo_path} name={offer.name} className="size-6" />
-            {offer.name}
-            {offer.kind !== 'flatrate' && <span className="text-white/45">free</span>}
-          </li>
-        ))}
-      </ul>
-      {download.error && (
-        <div className="mt-2">
-          <ErrorText>{download.error.message}</ErrorText>
+            <JustWatchCredit />
+          </p>
         </div>
       )}
-      <OtherOffers label="On other streaming services" offers={elsewhere} />
-      {showRentBuy && (
-        <>
-          <OtherOffers label="Rent" offers={rent} />
-          <OtherOffers label="Buy" offers={buy} />
-        </>
-      )}
-      {hasRentOrBuy && (
-        <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => setShowRentBuy((v) => !v)}
-            className="text-xs text-white/50 underline-offset-2 hover:text-white/80 hover:underline"
-          >
-            {showRentBuy ? `Hide ${rentBuyLabel} options` : `Show ${rentBuyLabel} options`}
-          </button>
-        </div>
-      )}
-      {availability.stale && availability.checked_at && (
-        <p className="mt-2 text-xs text-amber-300/80">
-          Last checked {new Date(availability.checked_at).toLocaleDateString()}
-        </p>
-      )}
-      <p className="mt-3 text-xs text-white/40">
-        {availability.link && (
-          <>
-            <a href={availability.link} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
-              All options on TMDb
-            </a>
-            {' · '}
-          </>
-        )}
-        <JustWatchCredit />
-      </p>
     </section>
   )
 }
