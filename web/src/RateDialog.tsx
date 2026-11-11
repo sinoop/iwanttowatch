@@ -1,6 +1,7 @@
 import type { Reaction, TitleReaction } from '@iwanttowatch/api-client'
 import { useEffect, useRef, useState } from 'react'
 import { useReaction } from './api'
+import { TagIcon } from './TagIcon'
 import { Button, ErrorText, Poster } from './ui'
 
 const MAX_TAGS = 5
@@ -107,7 +108,7 @@ export function TagChip({
       aria-pressed={selected}
       disabled={disabled}
       onClick={onClick}
-      className={`rounded-full border px-3 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-35 ${
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/60 disabled:cursor-not-allowed disabled:opacity-35 ${
         selected
           ? isCaveat
             ? 'border-amber-400/60 bg-amber-400/15 text-amber-200'
@@ -115,7 +116,8 @@ export function TagChip({
           : 'border-white/10 bg-white/5 text-white/65 hover:border-white/25 hover:text-white'
       }`}
     >
-      {tag.label}
+      <TagIcon tagId={tag.id} className="size-3.5" />
+      <span>{tag.label}</span>
     </button>
   )
 }
@@ -365,13 +367,16 @@ export function SentimentTagsCard({ tmdbId, className = '' }: { tmdbId: number; 
                   aria-pressed={selected}
                   disabled={disabled}
                   onClick={() => toggleTag(tag.id)}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-rose-500/60 disabled:cursor-not-allowed disabled:opacity-35 ${
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-rose-500/60 disabled:cursor-not-allowed disabled:opacity-35 ${
                     selected
                       ? 'border-rose-500/60 bg-rose-500/20 font-medium text-rose-200'
                       : 'border-white/10 bg-white/5 text-white/70 hover:border-rose-500/30 hover:text-white'
                   }`}
                 >
-                  <span className="font-bold text-rose-400">{selected ? '✓' : '−'}</span>
+                  <TagIcon
+                    tagId={tag.id}
+                    className={`size-3.5 ${selected ? 'text-rose-200' : 'text-rose-400/80'}`}
+                  />
                   <span>{tag.label}</span>
                 </button>
               )
@@ -399,13 +404,16 @@ export function SentimentTagsCard({ tmdbId, className = '' }: { tmdbId: number; 
                   aria-pressed={selected}
                   disabled={disabled}
                   onClick={() => toggleTag(tag.id)}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500/60 disabled:cursor-not-allowed disabled:opacity-35 ${
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500/60 disabled:cursor-not-allowed disabled:opacity-35 ${
                     selected
                       ? 'border-emerald-500/60 bg-emerald-500/20 font-medium text-emerald-200'
                       : 'border-white/10 bg-white/5 text-white/70 hover:border-emerald-500/30 hover:text-white'
                   }`}
                 >
-                  <span className="font-bold text-emerald-400">{selected ? '✓' : '+'}</span>
+                  <TagIcon
+                    tagId={tag.id}
+                    className={`size-3.5 ${selected ? 'text-emerald-200' : 'text-emerald-400/80'}`}
+                  />
                   <span>{tag.label}</span>
                 </button>
               )

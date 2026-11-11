@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { api, errorMessage, refreshAfterReaction } from './api'
 import { ReactionBadge, ReactionIcon } from './RateDialog'
+import { TagIcon } from './TagIcon'
 import { MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
 
@@ -563,7 +564,7 @@ function OutlierCard({
                   type="button"
                   onClick={() => handleToggleTag(tag.id)}
                   disabled={!selected && activeTags.length >= MAX_TAGS}
-                  className={`cursor-pointer rounded-full border px-3 py-1 text-xs transition-colors focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-30 ${
+                  className={`cursor-pointer inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-30 ${
                     selected
                       ? isPositive
                         ? 'border-accent bg-accent/20 font-semibold text-accent-strong'
@@ -571,7 +572,8 @@ function OutlierCard({
                       : 'border-white/10 text-white/70 hover:border-white/25 hover:text-white'
                   }`}
                 >
-                  {tag.label}
+                  <TagIcon tagId={tag.id} className="size-3.5 shrink-0" />
+                  <span>{tag.label}</span>
                 </button>
               )
             })}

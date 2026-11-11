@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { api, errorMessage, NEGATIVE_TAG_IDS, ratingToReaction, REACTIONS, TAG_LABELS, useAvailability, useImports, usePeopleTaste, useServerSettings } from './api'
 import { ReactionBadge, ReactionIcon } from './RateDialog'
+import { TagIcon } from './TagIcon'
 import PersonDialog, { HeartIcon } from './PersonDialog'
 import OutlierReviewDialog from './OutlierReviewDialog'
 import { FilmSearch } from './Search'
@@ -941,13 +942,14 @@ function DivergentCard({
               {item.tags.map((tagId) => (
                 <li
                   key={tagId}
-                  className={`rounded-full border px-2 py-0.5 text-[10.5px] ${
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] ${
                     NEGATIVE_TAG_IDS.has(tagId)
                       ? 'border-amber-400/25 bg-amber-400/10 text-amber-200/80'
                       : 'border-white/10 bg-white/5 text-white/70'
                   }`}
                 >
-                  {TAG_LABELS[tagId] ?? tagId}
+                  <TagIcon tagId={tagId} className="size-3 shrink-0" />
+                  <span>{TAG_LABELS[tagId] ?? tagId}</span>
                 </li>
               ))}
             </ul>
@@ -1067,13 +1069,14 @@ function RatingCard({
             {item.tags.map((tagId) => (
               <li
                 key={tagId}
-                className={`rounded-full px-2 py-0.5 text-[10.5px] ${
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] ${
                   NEGATIVE_TAG_IDS.has(tagId)
                     ? 'border border-amber-400/25 bg-amber-400/10 text-amber-200/80'
                     : 'border border-accent/25 bg-accent/10 text-accent-strong'
                 }`}
               >
-                {TAG_LABELS[tagId] ?? tagId}
+                <TagIcon tagId={tagId} className="size-3 shrink-0" />
+                <span>{TAG_LABELS[tagId] ?? tagId}</span>
               </li>
             ))}
           </ul>
