@@ -246,7 +246,7 @@ function OutlierCard({
     }) => {
       const { data, error } = await api.PUT('/api/v1/titles/{tmdb_id}/reaction', {
         params: { path: { tmdb_id: item.tmdb_id } },
-        body: { reaction, tags, note: item.note ?? '' },
+        body: { reaction, watched: true, tags, note: item.note ?? '' },
       })
       if (error) throw new Error(errorMessage(error))
       return data

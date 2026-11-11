@@ -9138,13 +9138,25 @@
       "ReactionUpdate": {
         "properties": {
           "reaction": {
-            "type": "string",
-            "enum": [
-              "disliked",
-              "liked",
-              "loved"
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "disliked",
+                  "liked",
+                  "loved"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ],
             "title": "Reaction"
+          },
+          "watched": {
+            "type": "boolean",
+            "title": "Watched",
+            "default": true
           },
           "tags": {
             "items": {
@@ -9162,9 +9174,6 @@
           }
         },
         "type": "object",
-        "required": [
-          "reaction"
-        ],
         "title": "ReactionUpdate"
       },
       "Resolution": {
@@ -10076,6 +10085,11 @@
               }
             ],
             "title": "Reaction"
+          },
+          "watched": {
+            "type": "boolean",
+            "title": "Watched",
+            "default": false
           },
           "tags": {
             "items": {

@@ -3253,11 +3253,13 @@ export interface components {
         };
         /** ReactionUpdate */
         ReactionUpdate: {
+            /** Reaction */
+            reaction?: ("disliked" | "liked" | "loved") | null;
             /**
-             * Reaction
-             * @enum {string}
+             * Watched
+             * @default true
              */
-            reaction: "disliked" | "liked" | "loved";
+            watched: boolean;
             /** Tags */
             tags?: string[];
             /**
@@ -3532,6 +3534,11 @@ export interface components {
             poster_path: string | null;
             /** Reaction */
             reaction: ("disliked" | "liked" | "loved") | null;
+            /**
+             * Watched
+             * @default false
+             */
+            watched: boolean;
             /** Tags */
             tags: string[];
             /** Note */

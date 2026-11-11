@@ -71,6 +71,34 @@ def test_reaction_and_tags_feed_ratings_and_the_persona_summary(client: TestClie
     assert client.get("/api/v1/ratings").json()["total"] == 0
 
 
+def test_watched_only_reaction(client: TestClient) -> None:
+    add_title(client, 700, ["Drama"])
+    # Mark as watched without a reaction or tags
+    res = client.put("/api/v1/titles/700/reaction", json={"reaction": None, "watched": True})
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["watched"] is True
+    assert data["reaction"] is None
+    assert data["tags"] == []
+    assert data["note"] is None
+
+    # Check GET returns watched status
+    get_res = client.get("/api/v1/titles/700/reaction")
+    assert get_res.status_code == 200
+    assert get_res.json()["watched"] is True
+    assert get_res.json()["reaction"] is None
+
+    # Watched without rating should not appear in ratings feed list
+    assert client.get("/api/v1/ratings").json()["total"] == 0
+
+    # User can subsequently rate it
+    rated = react(client, 700, "loved", ["moved_me"])
+    assert rated.status_code == 200
+    assert rated.json()["watched"] is True
+    assert rated.json()["reaction"] == "loved"
+    assert client.get("/api/v1/ratings").json()["total"] == 1
+
+
 def test_reaction_scores_follow_the_users_own_rating_scale(client: TestClient) -> None:
     # Stable 3-point scores: in-app reactions keep distinct scores and never collide.
     scores = [4, 5, 6, 6, 7, 8, 8, 9, 9, 10]

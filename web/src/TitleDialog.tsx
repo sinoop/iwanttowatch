@@ -2,7 +2,7 @@ import type { ChildProfile, Me, Reaction, TitleDetail } from '@iwanttowatch/api-
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { api, errorMessage, facts, ratingToReaction, useAssignToChild, useChildren, useServerSettings, useShortlist } from './api'
-import { RatePicker, ReactionBadge } from './RateDialog'
+import { RatingHeaderDock, ReactionBadge, SentimentTagsCard } from './RateDialog'
 import { JellyfinLogo, JustWatchCredit, ProviderLogo } from './Streaming'
 import { Button, ErrorText, Poster } from './ui'
 import PersonDialog from './PersonDialog'
@@ -68,7 +68,7 @@ export default function TitleDialog({ tmdbId, onClose }: { tmdbId: number | null
         onClose={onClose}
         onClick={(e) => e.target === dialog.current && dialog.current.close()}
         aria-label="Film details"
-        className="m-auto max-h-[calc(100dvh-2rem)] w-[min(40rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#11141b] p-0 text-[#e7e9ee] shadow-2xl backdrop:bg-black/70"
+        className="m-auto flex max-h-[calc(100dvh-2rem)] w-[min(42rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#11141b] p-0 text-[#e7e9ee] shadow-2xl backdrop:bg-black/70"
       >
         {activeId !== null && (
           <Details
@@ -94,6 +94,159 @@ export default function TitleDialog({ tmdbId, onClose }: { tmdbId: number | null
         }}
       />
     </>
+  )
+}
+
+function StreamingDock({
+  film,
+  onNavigateToWhereToWatch,
+}: {
+  film: TitleDetail
+  onNavigateToWhereToWatch: () => void
+}) {
+  const queryClient = useQueryClient()
+  const me = queryClient.getQueryData<Me>(['me'])
+  const { availability } = film
+  const download = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await api.POST('/api/v1/titles/{tmdb_id}/radarr', {
+        params: { path: { tmdb_id: film.tmdb_id } },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<TitleDetail>(['title', film.tmdb_id], (current) =>
+        current ? { ...current, radarr: data } : current,
+      )
+    },
+  })
+
+  const streamingItems: Array<{
+    id: string
+    name: string
+    element: React.ReactNode
+  }> = []
+
+  if (availability.on_jellyfin) {
+    streamingItems.push({
+      id: 'jellyfin',
+      name: 'Jellyfin',
+      element: film.jellyfin_url ? (
+        <a
+          href={film.jellyfin_url}
+          target="_blank"
+          rel="noreferrer"
+          title="Play on Jellyfin"
+          aria-label="Play on Jellyfin"
+          className="flex size-7 items-center justify-center rounded-lg bg-violet-600/20 p-1 transition-colors hover:bg-violet-600/40"
+        >
+          <JellyfinLogo className="size-full rounded-md" />
+        </a>
+      ) : (
+        <div
+          title="On Jellyfin"
+          aria-label="On Jellyfin"
+          className="flex size-7 items-center justify-center rounded-lg bg-violet-600/20 p-1"
+        >
+          <JellyfinLogo className="size-full rounded-md" />
+        </div>
+      ),
+    })
+  }
+
+  const seenProviders = new Set<number>()
+  for (const offer of availability.offers) {
+    if (!seenProviders.has(offer.provider_id)) {
+      seenProviders.add(offer.provider_id)
+      streamingItems.push({
+        id: `offer-${offer.provider_id}`,
+        name: offer.name,
+        element: (
+          <div
+            title={`Stream on ${offer.name}`}
+            aria-label={`Stream on ${offer.name}`}
+            className="flex size-7 items-center justify-center overflow-hidden rounded-lg border border-white/10 bg-white/5 shadow-sm"
+          >
+            <ProviderLogo path={offer.logo_path} name={offer.name} className="size-full object-cover" />
+          </div>
+        ),
+      })
+    }
+  }
+
+  if (streamingItems.length === 0) {
+    if (film.radarr?.configured) {
+      if (film.radarr.has_file) {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-medium text-emerald-300">
+            ✓ Downloaded
+          </span>
+        )
+      }
+      if (film.radarr.monitored) {
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-300">
+            ⏳ In Radarr
+          </span>
+        )
+      }
+      return (
+        <button
+          type="button"
+          disabled={download.isPending || me?.is_child}
+          onClick={() => download.mutate()}
+          className="inline-flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/15 px-2.5 py-0.5 text-xs font-medium text-sky-200 transition-colors hover:bg-sky-500/25 disabled:opacity-50"
+        >
+          <DownloadIcon className="size-3.5" />
+          <span>{download.isPending ? 'Requesting…' : 'Radarr download'}</span>
+        </button>
+      )
+    }
+
+    const hasRentOrBuy = (availability.other_offers?.length ?? 0) > 0
+    if (hasRentOrBuy) {
+      return (
+        <button
+          type="button"
+          onClick={onNavigateToWhereToWatch}
+          className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-white/60 transition-colors hover:border-white/20 hover:text-white"
+        >
+          Rent / Buy ↗
+        </button>
+      )
+    }
+
+    return (
+      <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-white/40">
+        Not streaming
+      </span>
+    )
+  }
+
+  const MAX_VISIBLE = 4
+  const hasOverflow = streamingItems.length > MAX_VISIBLE
+  const visible = hasOverflow ? streamingItems.slice(0, 3) : streamingItems
+  const overflowCount = streamingItems.length - 3
+  const overflowNames = streamingItems.slice(3).map((s) => s.name).join(', ')
+
+  return (
+    <div className="flex items-center gap-1.5" aria-label="Available streaming services">
+      {visible.map((item) => (
+        <span key={item.id}>{item.element}</span>
+      ))}
+      {hasOverflow && (
+        <button
+          type="button"
+          onClick={onNavigateToWhereToWatch}
+          title={`+${overflowCount} more: ${overflowNames}. Click to view all.`}
+          aria-label={`+${overflowCount} more services. Click to view all.`}
+          className="flex size-7 items-center justify-center rounded-lg border border-white/10 bg-white/10 text-[11px] font-bold text-white/80 transition-colors hover:bg-white/20"
+        >
+          +{overflowCount}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -138,123 +291,177 @@ function Details({
   if (!film) return <p className="p-6 text-sm text-white/50">Loading…</p>
 
   return (
-    <div className="p-5 sm:p-6">
-      {onBack && (
-        <Button
-          variant="ghost"
-          onClick={onBack}
-          className="mb-3 px-2 py-0.5 text-xs text-white/70 hover:text-white"
-        >
-          ← Back
-        </Button>
-      )}
-      <div className="flex gap-4 sm:gap-5">
-        <div className="w-24 shrink-0 sm:w-32">
-          <Poster path={film.poster_path} title={film.title} />
-        </div>
-        <div className="min-w-0">
-          <h2 className="text-xl font-semibold">{film.title}</h2>
-          {film.original_title !== film.title && <p className="text-sm text-white/55">{film.original_title}</p>}
-          <p className="mt-1 text-sm text-white/55">{facts(film).join(' · ')}</p>
-          {(film.match !== null || film.imdb) && (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {film.match !== null && <MatchBadge match={film.match} />}
-              {film.imdb && <ImdbBadge imdb={film.imdb} isLink showVotes />}
+    <div className="flex max-h-[calc(100dvh-2rem)] flex-1 flex-col overflow-hidden">
+      {/* Sticky Header */}
+      <div className="shrink-0 border-b border-white/10 bg-[#11141b] p-4 sm:p-5">
+        {onBack && (
+          <Button
+            variant="ghost"
+            onClick={onBack}
+            className="mb-3 px-2 py-0.5 text-xs text-white/70 hover:text-white"
+          >
+            ← Back
+          </Button>
+        )}
+
+        <div className="flex items-start justify-between gap-3 sm:gap-4">
+          {/* Left: Poster + English Title + Facts + Badges */}
+          <div className="flex min-w-0 gap-3 sm:gap-4">
+            <div className="w-16 shrink-0 sm:w-20">
+              <Poster path={film.poster_path} title={film.title} />
             </div>
-          )}
-          {/* A reaction given here shows in the rating buttons below instead. */}
-          {film.seen && !film.seen.reaction && (
-            <p className="mt-3 text-sm font-medium text-accent-strong">{seenText(film.seen)}</p>
-          )}
-          {film.tagline && <p className="mt-3 text-sm text-white/70 italic">{film.tagline}</p>}
+            <div className="min-w-0">
+              <h2 className="line-clamp-2 text-base font-bold leading-tight text-white sm:text-xl">
+                {film.title}
+              </h2>
+              <p className="mt-1 text-xs text-white/55 sm:text-sm">
+                {facts(film).join(' · ')}
+              </p>
+              {(film.match !== null || film.imdb) && (
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  {film.match !== null && <MatchBadge match={film.match} />}
+                  {film.imdb && <ImdbBadge imdb={film.imdb} isLink showVotes />}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Actions, Streaming Dock, Rating Controls */}
+          <div className="flex shrink-0 flex-col items-end gap-2 sm:gap-2.5">
+            {/* Row 1: Actions Toolbar */}
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <button
+                type="button"
+                aria-pressed={film.shortlisted}
+                disabled={shortlist.isPending}
+                onClick={() => shortlist.mutate({ tmdbId, save: !film.shortlisted })}
+                title={film.shortlisted ? 'On your shortlist' : 'Add to shortlist'}
+                aria-label={film.shortlisted ? 'On your shortlist' : 'Add to shortlist'}
+                className={`flex h-7 items-center gap-1 rounded-full border px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+                  film.shortlisted
+                    ? 'border-accent/40 bg-accent/15 text-accent-strong'
+                    : 'border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:text-white'
+                }`}
+              >
+                <BookmarkIcon filled={film.shortlisted} className="size-3.5" />
+                <span className="hidden sm:inline">
+                  {film.shortlisted ? 'Shortlisted' : 'Shortlist'}
+                </span>
+              </button>
+
+              {!me?.is_child && (children.data?.length ?? 0) > 0 && (
+                <AssignToChildButton
+                  tmdbId={tmdbId}
+                  title={film.title}
+                  assigned={film.assigned_children ?? []}
+                  childProfiles={children.data ?? []}
+                  compact
+                />
+              )}
+
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close dialog"
+                className="flex size-7 items-center justify-center rounded-full text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor" className="size-4" aria-hidden="true">
+                  <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Row 2: Streaming Dock (pure icons only, no "STREAM ON:" text) */}
+            <StreamingDock
+              film={film}
+              onNavigateToWhereToWatch={() => {
+                document.getElementById('where-to-watch')?.scrollIntoView({ behavior: 'smooth' })
+              }}
+            />
+
+            {/* Row 3: Rating Controls anchored right below Stream section */}
+            <RatingHeaderDock tmdbId={tmdbId} />
+          </div>
         </div>
       </div>
 
-      <RatePicker tmdbId={tmdbId} compact className="mt-4" />
+      {/* Scrollable Body */}
+      <div className="flex-1 space-y-5 overflow-y-auto p-4 sm:p-5">
+        {/* The Bad & The Good split card (rendered when reaction is present) */}
+        <SentimentTagsCard tmdbId={tmdbId} />
 
-      <WhySection film={film} onSelectFilm={onSelectFilm} searchingTitle={searchingTitle} />
+        {/* Why section */}
+        <WhySection film={film} onSelectFilm={onSelectFilm} searchingTitle={searchingTitle} />
 
-      <ClashSection film={film} />
+        {/* Clash section */}
+        <ClashSection film={film} />
 
-      {!film.explanation && film.overview && (
-        <p className="mt-5 text-sm leading-relaxed text-white/75">{film.overview}</p>
-      )}
-
-      <dl className="mt-4 space-y-2 text-sm">
-        {film.directors.length > 0 && (
-          <div className="flex flex-wrap items-baseline gap-1.5">
-            <dt className="text-white/45">Directed by</dt>
-            <dd className="flex flex-wrap gap-1.5">
-              {film.directors.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => onSelectPerson?.(p.id)}
-                  className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-white/90 hover:border-accent/40 hover:bg-accent/10 hover:text-accent transition-colors"
-                >
-                  {p.name}
-                </button>
-              ))}
-            </dd>
-          </div>
+        {/* Tagline & Overview */}
+        {film.tagline && <p className="text-sm italic text-white/70">{film.tagline}</p>}
+        {!film.explanation && film.overview && (
+          <p className="text-sm leading-relaxed text-white/75">{film.overview}</p>
         )}
-        {film.cast.length > 0 && (
-          <div className="flex flex-wrap items-baseline gap-1.5">
-            <dt className="text-white/45">Starring</dt>
-            <dd className="flex flex-wrap gap-1.5">
-              {film.cast.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => onSelectPerson?.(p.id)}
-                  className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-white/90 hover:border-accent/40 hover:bg-accent/10 hover:text-accent transition-colors"
-                >
-                  {p.name}
-                </button>
-              ))}
-            </dd>
-          </div>
-        )}
-      </dl>
 
-      <Chips genres={film.genres} moods={film.moods} className="mt-4" />
-
-      <WhereToWatch film={film} />
-
-      {shortlist.error && (
-        <div className="mt-4">
-          <ErrorText>{shortlist.error.message}</ErrorText>
-        </div>
-      )}
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="ghost"
-            aria-pressed={film.shortlisted}
-            disabled={shortlist.isPending}
-            onClick={() => shortlist.mutate({ tmdbId, save: !film.shortlisted })}
-            className={film.shortlisted ? 'text-accent-strong!' : undefined}
-          >
-            <BookmarkIcon filled={film.shortlisted} className="mr-1.5 inline size-4 align-[-3px]" />
-            {film.shortlisted ? 'On your shortlist' : 'Add to shortlist'}
-          </Button>
-          {!me?.is_child && (children.data?.length ?? 0) > 0 && (
-            <AssignToChildButton
-              tmdbId={tmdbId}
-              title={film.title}
-              assigned={film.assigned_children ?? []}
-              childProfiles={children.data ?? []}
-            />
+        {/* Directors & Cast */}
+        <dl className="space-y-2 text-sm">
+          {film.directors.length > 0 && (
+            <div className="flex flex-wrap items-baseline gap-1.5">
+              <dt className="text-white/45">Directed by</dt>
+              <dd className="flex flex-wrap gap-1.5">
+                {film.directors.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => onSelectPerson?.(p.id)}
+                    className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-white/90 transition-colors hover:border-accent/40 hover:bg-accent/10 hover:text-accent"
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </dd>
+            </div>
           )}
+          {film.cast.length > 0 && (
+            <div className="flex flex-wrap items-baseline gap-1.5">
+              <dt className="text-white/45">Starring</dt>
+              <dd className="flex flex-wrap gap-1.5">
+                {film.cast.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => onSelectPerson?.(p.id)}
+                    className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs font-medium text-white/90 transition-colors hover:border-accent/40 hover:bg-accent/10 hover:text-accent"
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </dd>
+            </div>
+          )}
+        </dl>
+
+        {/* Genres & Moods */}
+        <Chips genres={film.genres} moods={film.moods} />
+
+        {/* Full Where to Watch Section */}
+        <div id="where-to-watch">
+          <WhereToWatch film={film} />
         </div>
-        <Button onClick={onClose}>Close</Button>
+
+        {shortlist.error && (
+          <div>
+            <ErrorText>{shortlist.error.message}</ErrorText>
+          </div>
+        )}
+
+        <div className="flex justify-end pt-2">
+          <Button variant="ghost" onClick={onClose} className="text-xs text-white/50 hover:text-white">
+            Close
+          </Button>
+        </div>
       </div>
     </div>
   )
-}
-
-function seenText(_seen: NonNullable<TitleDetail['seen']>): string {
-  return 'You’ve seen it'
 }
 
 function renderFitExplanation(explanation: string) {

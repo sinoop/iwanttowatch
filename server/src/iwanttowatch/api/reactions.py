@@ -39,6 +39,7 @@ class TitleReaction(BaseModel):
     year: int | None
     poster_path: str | None
     reaction: Reaction | None
+    watched: bool = False
     tags: list[str]
     note: str | None
     # What to offer for "What did you like most?" and "What didn't work?".
@@ -47,7 +48,8 @@ class TitleReaction(BaseModel):
 
 
 class ReactionUpdate(BaseModel):
-    reaction: Reaction
+    reaction: Reaction | None = None
+    watched: bool = True
     tags: list[str] = Field(default_factory=list, max_length=MAX_TAGS)
     # Replaces the stored note; blank clears it.
     note: str = Field("", max_length=MAX_NOTE)
@@ -104,6 +106,7 @@ def _out(title: Title, entry: UserTitle | None) -> TitleReaction:
         year=title.year,
         poster_path=title.poster_path,
         reaction=reaction,
+        watched=bool(entry and entry.watched),
         tags=selected,
         note=entry.note if entry and entry.reaction else None,
         liked_tags=options(True),
@@ -133,12 +136,13 @@ def set_reaction(
         entry = UserTitle(user_id=user.id, tmdb_id=tmdb_id, source=SOURCE)
         session.add(entry)
     today = date.today()
-    entry.reaction, entry.tags = body.reaction, tags
-    entry.note = body.note.strip() or None
-    entry.rated_at = today
-    entry.watched = True
+    entry.reaction = body.reaction
+    entry.tags = tags if body.reaction else []
+    entry.note = (body.note.strip() or None) if body.reaction else None
+    entry.rated_at = today if body.reaction else None
+    entry.watched = body.watched
     entry.watched_at = entry.watched_at or today
-    entry.rating = REACTION_FALLBACK[body.reaction]
+    entry.rating = REACTION_FALLBACK[body.reaction] if body.reaction else None
     # Scores this reaction, and re-scores earlier ones, against the user's current scale.
     refresh_reaction_ratings(session, user.id)
     session.commit()

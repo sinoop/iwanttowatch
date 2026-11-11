@@ -237,16 +237,32 @@ export function useReaction(tmdbId: number) {
     },
   })
   const save = useMutation({
-    mutationFn: async (body: { reaction: Reaction; tags: string[]; note: string }) => {
+    mutationFn: async (body: { reaction?: Reaction | null; watched?: boolean; tags?: string[]; note?: string }) => {
       const { data, error } = await api.PUT('/api/v1/titles/{tmdb_id}/reaction', {
         params: { path: { tmdb_id: tmdbId } },
-        body,
+        body: {
+          reaction: body.reaction ?? null,
+          watched: body.watched ?? true,
+          tags: body.tags ?? [],
+          note: body.note ?? '',
+        },
       })
       if (error) throw new Error(errorMessage(error))
       return data
     },
     // Show the choice at once; the server's answer replaces it.
-    onMutate: (body) => queryClient.setQueryData<TitleReaction>(key, (old) => old && { ...old, ...body }),
+    onMutate: (body) =>
+      queryClient.setQueryData<TitleReaction>(key, (old) =>
+        old
+          ? {
+              ...old,
+              reaction: body.reaction !== undefined ? body.reaction : old.reaction,
+              watched: body.watched !== undefined ? body.watched : true,
+              tags: body.tags ?? old.tags,
+              note: body.note !== undefined ? (body.note || null) : old.note,
+            }
+          : undefined,
+      ),
     onSuccess: (data) => {
       queryClient.setQueryData(key, data)
       refreshAfterReaction(queryClient, tmdbId)
@@ -270,7 +286,7 @@ export function useQuickRate() {
     mutationFn: async ({ tmdbId, reaction }: { tmdbId: number; reaction: Reaction }) => {
       const { data, error } = await api.PUT('/api/v1/titles/{tmdb_id}/reaction', {
         params: { path: { tmdb_id: tmdbId } },
-        body: { reaction, tags: [], note: '' },
+        body: { reaction, watched: true, tags: [], note: '' },
       })
       if (error) throw new Error(errorMessage(error))
       return data
