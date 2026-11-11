@@ -68,10 +68,11 @@ or concept) and give an honest reality check (runtime, tonal detours, or pacing 
 Mention at most one film title or name, taken only from the summary: never invent names. \
 Speak to them as "you".
 
-Also provide structured "themes and values" notes in three bullet points:
+Also provide structured "themes and values" notes in four bullet points:
 - Values: <maximum of 3 or 4 keywords>
+- Real story: <is this based on a real story or true events? answer under 15 words, or "No">
 - Remake: <is this a remake of any of the films they watched already or any popular movies \
-from another language? answer under 15 words>
+from another language? answer under 15 words, or "No">
 - Other famous films: <famous other films by the same director or writer, as a comma-separated \
 list under 20 words>
 
@@ -79,6 +80,7 @@ Format your entire reply as:
 <one or two short sentences on fit>
 
 - Values: <keywords>
+- Real story: <answer>
 - Remake: <answer>
 - Other famous films: <comma-separated titles>
 
@@ -445,10 +447,11 @@ def explain_match(
     title: Title,
     llm: LlmProvider,
     reasons: Sequence[str] | None = None,
+    force: bool = False,
 ) -> str:
     """The LLM's answer to "Why this?" for a film, written once per user and film."""
     cached = session.get(Explanation, (user_id, title.tmdb_id))
-    if cached is not None:
+    if cached is not None and not force:
         return cached.text
     about = [str(title.year or "?"), title.original_language, *title.genres]
     if title.runtime:
@@ -496,7 +499,10 @@ def explain_match(
         cut = fit[:MAX_EXPLANATION_LENGTH]
         end = max(cut.rfind(mark) for mark in (". ", "! ", "? "))
         fit = cut[: end + 1] if end > 0 else cut.rsplit(" ", 1)[0] + "…"
-    session.add(Explanation(user_id=user_id, tmdb_id=title.tmdb_id, text=fit))
+    if cached is not None:
+        cached.text = fit
+    else:
+        session.add(Explanation(user_id=user_id, tmdb_id=title.tmdb_id, text=fit))
     if themes_note:
         title.themes_note = themes_note
     session.commit()

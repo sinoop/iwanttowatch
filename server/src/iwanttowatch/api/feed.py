@@ -740,7 +740,12 @@ def write_title_themes(
 
 @router.post("/titles/{tmdb_id}/why")
 def explain_title(
-    tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
+    tmdb_id: int,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+    tmdb: Tmdb,
+    force: bool = False,
 ) -> TitleDetail:
     """Ask the configured LLM how well this film fits the user's taste; asked once."""
     title = load_title(session, request, tmdb_id)
@@ -754,7 +759,7 @@ def explain_title(
     watched = rated is not None or title.tmdb_id in seen(session, user.id)
     _, reasons = _match_and_reasons(session, user, title, watched)
     try:
-        explain_match(session, user.id, title, llm, reasons=reasons)
+        explain_match(session, user.id, title, llm, reasons=reasons, force=force)
     except LlmError as error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
     return _title_detail(session, user, tmdb, title)

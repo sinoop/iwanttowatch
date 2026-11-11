@@ -167,6 +167,7 @@ def test_themes_note_is_written_by_the_llm_and_cached_per_film(
         prompts.append(body["contents"][0]["parts"][0]["text"])
         return gemini_reply(
             "- Values: Brotherhood, kindness, forgiveness\n"
+            "- Real story: No\n"
             "- Remake: No, original film.\n"
             "- Other famous films: None (directorial debut)."
         )
@@ -181,6 +182,7 @@ def test_themes_note_is_written_by_the_llm_and_cached_per_film(
     assert detail["certificate"] == "U/A 7+"
     assert (
         detail["themes_note"] == "- Values: Brotherhood, kindness, forgiveness\n"
+        "- Real story: No\n"
         "- Remake: No, original film.\n"
         "- Other famous films: None (directorial debut)."
     )

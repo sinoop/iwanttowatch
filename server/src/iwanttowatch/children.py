@@ -19,19 +19,21 @@ UNRATED = frozenset({"", "NR", "UNRATED", "NOT RATED", "N/A"})
 
 THEMES_SYSTEM = """\
 You write brief, structured "themes and values" notes for films in bullet point format. \
-Answer with exactly three bullet points (each starting with a hyphen "- "), answering \
+Answer with exactly four bullet points (each starting with a hyphen "- "), answering \
 these questions in order:
 - What values does this film show ? (provide maximum of 3 or 4 keywords)
+- Is this based on a real story ? (answer under 15 words, or "No")
 - Is this a remake of any of the films I watched already or any other popular movies from \
-another language ? (answer under 15 words)
+another language ? (answer under 15 words, or "No")
 - What are the famous other films by the same director / writer (answer under 20 words)
 
-Format the three bullet points as:
+Format the four bullet points as:
 - Values: <maximum of 3 or 4 keywords>
-- Remake: <answer under 15 words>
+- Real story: <answer under 15 words, or "No">
+- Remake: <answer under 15 words, or "No">
 - Other famous films: <answer under 20 words>
 
-Be factual, concise, and specific. Plain text only: exactly three bullet points starting \
+Be factual, concise, and specific. Plain text only: exactly four bullet points starting \
 with "- ", no markdown headings, no intro or outro."""
 
 

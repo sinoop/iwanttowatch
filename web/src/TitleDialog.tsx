@@ -176,7 +176,9 @@ function Details({
 
       <ClashSection film={film} />
 
-      {film.overview && <p className="mt-5 text-sm leading-relaxed text-white/75">{film.overview}</p>}
+      {!film.explanation && film.overview && (
+        <p className="mt-5 text-sm leading-relaxed text-white/75">{film.overview}</p>
+      )}
 
       <dl className="mt-4 space-y-2 text-sm">
         {film.directors.length > 0 && (
@@ -271,7 +273,10 @@ function WhySection({
   const ask = useMutation({
     mutationFn: async () => {
       const { data, error } = await api.POST('/api/v1/titles/{tmdb_id}/why', {
-        params: { path: { tmdb_id: film.tmdb_id } },
+        params: {
+          path: { tmdb_id: film.tmdb_id },
+          query: { force: Boolean(film.explanation) },
+        },
       })
       if (error) throw new Error(errorMessage(error))
       return data
@@ -282,8 +287,11 @@ function WhySection({
   const nonAiReasons = film.reasons.filter((r) => !r.startsWith('AI'))
   const reasonsToShow = film.explanation ? nonAiReasons : film.reasons
   const hasAiNote = Boolean(film.explanation || film.themes_note)
+  const renderedThemes = film.themes_note
+    ? renderThemesNote(film.themes_note, onSelectFilm, searchingTitle)
+    : null
   const hasContent = Boolean(
-    film.explanation || film.themes_note || film.reasons.length > 0 || (llmConfigured && !aiReviewed)
+    film.explanation || renderedThemes || film.reasons.length > 0 || (llmConfigured && !aiReviewed)
   )
 
   if (!hasContent) return null
@@ -299,14 +307,24 @@ function WhySection({
         )}
       </div>
 
+      {film.explanation && film.overview && (
+        <p className="mt-2 text-sm leading-relaxed text-white/80">{film.overview}</p>
+      )}
+
       {film.explanation && (
-        <p className="mt-1.5 text-sm leading-relaxed text-white/70">{film.explanation}</p>
+        <p
+          className={`text-sm leading-relaxed text-white/70 ${
+            film.overview ? 'mt-3 border-t border-white/5 pt-2.5' : 'mt-1.5'
+          }`}
+        >
+          {film.explanation}
+        </p>
       )}
 
       {reasonsToShow.length > 0 && (
         <ul
           className={`list-disc space-y-1 pl-5 text-sm text-white/65 ${
-            film.explanation ? 'mt-3 border-t border-white/5 pt-2.5' : 'mt-1.5'
+            film.explanation || film.overview ? 'mt-3 border-t border-white/5 pt-2.5' : 'mt-1.5'
           }`}
         >
           {reasonsToShow.map((r) => (
@@ -315,27 +333,37 @@ function WhySection({
         </ul>
       )}
 
-      {film.themes_note && (
+      {renderedThemes && (
         <div
           className={`${
-            film.explanation || reasonsToShow.length > 0
+            film.explanation || reasonsToShow.length > 0 || (film.explanation && film.overview)
               ? 'mt-3 border-t border-white/5 pt-2.5'
               : 'mt-1.5'
           }`}
         >
-          {renderThemesNote(film.themes_note, onSelectFilm, searchingTitle)}
+          {renderedThemes}
         </div>
       )}
 
-      {!film.explanation && llmConfigured && !aiReviewed && (
-        <div className={reasonsToShow.length > 0 || film.themes_note ? 'mt-3' : 'mt-2'}>
+      {llmConfigured && (!aiReviewed || film.explanation) && (
+        <div
+          className={
+            reasonsToShow.length > 0 || renderedThemes || film.explanation
+              ? 'mt-3 border-t border-white/5 pt-2.5'
+              : 'mt-2'
+          }
+        >
           <Button
             variant="ghost"
             className="border border-white/10 px-3 py-1 text-xs"
             onClick={() => ask.mutate()}
             disabled={ask.isPending}
           >
-            {ask.isPending ? 'Asking the AI…' : 'Why this? Ask the AI'}
+            {ask.isPending
+              ? 'Asking the AI…'
+              : film.explanation
+                ? 'Rerun Why it suits you'
+                : 'Why this? Ask the AI'}
           </Button>
           {ask.error && (
             <div className="mt-2">
@@ -471,6 +499,27 @@ function OtherFilmsLinks({
   )
 }
 
+function isRealStoryNegative(value: string): boolean {
+  const v = value.trim().toLowerCase().replace(/^[.,;:\s]+|[.,;:\s]+$/g, '')
+  if (!v) return true
+  if (v === 'no' || v === 'none' || v === 'n/a' || v === 'false') return true
+  if (/^no\b/i.test(v)) return true
+  if (/^(not based|not a real|not real|untrue)\b/i.test(v)) return true
+  if (/^fiction(al)?\b/i.test(v)) return true
+  if (v.includes('fictional') && !v.includes('based on') && !v.includes('true event')) return true
+  return false
+}
+
+function isRemakeNegative(value: string): boolean {
+  const v = value.trim().toLowerCase().replace(/^[.,;:\s]+|[.,;:\s]+$/g, '')
+  if (!v) return true
+  if (v === 'no' || v === 'none' || v === 'n/a' || v === 'false') return true
+  if (/^no\b/i.test(v)) return true
+  if (/^original\b/i.test(v)) return true
+  if (/^not a remake\b/i.test(v) || /^not remake\b/i.test(v)) return true
+  return false
+}
+
 function renderThemesNote(
   note: string,
   onSelectFilm?: (title: string) => void,
@@ -482,28 +531,46 @@ function renderThemesNote(
     .filter(Boolean)
   const isBulletList = lines.some((l) => /^[•\-*]\s+/.test(l))
   if (isBulletList) {
+    const items = lines
+      .map((line, idx) => {
+        const content = line.replace(/^[•\-*]\s+/, '')
+        const match = content.match(/^(\*\*[^*]+?\*\*|[^:]+?:)\s*(.*)$/)
+        if (!match) return { key: idx, raw: content }
+        const rawLabel = match[1].replace(/^\*\*|\*\*$/g, '').trim()
+        const label = rawLabel.endsWith(':') ? rawLabel : `${rawLabel}:`
+        const value = match[2].trim()
+        const lower = rawLabel.toLowerCase().replace(/:$/, '')
+        if ((lower.includes('real story') || lower.includes('true story')) && isRealStoryNegative(value)) {
+          return null
+        }
+        if (lower.includes('remake') && isRemakeNegative(value)) {
+          return null
+        }
+        const isOtherFilms = lower.includes('other famous films')
+        return { key: idx, label, value, isOtherFilms }
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+
+    if (items.length === 0) return null
+
     return (
       <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-white/70">
-        {lines.map((line, idx) => {
-          const content = line.replace(/^[•\-*]\s+/, '')
-          const match = content.match(/^(\*\*[^*]+?\*\*|[^:]+?:)\s*(.*)$/)
-          if (match) {
-            const label = match[1].replace(/^\*\*|\*\*$/g, '')
-            const value = match[2]
-            const isOtherFilms = label.toLowerCase().includes('other famous films')
-            return (
-              <li key={idx}>
-                <span className="font-medium text-white/90">{label}</span>{' '}
-                {isOtherFilms && onSelectFilm ? (
-                  <OtherFilmsLinks text={value} onSelect={onSelectFilm} searchingTitle={searchingTitle} />
+        {items.map((item) => (
+          <li key={item.key}>
+            {'raw' in item ? (
+              item.raw
+            ) : (
+              <>
+                <span className="font-medium text-white/90">{item.label}</span>{' '}
+                {item.isOtherFilms && onSelectFilm ? (
+                  <OtherFilmsLinks text={item.value} onSelect={onSelectFilm} searchingTitle={searchingTitle} />
                 ) : (
-                  value
+                  item.value
                 )}
-              </li>
-            )
-          }
-          return <li key={idx}>{content}</li>
-        })}
+              </>
+            )}
+          </li>
+        ))}
       </ul>
     )
   }

@@ -282,6 +282,10 @@ def test_the_ai_tags_moods_explains_and_answers_requests(
     assert client.get("/api/v1/titles/301").json()["explanation"] == explanation
     client.post("/api/v1/titles/301/why")
     assert len(prompts["why"]) == 1
+    # Forcing a rerun asks the AI again.
+    forced = client.post("/api/v1/titles/301/why?force=true").json()
+    assert forced["explanation"] == explanation
+    assert len(prompts["why"]) == 2
     # A long answer keeps its whole sentences, never a cut-off one.
     long = client.post("/api/v1/titles/401/why").json()["explanation"]
     assert long == f"{LONG_SENTENCE} {LONG_SENTENCE}"
@@ -639,6 +643,7 @@ def test_explain_match_includes_reasons_and_metadata(client: TestClient) -> None
         assert len(captured) == 1
         system, prompt = captured[0]
         assert "well a film fits their taste" in system
+        assert "Real story:" in system
         assert "164 min" in prompt
         assert "Mood / Feel: Mind-bending, Thrilling" in prompt
         assert "Recommender match reasons: Like Maanaadu, which you rated highly" in prompt

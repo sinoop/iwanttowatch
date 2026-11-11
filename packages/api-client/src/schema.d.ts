@@ -5176,7 +5176,9 @@ export interface operations {
     };
     explain_title_api_v1_titles__tmdb_id__why_post: {
         parameters: {
-            query?: never;
+            query?: {
+                force?: boolean;
+            };
             header?: never;
             path: {
                 tmdb_id: number;
