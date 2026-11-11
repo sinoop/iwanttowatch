@@ -528,3 +528,185 @@ def test_declutter_unplayable_in_jellyfin(
     assert del_data["deleted_count"] == 1
     assert del_data["freed_bytes"] == 16000000000
     assert 303 not in fake_radarr.movies
+
+
+def test_declutter_jellyfin_unmatched_items_self_heal_and_not_unplayable(
+    client: TestClient, fake_radarr: FakeRadarr, mock: respx.MockRouter
+) -> None:
+    _setup_radarr(client)
+
+    # Mock Jellyfin
+    fake_jf = FakeJellyfin()
+    mock.route(host="jellyfin.test").mock(side_effect=fake_jf)
+    client.put(
+        "/api/v1/settings/jellyfin",
+        json={"url": JELLYFIN, "api_key": JELLYFIN_API_KEY},
+    )
+
+    # Radarr has 4 movies with files on disk:
+    # 304: "Enola Holmes" (2020)
+    fake_radarr.movies[304] = {
+        "id": 41,
+        "title": "Enola Holmes",
+        "tmdbId": 304,
+        "year": 2020,
+        "hasFile": True,
+        "monitored": True,
+        "sizeOnDisk": 10000000000,
+    }
+    # 305: "Knives Out" (2019)
+    fake_radarr.movies[305] = {
+        "id": 42,
+        "title": "Knives Out",
+        "tmdbId": 305,
+        "year": 2019,
+        "hasFile": True,
+        "monitored": True,
+        "sizeOnDisk": 8000000000,
+    }
+    # 306: "Live Free or Die Hard" (2007)
+    fake_radarr.movies[306] = {
+        "id": 43,
+        "title": "Live Free or Die Hard",
+        "tmdbId": 306,
+        "year": 2007,
+        "hasFile": True,
+        "monitored": True,
+        "sizeOnDisk": 12000000000,
+    }
+    # 307: Truly missing / corrupt movie (not in Jellyfin at all)
+    fake_radarr.movies[307] = {
+        "id": 44,
+        "title": "Truly Missing Film",
+        "tmdbId": 307,
+        "year": 2023,
+        "hasFile": True,
+        "monitored": True,
+        "sizeOnDisk": 15000000000,
+    }
+
+    app = client.app
+    engine = app.state.engine  # type: ignore[attr-defined]
+    with Session(engine) as session:
+        admin_user = session.scalars(select(User).where(User.username == "riya")).one()
+        admin_id = admin_user.id
+
+        session.merge(
+            Title(
+                tmdb_id=304,
+                title="Enola Holmes",
+                original_title="Enola Holmes",
+                original_language="en",
+                year=2020,
+                runtime=123,
+            )
+        )
+        session.merge(
+            Title(
+                tmdb_id=305,
+                title="Knives Out",
+                original_title="Knives Out",
+                original_language="en",
+                year=2019,
+                runtime=130,
+            )
+        )
+        session.merge(
+            Title(
+                tmdb_id=306,
+                title="Live Free or Die Hard",
+                original_title="Live Free or Die Hard",
+                original_language="en",
+                year=2007,
+                runtime=128,
+                alternative_titles=["Die Hard 4.0", "Die Hard 4"],
+            )
+        )
+        session.merge(
+            Title(
+                tmdb_id=307,
+                title="Truly Missing Film",
+                original_title="Truly Missing Film",
+                original_language="en",
+                year=2023,
+                runtime=95,
+            )
+        )
+
+        # In Jellyfin, items are present but were previously stored with tmdb_id = None
+        # 1. Enola Holmes (clean title + year)
+        session.merge(
+            LibraryItem(
+                user_id=admin_id,
+                item_id="jf-304",
+                tmdb_id=None,
+                name="Enola Holmes (2020)",
+                year=2020,
+                played=True,
+                last_played=date(2026, 10, 1),
+            )
+        )
+        # 2. Knives Out (scene-release filename with dots and year tags)
+        session.merge(
+            LibraryItem(
+                user_id=admin_id,
+                item_id="jf-305",
+                tmdb_id=None,
+                name="Knives.Out.2019.1080p.BluRay.x264",
+                year=None,
+                played=False,
+            )
+        )
+        # 3. Die Hard 4.0 (matched via alternative titles on Title model)
+        session.merge(
+            LibraryItem(
+                user_id=admin_id,
+                item_id="jf-306",
+                tmdb_id=None,
+                name="Die Hard 4.0",
+                year=2007,
+                played=False,
+            )
+        )
+        session.commit()
+
+    # Call declutter inspection
+    res = client.get("/api/v1/library/declutter")
+    assert res.status_code == 200
+    data = res.json()
+
+    candidates = {item["tmdb_id"]: item for item in data["items"]}
+
+    # Only 307 (truly missing) should be flagged as unplayable!
+    assert 307 in candidates
+    assert candidates[307]["category"] == "unplayable"
+
+    # 304, 305, 306 are in Jellyfin and must NOT be marked unplayable
+    assert 304 not in candidates
+    assert 305 not in candidates
+    assert 306 not in candidates
+
+    # Verify self-healing in database: LibraryItem records now have tmdb_id populated
+    with Session(engine) as session:
+        li_304 = session.scalar(select(LibraryItem).where(LibraryItem.item_id == "jf-304"))
+        assert li_304 is not None
+        assert li_304.tmdb_id == 304
+
+        li_305 = session.scalar(select(LibraryItem).where(LibraryItem.item_id == "jf-305"))
+        assert li_305 is not None
+        assert li_305.tmdb_id == 305
+
+        li_306 = session.scalar(select(LibraryItem).where(LibraryItem.item_id == "jf-306"))
+        assert li_306 is not None
+        assert li_306.tmdb_id == 306
+
+        # Also verify UserTitle merged for played item 304
+        ut_304 = session.scalar(
+            select(UserTitle).where(
+                UserTitle.user_id == admin_id,
+                UserTitle.tmdb_id == 304,
+                UserTitle.source == "jellyfin",
+            )
+        )
+        assert ut_304 is not None
+        assert ut_304.watched is True

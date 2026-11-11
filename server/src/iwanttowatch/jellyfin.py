@@ -9,7 +9,6 @@ can't record anything Jellyfin doesn't report.
 import contextlib
 import logging
 import queue
-import re
 import threading
 import time
 from collections import defaultdict
@@ -22,7 +21,12 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from iwanttowatch import __version__
-from iwanttowatch.catalog import LOOKUP_CACHE, ensure_title, find_by_title
+from iwanttowatch.catalog import (
+    LOOKUP_CACHE,
+    clean_media_title_and_year,
+    ensure_title,
+    find_by_title,
+)
 from iwanttowatch.db import utcnow
 from iwanttowatch.models import ConnectorStatus, LibraryItem, User, UserTitle, get_setting
 from iwanttowatch.tmdb import TmdbClient, TmdbError, TmdbNotFound
@@ -162,7 +166,9 @@ def sync_user(
     # Matches made before, for any user, so titles without provider IDs are searched once.
     matches = {
         item_id: tmdb_id
-        for item_id, tmdb_id in session.execute(select(LibraryItem.item_id, LibraryItem.tmdb_id))
+        for item_id, tmdb_id in session.execute(
+            select(LibraryItem.item_id, LibraryItem.tmdb_id).where(LibraryItem.tmdb_id.is_not(None))
+        )
     }
     touched: set[int] = set()
     seen: set[str] = set()
@@ -198,22 +204,25 @@ def sync_user(
 def _match(tmdb: TmdbClient, data: dict[str, Any], previous: int | None) -> int | None:
     """The item's TMDb ID: from its provider IDs, an earlier match, IMDb, or its title.
 
-    previous is -1 for an item never seen before.
+    previous is -1 for an item never seen before, or None if previously unmatched.
     """
     ids = {k.lower(): v for k, v in (data.get("ProviderIds") or {}).items() if v}
-    if str(ids.get("tmdb", "")).isdigit():
-        return int(ids["tmdb"])
-    if previous != -1:
+    tmdb_val = ids.get("tmdb") or ids.get("themoviedb")
+    if tmdb_val is not None and str(tmdb_val).isdigit():
+        return int(tmdb_val)
+    if previous is not None and previous != -1:
         return previous
     if imdb_id := ids.get("imdb"):
         found = tmdb.get(f"/find/{imdb_id}", {"external_source": "imdb_id"}, LOOKUP_CACHE)
         if found["movie_results"]:
             return int(found["movie_results"][0]["id"])
     # Without online metadata Jellyfin names items after their folder, e.g. "Premam (2015)".
-    name = re.sub(r"\s*(\[[^\]]*\]|\(\d{4}\))", "", str(data.get("Name") or "")).strip()
-    if not name:
+    raw_name = str(data.get("Name") or "")
+    clean_name, extracted_year = clean_media_title_and_year(raw_name)
+    year = data.get("ProductionYear") or extracted_year
+    if not clean_name:
         return None
-    tmdb_id, _candidates = find_by_title(tmdb, name, data.get("ProductionYear"))
+    tmdb_id, _candidates = find_by_title(tmdb, clean_name, year)
     return tmdb_id
 
 

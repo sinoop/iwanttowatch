@@ -24,9 +24,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from iwanttowatch.availability import availability, watchable
+from iwanttowatch.catalog import clean_media_title_and_year, normalise_title
 from iwanttowatch.children import library_owners
 from iwanttowatch.jellyfin import (
     STATUS_KEY as JELLYFIN_STATUS,
+)
+from iwanttowatch.jellyfin import (
+    _merge_history,
 )
 from iwanttowatch.jellyfin import (
     client_from_settings as jellyfin_client_from_settings,
@@ -200,13 +204,70 @@ def inspect_declutter_candidates(
         owners = list(session.scalars(select(User.id).where(User.is_child.is_(False))))
     else:
         owners = library_owners(session, user)
-    lib_items = session.scalars(
-        select(LibraryItem).where(LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id.is_not(None))
-    ).all()
+    lib_items = list(
+        session.scalars(select(LibraryItem).where(LibraryItem.user_id.in_(owners))).all()
+    )
     lib_by_tmdb: dict[int, list[LibraryItem]] = defaultdict(list)
+    unmatched_lib_items: list[LibraryItem] = []
     for li in lib_items:
         if li.tmdb_id:
             lib_by_tmdb[li.tmdb_id].append(li)
+        else:
+            unmatched_lib_items.append(li)
+
+    db_updated = False
+    if unmatched_lib_items and radarr_movies:
+        radarr_by_title_year: dict[tuple[str, int], int] = {}
+        radarr_by_title: dict[str, list[tuple[int, int | None]]] = defaultdict(list)
+        for tid, rm in radarr_movies.items():
+            rm_year = rm.get("year")
+            titles_to_index = {rm.get("title"), rm.get("cleanTitle"), rm.get("originalTitle")}
+            for t_raw in titles_to_index:
+                if not t_raw:
+                    continue
+                c_title, _ = clean_media_title_and_year(str(t_raw))
+                norm_t = normalise_title(c_title)
+                if not norm_t:
+                    continue
+                if rm_year:
+                    radarr_by_title_year[(norm_t, rm_year)] = tid
+                radarr_by_title[norm_t].append((tid, rm_year))
+
+        still_unmatched: list[LibraryItem] = []
+        for li in unmatched_lib_items:
+            clean_name, extracted_year = clean_media_title_and_year(li.name)
+            norm_name = normalise_title(clean_name)
+            li_year = li.year or extracted_year
+            matched_tid: int | None = None
+
+            if norm_name:
+                if li_year:
+                    for y in (li_year, li_year - 1, li_year + 1):
+                        if (norm_name, y) in radarr_by_title_year:
+                            matched_tid = radarr_by_title_year[(norm_name, y)]
+                            break
+                if matched_tid is None and norm_name in radarr_by_title:
+                    candidates = radarr_by_title[norm_name]
+                    if li_year:
+                        year_matches = [
+                            cid
+                            for cid, cy in candidates
+                            if cy is not None and abs(cy - li_year) <= 1
+                        ]
+                        if len(year_matches) == 1:
+                            matched_tid = year_matches[0]
+                    elif len(candidates) == 1:
+                        matched_tid = candidates[0][0]
+
+            if matched_tid is not None:
+                li.tmdb_id = matched_tid
+                lib_by_tmdb[matched_tid].append(li)
+                db_updated = True
+                if li.played or li.favorite:
+                    _merge_history(session, tmdb, li.user_id, matched_tid)
+            else:
+                still_unmatched.append(li)
+        unmatched_lib_items = still_unmatched
 
     jellyfin_client = jellyfin_client_from_settings(session)
     jellyfin_configured = jellyfin_client is not None
@@ -409,14 +470,59 @@ def inspect_declutter_candidates(
             low_match_reasons.append(f"Predicted match only {user_match_pct}% · Unwatched on disk")
 
         # --- 5. Unplayable in Jellyfin ---
+        on_jellyfin = tmdb_id in lib_by_tmdb
+        if not on_jellyfin and unmatched_lib_items:
+            cand_year = (
+                title_obj.year
+                if title_obj
+                else (radarr_movie.get("year") if radarr_movie else None)
+            )
+            cand_titles: set[str] = set()
+            if title_obj:
+                if title_obj.title:
+                    cand_titles.add(title_obj.title)
+                if title_obj.original_title:
+                    cand_titles.add(title_obj.original_title)
+                for alt in getattr(title_obj, "alternative_titles", []) or []:
+                    if alt:
+                        cand_titles.add(alt)
+            if radarr_movie:
+                if radarr_movie.get("title"):
+                    cand_titles.add(radarr_movie["title"])
+                if radarr_movie.get("originalTitle"):
+                    cand_titles.add(radarr_movie["originalTitle"])
+
+            matched_lis: list[LibraryItem] = []
+            for li in unmatched_lib_items:
+                c_name, ext_y = clean_media_title_and_year(li.name)
+                norm_li = normalise_title(c_name)
+                eff_li_year = li.year or ext_y
+                if not norm_li:
+                    continue
+                for ct in cand_titles:
+                    clean_ct, _ = clean_media_title_and_year(ct)
+                    norm_ct = normalise_title(clean_ct)
+                    if norm_li == norm_ct and (
+                        cand_year is None
+                        or eff_li_year is None
+                        or abs(eff_li_year - cand_year) <= 1
+                    ):
+                        matched_lis.append(li)
+                        break
+            if matched_lis:
+                for li in matched_lis:
+                    li.tmdb_id = tmdb_id
+                    lib_by_tmdb[tmdb_id].append(li)
+                    if li in unmatched_lib_items:
+                        unmatched_lib_items.remove(li)
+                    if li.played or li.favorite:
+                        _merge_history(session, tmdb, li.user_id, tmdb_id)
+                on_jellyfin = True
+                db_updated = True
+
         unplayable = False
         unplayable_reasons: list[str] = []
-        if (
-            has_jellyfin_data
-            and radarr_movie is not None
-            and size_bytes > 0
-            and tmdb_id not in lib_by_tmdb
-        ):
+        if has_jellyfin_data and radarr_movie is not None and size_bytes > 0 and not on_jellyfin:
             unplayable = True
             unplayable_reasons.append(
                 f"Present in Radarr ({format_bytes(size_bytes)}) but not found in Jellyfin "
@@ -568,6 +674,13 @@ def inspect_declutter_candidates(
         "bytes": ignored_bytes,
         "formatted": format_bytes(ignored_bytes),
     }
+
+    if db_updated:
+        try:
+            session.commit()
+        except Exception as err:
+            log.warning("Could not persist declutter Jellyfin item matches: %s", err)
+            session.rollback()
 
     return {
         "radarr_configured": radarr_configured,

@@ -226,16 +226,66 @@ def is_tv_show(tmdb: TmdbClient, name: str) -> bool:
 
 
 def _title_similarity(name: str, c: dict[str, Any]) -> float:
-    wanted = _normalise(name)
+    wanted = normalise_title(name)
     return max(
-        SequenceMatcher(None, wanted, _normalise(c[field])).ratio()
+        SequenceMatcher(None, wanted, normalise_title(c[field])).ratio()
         for field in ("title", "original_title")
     )
 
 
-def _normalise(title: str) -> str:
+def normalise_title(title: str) -> str:
     text = unicodedata.normalize("NFKD", title.casefold())
     text = "".join(ch for ch in text if not unicodedata.combining(ch)).replace("&", " and ")
     text = re.sub(r"[^\w\s]", " ", text)
     text = re.sub(r"^(the|a|an)\s+", "", text.strip())
     return " ".join(text.split())
+
+
+_normalise = normalise_title
+
+
+def clean_media_title_and_year(raw: str) -> tuple[str, int | None]:
+    """Extract a clean title and release year from media filenames or Jellyfin names.
+
+    Handles scene tags (.1080p, [4K], WEBRip), bracketed years like (2020) or [2020],
+    and dot/underscore separated names.
+    """
+    text = raw.strip()
+    is_scene_or_dot = bool(
+        re.search(r"\.(1080p|720p|2160p|4k|bluray|webrip|web-dl|x264|x265|dvdrip)\b", text, re.I)
+        or ("." in text and " " not in text)
+    )
+    if is_scene_or_dot:
+        text = text.replace(".", " ").replace("_", " ")
+
+    year: int | None = None
+    m_year = re.search(r"[\(\[]\s*(19\d\d|20\d\d)\s*[\)\]]", text)
+    if m_year:
+        year = int(m_year.group(1))
+        text = text[: m_year.start()] + " " + text[m_year.end() :]
+
+    text = re.sub(r"\[[^\]]*\]", " ", text)
+    text = re.sub(r"\([^\)]*\)", " ", text)
+
+    scene_match = re.search(
+        r"\b(1080p|720p|2160p|4k|uhd|bluray|webrip|web-dl|remux|h264|x264|h265|x265|hevc|dvdrip|aac|ac3|dts|flux|yify|rarbg)\b.*$",
+        text,
+        re.I,
+    )
+    if scene_match:
+        before_scene = text[: scene_match.start()].strip()
+        m_trailing_year = re.search(r"\b(19\d\d|20\d\d)$", before_scene)
+        if m_trailing_year:
+            if not year:
+                year = int(m_trailing_year.group(1))
+            before_scene = before_scene[: m_trailing_year.start()].strip()
+        text = before_scene
+    elif is_scene_or_dot:
+        words = text.split()
+        if len(words) > 1 and re.match(r"^(19\d\d|20\d\d)$", words[-1]):
+            if not year:
+                year = int(words[-1])
+            text = " ".join(words[:-1])
+
+    text = re.sub(r"\s+", " ", text).strip(" -_.:")
+    return text, year
