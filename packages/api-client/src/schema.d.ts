@@ -490,6 +490,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/search-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Catalog All Endpoint */
+        get: operations["search_catalog_all_endpoint_api_v1_catalog_search_all_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/persona": {
         parameters: {
             query?: never;
@@ -2782,6 +2799,17 @@ export interface components {
             /** Rated Films */
             rated_films?: components["schemas"]["PersonCredit"][];
         };
+        /** PersonCandidate */
+        PersonCandidate: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Profile Path */
+            profile_path?: string | null;
+            /** Known For Department */
+            known_for_department?: string | null;
+        };
         /** PersonCredit */
         PersonCredit: {
             /** Tmdb Id */
@@ -3251,6 +3279,13 @@ export interface components {
             feedback: number;
             /** Skipped */
             skipped: number;
+        };
+        /** SearchCatalogOut */
+        SearchCatalogOut: {
+            /** Movies */
+            movies: components["schemas"]["Candidate"][];
+            /** People */
+            people: components["schemas"]["PersonCandidate"][];
         };
         /** SearchResult */
         SearchResult: {
@@ -4413,6 +4448,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Candidate"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_catalog_all_endpoint_api_v1_catalog_search_all_get: {
+        parameters: {
+            query: {
+                query: string;
+                year?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchCatalogOut"];
                 };
             };
             /** @description Validation Error */

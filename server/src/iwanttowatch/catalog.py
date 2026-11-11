@@ -180,6 +180,54 @@ def search_movies(tmdb: TmdbClient, query: str, year: int | None = None) -> list
     return [candidate(r) for r in results]
 
 
+def person_candidate(result: dict[str, Any]) -> dict[str, Any]:
+    """The fields of a TMDb person search result, including their known movie titles."""
+    known_for_items = result.get("known_for") or []
+    known_movies = []
+    for item in known_for_items:
+        is_movie = item.get("media_type") == "movie" or (
+            "title" in item and item.get("media_type") != "tv"
+        )
+        if is_movie and item.get("id"):
+            known_movies.append(candidate(item))
+    return {
+        "id": result["id"],
+        "name": result.get("name") or result.get("original_name") or "",
+        "profile_path": result.get("profile_path"),
+        "known_for_department": result.get("known_for_department"),
+        "known_for": known_movies,
+    }
+
+
+def search_people(tmdb: TmdbClient, query: str) -> list[dict[str, Any]]:
+    params = {"query": query, "include_adult": "false"}
+    results: list[dict[str, Any]] = tmdb.get("/search/person", params, LOOKUP_CACHE).get(
+        "results", []
+    )
+    return [person_candidate(r) for r in results]
+
+
+def search_catalog_all(tmdb: TmdbClient, query: str, year: int | None = None) -> dict[str, Any]:
+    with ThreadPoolExecutor(2) as pool:
+        movies_future = pool.submit(search_movies, tmdb, query, year)
+        people_future = pool.submit(search_people, tmdb, query)
+        movies = movies_future.result()
+        people = people_future.result()
+
+    seen_ids = {m["tmdb_id"] for m in movies}
+    combined_movies = list(movies)
+    for p in people:
+        for k in p.get("known_for", []):
+            if k["tmdb_id"] not in seen_ids:
+                seen_ids.add(k["tmdb_id"])
+                combined_movies.append(k)
+
+    return {
+        "movies": combined_movies,
+        "people": people,
+    }
+
+
 def find_by_title(
     tmdb: TmdbClient, name: str, year: int | None, latest_year: int | None = None
 ) -> tuple[int | None, list[dict[str, Any]]]:

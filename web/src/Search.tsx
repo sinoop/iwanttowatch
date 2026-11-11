@@ -2,6 +2,7 @@ import { useIsMutating, useMutation } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import { api, errorMessage, useServerSettings } from './api'
+import PersonDialog from './PersonDialog'
 import TitleDialog from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
 
@@ -107,6 +108,7 @@ export default function HeaderSearch() {
   const [text, setText] = useState(askParam)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [openTitle, setOpenTitle] = useState<number | null>(null)
+  const [openPerson, setOpenPerson] = useState<number | null>(null)
 
   if (askParam !== prevAskParam) {
     setPrevAskParam(askParam)
@@ -121,9 +123,14 @@ export default function HeaderSearch() {
 
   const search = useMutation({
     mutationFn: async () => {
-      const { data, error } = await api.GET('/api/v1/catalog/search', { params: { query: { query: text.trim() } } })
+      const { data, error } = await api.GET('/api/v1/catalog/search-all', {
+        params: { query: { query: text.trim() } },
+      })
       if (error) throw new Error(errorMessage(error))
-      return data.slice(0, 8)
+      return {
+        movies: data.movies.slice(0, 10),
+        people: data.people.slice(0, 6),
+      }
     },
   })
 
@@ -204,7 +211,7 @@ export default function HeaderSearch() {
     <div ref={containerRef} className="relative order-2 w-full sm:order-none sm:ml-auto sm:w-72 md:w-80 lg:w-96">
       <form onSubmit={handleSubmit} role="search" className="relative flex items-center">
         <label htmlFor="header-search" className="sr-only">
-          {mode === 'search' ? 'Search for a film' : 'Ask AI for recommendations'}
+          {mode === 'search' ? 'Search films, actors, or directors' : 'Ask AI for recommendations'}
         </label>
         <span className="pointer-events-none absolute left-2.5 flex items-center text-white/40">
           {mode === 'search' ? (
@@ -226,7 +233,7 @@ export default function HeaderSearch() {
           onChange={(e) => setText(e.target.value)}
           placeholder={
             mode === 'search'
-              ? 'Search films…'
+              ? 'Search films, actors…'
               : `Ask AI: e.g. “${EXAMPLE_REQUEST}”…`
           }
           className="w-full rounded-lg border border-white/10 bg-black/40 py-1.5 pl-9 pr-36 text-sm text-white outline-none placeholder:text-white/35 focus:border-accent focus:ring-2 focus:ring-accent/30"
@@ -236,7 +243,7 @@ export default function HeaderSearch() {
             type={mode === 'search' ? 'submit' : 'button'}
             onClick={() => handleToggleMode('search')}
             aria-pressed={mode === 'search'}
-            title="Search films"
+            title="Search films and actors"
             className={`rounded px-2.5 py-1 font-semibold transition-all ${
               mode === 'search'
                 ? 'bg-accent text-black shadow-xs'
@@ -281,51 +288,125 @@ export default function HeaderSearch() {
               <ErrorText>{search.error.message}</ErrorText>
             </div>
           )}
-          {search.data && !search.isPending && (
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-3 text-xs">
-                <span className="text-white/60">
-                  {search.data.length ? 'Pick a film to see your match' : 'No films found.'}
-                </span>
-                <Button
-                  variant="ghost"
-                  className="px-2 py-0.5 text-xs text-white/50 hover:text-white"
-                  onClick={() => {
-                    setDropdownOpen(false)
-                    search.reset()
-                  }}
-                >
-                  Close
-                </Button>
+          {search.data && !search.isPending && (() => {
+            const hasPeople = search.data.people.length > 0
+            const hasMovies = search.data.movies.length > 0
+            const hasResults = hasPeople || hasMovies
+
+            return (
+              <div>
+                <div className="mb-2.5 flex items-center justify-between gap-3 text-xs">
+                  <span className="text-white/60">
+                    {hasResults
+                      ? hasPeople && hasMovies
+                        ? 'Pick a person or film to view details'
+                        : hasPeople
+                          ? 'Pick a person to view filmography'
+                          : 'Pick a film to see your match'
+                      : 'No films or people found.'}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    className="px-2 py-0.5 text-xs text-white/50 hover:text-white"
+                    onClick={() => {
+                      setDropdownOpen(false)
+                      search.reset()
+                    }}
+                  >
+                    Close
+                  </Button>
+                </div>
+
+                {hasPeople && (
+                  <div className="mb-3">
+                    <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/50">
+                      Actors &amp; Crew
+                    </div>
+                    <ul className="flex gap-3 overflow-x-auto pb-1" aria-label="People search results">
+                      {search.data.people.map((p) => (
+                        <li key={p.id} className="w-20 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDropdownOpen(false)
+                              setOpenPerson(p.id)
+                            }}
+                            className="group w-full rounded-lg text-center focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
+                          >
+                            <div className="mx-auto size-14 overflow-hidden rounded-full border border-white/10 bg-white/5 transition group-hover:ring-2 group-hover:ring-accent">
+                              {p.profile_path ? (
+                                <img
+                                  src={`https://image.tmdb.org/t/p/w185${p.profile_path}`}
+                                  alt={p.name}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-white/30">
+                                  {p.name.slice(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <p className="mt-1.5 truncate text-xs font-medium text-white group-hover:text-accent">
+                              {p.name}
+                            </p>
+                            <p className="truncate text-[10px] text-white/45">
+                              {p.known_for_department === 'Acting'
+                                ? 'Actor'
+                                : p.known_for_department === 'Directing'
+                                  ? 'Director'
+                                  : p.known_for_department || 'Artist'}
+                            </p>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {hasMovies && (
+                  <div>
+                    {hasPeople && (
+                      <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-white/50">
+                        Films
+                      </div>
+                    )}
+                    <ul className="flex gap-3 overflow-x-auto pb-1" aria-label="Movie search results">
+                      {search.data.movies.map((c) => (
+                        <li key={c.tmdb_id} className="w-24 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDropdownOpen(false)
+                              setOpenTitle(c.tmdb_id)
+                            }}
+                            className="group w-full rounded-lg text-left focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
+                          >
+                            <Poster path={c.poster_path} title={c.title} className="group-hover:ring-2 group-hover:ring-accent" />
+                            <p className="mt-1 truncate text-xs font-medium">{c.title}</p>
+                            <p className="truncate text-xs text-white/45">
+                              {[c.year, languageName.of(c.original_language)].filter(Boolean).join(' · ')}
+                            </p>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
-              {search.data.length > 0 && (
-                <ul className="flex gap-3 overflow-x-auto pb-1" aria-label="Search results">
-                  {search.data.map((c) => (
-                    <li key={c.tmdb_id} className="w-24 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDropdownOpen(false)
-                          setOpenTitle(c.tmdb_id)
-                        }}
-                        className="group w-full rounded-lg text-left focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
-                      >
-                        <Poster path={c.poster_path} title={c.title} className="group-hover:ring-2 group-hover:ring-accent" />
-                        <p className="mt-1 truncate text-xs font-medium">{c.title}</p>
-                        <p className="truncate text-xs text-white/45">
-                          {[c.year, languageName.of(c.original_language)].filter(Boolean).join(' · ')}
-                        </p>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+            )
+          })()}
         </div>
       )}
 
       <TitleDialog tmdbId={openTitle} onClose={() => setOpenTitle(null)} />
+      <PersonDialog
+        personId={openPerson}
+        onClose={() => setOpenPerson(null)}
+        onSelectFilm={(tmdbId) => {
+          setOpenPerson(null)
+          setOpenTitle(tmdbId)
+        }}
+      />
     </div>
   )
 }

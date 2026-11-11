@@ -1229,6 +1229,62 @@
         }
       }
     },
+    "/api/v1/catalog/search-all": {
+      "get": {
+        "summary": "Search Catalog All Endpoint",
+        "operationId": "search_catalog_all_endpoint_api_v1_catalog_search_all_get",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Query"
+            }
+          },
+          {
+            "name": "year",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchCatalogOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me/persona": {
       "get": {
         "summary": "Read Persona",
@@ -7715,6 +7771,46 @@
         "type": "object",
         "title": "PersonAffinity"
       },
+      "PersonCandidate": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "profile_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile Path"
+          },
+          "known_for_department": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Known For Department"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "PersonCandidate"
+      },
       "PersonCredit": {
         "properties": {
           "tmdb_id": {
@@ -9113,6 +9209,30 @@
           "skipped"
         ],
         "title": "RestoreSummary"
+      },
+      "SearchCatalogOut": {
+        "properties": {
+          "movies": {
+            "items": {
+              "$ref": "#/components/schemas/Candidate"
+            },
+            "type": "array",
+            "title": "Movies"
+          },
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/PersonCandidate"
+            },
+            "type": "array",
+            "title": "People"
+          }
+        },
+        "type": "object",
+        "required": [
+          "movies",
+          "people"
+        ],
+        "title": "SearchCatalogOut"
       },
       "SearchResult": {
         "properties": {

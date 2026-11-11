@@ -8,7 +8,7 @@ from sqlalchemy import String, case, cast, func, or_, select
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.imports import Candidate
 from iwanttowatch.api.reactions import TagOption
-from iwanttowatch.catalog import search_movies
+from iwanttowatch.catalog import search_catalog_all, search_movies
 from iwanttowatch.children import library_owners
 from iwanttowatch.feed import clear_user_rated_matches_cache, user_rated_matches
 from iwanttowatch.llm import LlmError, llm_order, provider_from_settings
@@ -446,6 +446,40 @@ def search_catalog(
     year: int | None = None,
 ) -> list[Candidate]:
     return [Candidate(**c) for c in search_movies(tmdb, query, year)]
+
+
+class PersonCandidate(BaseModel):
+    id: int
+    name: str
+    profile_path: str | None = None
+    known_for_department: str | None = None
+
+
+class SearchCatalogOut(BaseModel):
+    movies: list[Candidate]
+    people: list[PersonCandidate]
+
+
+@router.get("/catalog/search-all", response_model=SearchCatalogOut)
+def search_catalog_all_endpoint(
+    _user: CurrentUser,
+    tmdb: Tmdb,
+    query: str = Query(min_length=1),
+    year: int | None = None,
+) -> SearchCatalogOut:
+    results = search_catalog_all(tmdb, query, year)
+    return SearchCatalogOut(
+        movies=[Candidate(**c) for c in results["movies"]],
+        people=[
+            PersonCandidate(
+                id=p["id"],
+                name=p["name"],
+                profile_path=p.get("profile_path"),
+                known_for_department=p.get("known_for_department"),
+            )
+            for p in results["people"]
+        ],
+    )
 
 
 class PersonaOut(BaseModel):

@@ -193,6 +193,39 @@ def fake_tmdb(request: httpx.Request) -> httpx.Response:
             and (year is None or abs(int(m["date"][:4]) - int(year)) <= 1)
         ]
         return httpx.Response(200, json={"results": hits})
+    if path == "/search/person":
+        query = params["query"].lower()
+        hits = []
+        for p_id, p_data in PEOPLE.items():
+            if query in p_data["name"].lower():
+                known_for = []
+                credits_list = p_data.get("movie_credits", {}).get("cast", []) + p_data.get(
+                    "movie_credits", {}
+                ).get("crew", [])
+                for entry in credits_list:
+                    known_for.append(
+                        {
+                            "id": entry["id"],
+                            "title": entry["title"],
+                            "original_title": entry.get("original_title", entry["title"]),
+                            "media_type": "movie",
+                            "release_date": entry.get("release_date"),
+                            "poster_path": entry.get("poster_path"),
+                            "vote_count": entry.get("vote_count", 0),
+                            "vote_average": entry.get("vote_average", 0.0),
+                            "original_language": "en",
+                        }
+                    )
+                hits.append(
+                    {
+                        "id": p_id,
+                        "name": p_data["name"],
+                        "profile_path": p_data.get("profile_path"),
+                        "known_for_department": p_data.get("known_for_department"),
+                        "known_for": known_for[:3],
+                    }
+                )
+        return httpx.Response(200, json={"results": hits})
     if path == "/search/tv":
         shows = [{"id": 1, "name": "Our Planet", "original_name": "Our Planet"}]
         return httpx.Response(

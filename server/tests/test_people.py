@@ -269,3 +269,39 @@ def test_people_taste_overview(client: TestClient) -> None:
     assert dir_info["loved_count"] == 1
     assert dir_info["liked_count"] == 1
     assert dir_info["is_favorite"] is True
+
+
+def test_catalog_search_all_finds_actors_and_their_known_films(client: TestClient) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+
+    # Search for an actor: "Brad Pitt"
+    res = client.get("/api/v1/catalog/search-all", params={"query": "Brad Pitt"})
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert len(data["people"]) == 1
+    pitt = data["people"][0]
+    assert pitt["id"] == 287
+    assert pitt["name"] == "Brad Pitt"
+    assert pitt["known_for_department"] == "Acting"
+    # Films list includes his known film (Fight Club)
+    movie_ids = [m["tmdb_id"] for m in data["movies"]]
+    assert 550 in movie_ids
+    fight_club = next(m for m in data["movies"] if m["tmdb_id"] == 550)
+    assert fight_club["title"] == "Fight Club"
+
+    # Search for a movie: "Drishyam"
+    res_movie = client.get("/api/v1/catalog/search-all", params={"query": "Drishyam"})
+    assert res_movie.status_code == 200
+    data_movie = res_movie.json()
+    assert len(data_movie["people"]) == 0
+    assert {m["tmdb_id"] for m in data_movie["movies"]} == {301, 302}
+
+    # Search for a director: "Nolan"
+    res_nolan = client.get("/api/v1/catalog/search-all", params={"query": "Nolan"})
+    assert res_nolan.status_code == 200
+    data_nolan = res_nolan.json()
+    assert len(data_nolan["people"]) == 1
+    assert data_nolan["people"][0]["name"] == "Christopher Nolan"
+    nolan_film_ids = [m["tmdb_id"] for m in data_nolan["movies"]]
+    assert 157336 in nolan_film_ids  # Interstellar
+    assert 27205 in nolan_film_ids  # Inception
