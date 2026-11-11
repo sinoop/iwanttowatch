@@ -444,6 +444,18 @@ class OpinionClash(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class OutlierReview(Base):
+    """Films whose outlier status was reviewed and confirmed by the user."""
+
+    __tablename__ = "outlier_reviews"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    tmdb_id: Mapped[int] = mapped_column(ForeignKey("titles.tmdb_id"), primary_key=True)
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class LlmCall(Base):
     """One call to the configured LLM, kept so an admin can see how often it's called
     and exactly what was sent and answered. Only the most recent calls are kept."""

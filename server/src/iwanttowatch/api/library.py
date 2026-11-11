@@ -1,7 +1,7 @@
 from collections import Counter
 from datetime import date, datetime
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import String, case, cast, func, or_, select
 
@@ -12,7 +12,14 @@ from iwanttowatch.catalog import search_movies
 from iwanttowatch.children import library_owners
 from iwanttowatch.feed import user_rated_matches
 from iwanttowatch.llm import LlmError, llm_order, provider_from_settings
-from iwanttowatch.models import Availability, LibraryItem, Persona, Title, UserTitle
+from iwanttowatch.models import (
+    Availability,
+    LibraryItem,
+    OutlierReview,
+    Persona,
+    Title,
+    UserTitle,
+)
 from iwanttowatch.tags import options_for
 from iwanttowatch.taste import (
     MIN_RATINGS_FOR_PERSONA,
@@ -322,7 +329,7 @@ class OutlierTitle(BaseModel):
 def list_outliers(
     user: CurrentUser,
     session: DbSession,
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(15, ge=1, le=15),
 ) -> list[OutlierTitle]:
     """Films where the user's rating strongly diverged from the recommender's predicted match."""
     effective = effective_ratings(user.id)
@@ -336,9 +343,15 @@ def list_outliers(
     if not matches:
         return []
 
+    reviewed = set(
+        session.scalars(select(OutlierReview.tmdb_id).where(OutlierReview.user_id == user.id))
+    )
+
     candidates: list[tuple[float, OutlierTitle]] = []
     for r in rows:
         t: Title = r.Title
+        if t.tmdb_id in reviewed:
+            continue
         pred = matches.get(t.tmdb_id)
         if pred is None:
             continue
@@ -401,6 +414,16 @@ def list_outliers(
 
     candidates.sort(key=lambda pair: pair[0], reverse=True)
     return [item for _, item in candidates[:limit]]
+
+
+@router.post("/ratings/outliers/{tmdb_id}/confirm", status_code=status.HTTP_204_NO_CONTENT)
+def confirm_outlier(tmdb_id: int, user: CurrentUser, session: DbSession) -> Response:
+    """Mark an outlier film as reviewed and confirmed so it leaves the outlier queue."""
+    existing = session.get(OutlierReview, (user.id, tmdb_id))
+    if existing is None:
+        session.add(OutlierReview(user_id=user.id, tmdb_id=tmdb_id))
+        session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/catalog/search")

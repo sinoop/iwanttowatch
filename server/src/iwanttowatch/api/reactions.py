@@ -6,12 +6,12 @@ from typing import Literal, cast
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from iwanttowatch import imdb
 from iwanttowatch.api.deps import CurrentUser, DbSession
 from iwanttowatch.catalog import ensure_title
-from iwanttowatch.models import Title, User, UserTitle
+from iwanttowatch.models import OutlierReview, Title, User, UserTitle
 from iwanttowatch.tags import BY_ID, MAX_NOTE, MAX_TAGS, Group, options_for
 from iwanttowatch.taste import REACTION_FALLBACK, rating_to_reaction, refresh_reaction_ratings
 from iwanttowatch.tmdb import TmdbError, client_from_settings
@@ -155,6 +155,11 @@ def clear_reaction(
     entry = _entry(session, user.id, tmdb_id)
     if entry is not None:
         session.delete(entry)
+        session.execute(
+            delete(OutlierReview).where(
+                OutlierReview.user_id == user.id, OutlierReview.tmdb_id == tmdb_id
+            )
+        )
         session.commit()
         worker = request.app.state.feed_worker
         worker.rescore_soon(user.id)

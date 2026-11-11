@@ -19,6 +19,12 @@ export default function OutlierReviewDialog({
   onSelectFilm?: (tmdbId: number) => void
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
+  const queryClient = useQueryClient()
+
+  const handleClose = () => {
+    queryClient.invalidateQueries({ queryKey: ['outlier-ratings'] })
+    onClose()
+  }
 
   useEffect(() => {
     if (isOpen) dialog.current?.showModal()
@@ -28,12 +34,12 @@ export default function OutlierReviewDialog({
   return (
     <dialog
       ref={dialog}
-      onClose={onClose}
-      onClick={(e) => e.target === dialog.current && dialog.current.close()}
+      onClose={handleClose}
+      onClick={(e) => e.target === dialog.current && handleClose()}
       aria-label="Review Outliers"
       className="m-auto w-[min(38rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#11141b] p-0 text-[#e7e9ee] shadow-2xl backdrop:bg-black/75"
     >
-      {isOpen && <OutlierReviewContent onClose={onClose} onSelectFilm={onSelectFilm} />}
+      {isOpen && <OutlierReviewContent onClose={handleClose} onSelectFilm={onSelectFilm} />}
     </dialog>
   )
 }
@@ -48,23 +54,8 @@ function OutlierReviewContent({
   const outliersQuery = useQuery({
     queryKey: ['outlier-ratings'],
     queryFn: async () => (await api.GET('/api/v1/ratings/outliers')).data ?? [],
+    refetchOnWindowFocus: false,
   })
-
-  const [index, setIndex] = useState(0)
-  const items = outliersQuery.data ?? []
-  const current: OutlierTitle | undefined = items[index]
-
-  const handleNext = () => {
-    if (index < items.length - 1) {
-      setIndex((i) => i + 1)
-    } else {
-      onClose()
-    }
-  }
-
-  const handlePrev = () => {
-    if (index > 0) setIndex((i) => i - 1)
-  }
 
   if (outliersQuery.isLoading) {
     return (
@@ -75,7 +66,9 @@ function OutlierReviewContent({
     )
   }
 
-  if (items.length === 0) {
+  const initialItems = outliersQuery.data ?? []
+
+  if (initialItems.length === 0) {
     return (
       <div className="p-8 text-center">
         <span className="text-4xl">🎉</span>
@@ -90,6 +83,47 @@ function OutlierReviewContent({
     )
   }
 
+  return (
+    <OutlierReviewSession
+      initialItems={initialItems}
+      onClose={onClose}
+      onSelectFilm={onSelectFilm}
+    />
+  )
+}
+
+function OutlierReviewSession({
+  initialItems,
+  onClose,
+  onSelectFilm,
+}: {
+  initialItems: OutlierTitle[]
+  onClose: () => void
+  onSelectFilm?: (tmdbId: number) => void
+}) {
+  const [items, setItems] = useState<OutlierTitle[]>(initialItems)
+  const [index, setIndex] = useState(0)
+
+  const current: OutlierTitle | undefined = items[index]
+
+  const handleItemUpdated = (tmdbId: number, reaction: Reaction, tags: string[]) => {
+    setItems((prev) =>
+      prev.map((it) => (it.tmdb_id === tmdbId ? { ...it, reaction, tags } : it)),
+    )
+  }
+
+  const handleNext = () => {
+    if (index < items.length - 1) {
+      setIndex((i) => i + 1)
+    } else {
+      onClose()
+    }
+  }
+
+  const handlePrev = () => {
+    if (index > 0) setIndex((i) => i - 1)
+  }
+
   if (!current) return null
 
   return (
@@ -99,7 +133,7 @@ function OutlierReviewContent({
         <div>
           <div className="flex items-center gap-2">
             <span className="text-base font-bold text-white">Review Outliers</span>
-            <span className="rounded-full bg-accent/20 px-2 py-0.5 text-xs font-semibold text-accent-strong">
+            <span className="rounded-full bg-accent/20 px-2.5 py-0.5 text-xs font-semibold text-accent-strong">
               {index + 1} of {items.length}
             </span>
           </div>
@@ -124,6 +158,7 @@ function OutlierReviewContent({
         total={items.length}
         onPrev={handlePrev}
         onNext={handleNext}
+        onItemUpdated={handleItemUpdated}
         onSelectFilm={onSelectFilm}
       />
     </div>
@@ -136,6 +171,7 @@ function OutlierCard({
   total,
   onPrev,
   onNext,
+  onItemUpdated,
   onSelectFilm,
 }: {
   item: OutlierTitle
@@ -143,16 +179,27 @@ function OutlierCard({
   total: number
   onPrev: () => void
   onNext: () => void
+  onItemUpdated: (tmdbId: number, reaction: Reaction, tags: string[]) => void
   onSelectFilm?: (tmdbId: number) => void
 }) {
   const queryClient = useQueryClient()
   const [activeReaction, setActiveReaction] = useState<Reaction>((item.reaction as Reaction) || 'liked')
   const [activeTags, setActiveTags] = useState<string[]>(item.tags || [])
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [isConfirmed, setIsConfirmed] = useState(false)
 
   const showOriginal = item.original_title && item.original_title !== item.title
   const isPositive = activeReaction !== 'disliked'
   const tagOptions = isPositive ? item.liked_tags : item.disliked_tags
+
+  const confirmMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await api.POST('/api/v1/ratings/outliers/{tmdb_id}/confirm', {
+        params: { path: { tmdb_id: item.tmdb_id } },
+      })
+      if (error) throw new Error(errorMessage(error))
+    },
+  })
 
   const saveMutation = useMutation({
     mutationFn: async ({
@@ -169,11 +216,10 @@ function OutlierCard({
       if (error) throw new Error(errorMessage(error))
       return data
     },
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
+      // Refresh general ratings cache, but avoid invalidating outlier-ratings during active review session
       refreshAfterReaction(queryClient, item.tmdb_id)
-      queryClient.invalidateQueries({ queryKey: ['outlier-ratings'] })
-      setStatusMessage('Saved!')
-      setTimeout(() => setStatusMessage(null), 2000)
+      onItemUpdated(item.tmdb_id, vars.reaction, vars.tags)
     },
   })
 
@@ -186,6 +232,14 @@ function OutlierCard({
     saveMutation.mutate({ reaction, tags: nextTags })
   }
 
+  const handleConfirmOpinion = (reaction: Reaction, message = 'Opinion confirmed!') => {
+    setIsConfirmed(true)
+    setStatusMessage(message)
+    setTimeout(() => setStatusMessage(null), 3000)
+    confirmMutation.mutate()
+    handleSetReaction(reaction)
+  }
+
   const handleToggleTag = (tagId: string) => {
     const next = activeTags.includes(tagId)
       ? activeTags.filter((t) => t !== tagId)
@@ -194,6 +248,10 @@ function OutlierCard({
       : activeTags
     setActiveTags(next)
     saveMutation.mutate({ reaction: activeReaction, tags: next })
+    confirmMutation.mutate()
+    setIsConfirmed(true)
+    setStatusMessage('Saved tags!')
+    setTimeout(() => setStatusMessage(null), 2500)
   }
 
   return (
@@ -231,8 +289,9 @@ function OutlierCard({
               </p>
             </div>
             {statusMessage && (
-              <span className="rounded-md bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-300">
-                {statusMessage}
+              <span className="flex items-center gap-1 rounded-md bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-300 animate-fade-in">
+                <span>✓</span>
+                <span>{statusMessage}</span>
               </span>
             )}
           </div>
@@ -261,8 +320,16 @@ function OutlierCard({
       <div className="mt-4">
         {item.outlier_type === 'loved_rewatch' ? (
           <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-accent-strong">
-              <span>❤️ Rewatch check</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold text-accent-strong">
+                <span>❤️ Rewatch check</span>
+              </div>
+              {isConfirmed && (
+                <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-300">
+                  <span>✓</span>
+                  <span>Confirmed</span>
+                </span>
+              )}
             </div>
             <p className="mt-1 text-sm text-white/90">
               You marked this movie <strong>Loved</strong>, but our recommender expected a{' '}
@@ -279,7 +346,7 @@ function OutlierCard({
                     ? 'border-accent bg-accent/20 text-accent font-semibold'
                     : 'border-white/15 bg-white/5 text-white/80 hover:bg-white/10'
                 }`}
-                onClick={() => handleSetReaction('liked')}
+                onClick={() => handleConfirmOpinion('liked', 'Rating changed to Liked!')}
               >
                 <ReactionIcon reaction="liked" className="h-3.5" />
                 <span>No, once was enough (Change to Liked)</span>
@@ -291,7 +358,7 @@ function OutlierCard({
                     ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300 font-semibold'
                     : 'border-white/15 bg-white/5 text-white/80 hover:bg-white/10'
                 }`}
-                onClick={() => handleSetReaction('loved')}
+                onClick={() => handleConfirmOpinion('loved', 'Opinion confirmed! Kept Loved.')}
               >
                 <ReactionIcon reaction="loved" className="h-3.5" />
                 <span>Yes, I'd watch it again! (Keep Loved)</span>
@@ -300,8 +367,16 @@ function OutlierCard({
           </div>
         ) : item.outlier_type === 'predicted_dislike_user_liked' ? (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-amber-300">
-              <span>⚡ Unexpected favorite</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold text-amber-300">
+                <span>⚡ Unexpected favorite</span>
+              </div>
+              {isConfirmed && (
+                <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-300">
+                  <span>✓</span>
+                  <span>Confirmed</span>
+                </span>
+              )}
             </div>
             <p className="mt-1 text-sm text-white/90">
               Our recommender thought this wouldn't suit your taste (predicted{' '}
@@ -318,7 +393,7 @@ function OutlierCard({
                     ? 'border-red-500/50 bg-red-500/20 text-red-300 font-semibold'
                     : 'border-white/15 bg-white/5 text-white/80 hover:bg-white/10'
                 }`}
-                onClick={() => handleSetReaction('disliked')}
+                onClick={() => handleConfirmOpinion('disliked', 'Lowered to Didn’t like!')}
               >
                 <ReactionIcon reaction="disliked" className="h-3.5" />
                 <span>Actually, didn't like it (Lower to Didn't like)</span>
@@ -330,7 +405,7 @@ function OutlierCard({
                     ? 'border-accent bg-accent/20 text-accent font-semibold'
                     : 'border-white/15 bg-white/5 text-white/80 hover:bg-white/10'
                 }`}
-                onClick={() => handleSetReaction('liked')}
+                onClick={() => handleConfirmOpinion('liked', 'Opinion confirmed! Kept Liked.')}
               >
                 <ReactionIcon reaction="liked" className="h-3.5" />
                 <span>I genuinely liked it (Keep Liked)</span>
@@ -339,8 +414,16 @@ function OutlierCard({
           </div>
         ) : (
           <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-rose-300">
-              <span>💔 Unexpected dislike</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold text-rose-300">
+                <span>💔 Unexpected dislike</span>
+              </div>
+              {isConfirmed && (
+                <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-300">
+                  <span>✓</span>
+                  <span>Confirmed</span>
+                </span>
+              )}
             </div>
             <p className="mt-1 text-sm text-white/90">
               Based on your taste in similar movies, we predicted a strong{' '}
@@ -357,7 +440,7 @@ function OutlierCard({
                     ? 'border-red-500/50 bg-red-500/20 text-red-300 font-semibold'
                     : 'border-white/15 bg-white/5 text-white/80 hover:bg-white/10'
                 }`}
-                onClick={() => handleSetReaction('disliked')}
+                onClick={() => handleConfirmOpinion('disliked', 'Opinion confirmed! Kept Didn’t like.')}
               >
                 <ReactionIcon reaction="disliked" className="h-3.5" />
                 <span>Confirm Didn't like (select reasons below)</span>
@@ -369,7 +452,7 @@ function OutlierCard({
                     ? 'border-accent bg-accent/20 text-accent font-semibold'
                     : 'border-white/15 bg-white/5 text-white/80 hover:bg-white/10'
                 }`}
-                onClick={() => handleSetReaction('liked')}
+                onClick={() => handleConfirmOpinion('liked', 'Raised to Liked!')}
               >
                 <ReactionIcon reaction="liked" className="h-3.5" />
                 <span>I actually liked it (Raise to Liked)</span>

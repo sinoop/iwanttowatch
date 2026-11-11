@@ -1105,9 +1105,9 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 100,
+              "maximum": 15,
               "minimum": 1,
-              "default": 50,
+              "default": 15,
               "title": "Limit"
             }
           }
@@ -1126,6 +1126,39 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ratings/outliers/{tmdb_id}/confirm": {
+      "post": {
+        "summary": "Confirm Outlier",
+        "description": "Mark an outlier film as reviewed and confirmed so it leaves the outlier queue.",
+        "operationId": "confirm_outlier_api_v1_ratings_outliers__tmdb_id__confirm_post",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",

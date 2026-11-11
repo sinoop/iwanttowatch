@@ -182,3 +182,39 @@ def test_outliers_endpoint(client: TestClient) -> None:
         assert "disliked_tags" in o
         assert len(o["liked_tags"]) > 0
         assert len(o["disliked_tags"]) > 0
+
+
+def test_confirm_outlier_removes_from_queue(client: TestClient) -> None:
+    setup_taste_data(client)
+    res = client.get("/api/v1/ratings/outliers")
+    assert res.status_code == 200
+    outliers = res.json()
+    assert len(outliers) > 0
+    target_id = outliers[0]["tmdb_id"]
+
+    # Confirm the outlier
+    confirm_res = client.post(f"/api/v1/ratings/outliers/{target_id}/confirm")
+    assert confirm_res.status_code == 204
+
+    # Now verify it is not in the outliers queue anymore
+    res_after = client.get("/api/v1/ratings/outliers")
+    assert res_after.status_code == 200
+    remaining_ids = {o["tmdb_id"] for o in res_after.json()}
+    assert target_id not in remaining_ids
+
+
+def test_outliers_limit_validation(client: TestClient) -> None:
+    setup_taste_data(client)
+    # Default limit is at most 15
+    res = client.get("/api/v1/ratings/outliers")
+    assert res.status_code == 200
+    assert len(res.json()) <= 15
+
+    # Requesting limit=2 returns at most 2
+    res_small = client.get("/api/v1/ratings/outliers?limit=2")
+    assert res_small.status_code == 200
+    assert len(res_small.json()) <= 2
+
+    # Requesting limit > 15 fails validation
+    res_over = client.get("/api/v1/ratings/outliers?limit=20")
+    assert res_over.status_code == 422
