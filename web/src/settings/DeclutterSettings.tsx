@@ -9,11 +9,10 @@ import {
   useServerSettings,
 } from '../api'
 import TitleDialog from '../TitleDialog'
-import { segmentedBadgeClass, segmentedTabClass } from '../tabs'
-import { Button, ErrorText, Poster, SegmentedCapsule } from '../ui'
+import { Button, ErrorText, Poster } from '../ui'
 
-const CATEGORY_TABS = [
-  { id: 'all', label: 'All Candidates' },
+const CATEGORY_OPTIONS = [
+  { id: 'all', label: 'All Candidates', color: 'text-white/70 bg-white/10 border-white/20' },
   { id: 'unplayable', label: 'Unplayable in Jellyfin', color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
   { id: 'disliked', label: 'Watched & Disliked', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' },
   { id: 'abandoned', label: 'Abandoned Play', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
@@ -179,41 +178,62 @@ export function DeclutterSettings() {
         </div>
       )}
 
-      {/* Category Pills & Filters */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
-        <div className="max-w-full overflow-x-auto pb-1">
-          <SegmentedCapsule role="tablist" aria-label="Declutter categories">
-            {CATEGORY_TABS.map((tab) => {
-              const isActive = selectedCategory === tab.id
-              const count =
-                tab.id === 'all'
-                  ? (data?.total_candidates ?? 0)
-                  : (data?.categories_summary[tab.id]?.count ?? 0)
-              const formattedBytes =
-                tab.id !== 'all' ? data?.categories_summary[tab.id]?.formatted : null
+      {/* Category Filter & Options */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-xs">
+            <label htmlFor="declutter-category-filter" className="font-medium text-white/50">
+              Filter by category:
+            </label>
+            <select
+              id="declutter-category-filter"
+              value={selectedCategory}
+              onChange={(e) => {
+                setSelectedCategory(e.target.value)
+                setSelectedIds([])
+              }}
+              className="cursor-pointer rounded-lg border border-white/10 bg-[#12161f] px-3 py-1.5 text-xs font-semibold text-white transition focus:border-accent focus:outline-none"
+            >
+              {CATEGORY_OPTIONS.map((cat) => {
+                const count =
+                  cat.id === 'all'
+                    ? (data?.total_candidates ?? 0)
+                    : (data?.categories_summary[cat.id]?.count ?? 0)
+                const formattedBytes =
+                  cat.id !== 'all' ? data?.categories_summary[cat.id]?.formatted : null
+                const sizeSuffix =
+                  formattedBytes && formattedBytes !== '0 B' ? ` · ${formattedBytes}` : ''
+                return (
+                  <option key={cat.id} value={cat.id} className="bg-[#151922] text-white">
+                    {cat.label} ({count}{sizeSuffix})
+                  </option>
+                )
+              })}
+            </select>
+          </div>
 
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => setSelectedCategory(tab.id)}
-                  className={segmentedTabClass({ active: isActive, size: 'xs' })}
-                >
-                  <span>{tab.label}</span>
-                  <span className={segmentedBadgeClass({ active: isActive, size: 'xs' })}>
-                    {count}
-                  </span>
-                  {formattedBytes && formattedBytes !== '0 B' && (
-                    <span className={`text-[10px] ${isActive ? 'text-white/80' : 'text-accent'}`}>
-                      ({formattedBytes})
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </SegmentedCapsule>
+          {selectedCategory !== 'all' && (
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium border ${
+                CATEGORY_OPTIONS.find((c) => c.id === selectedCategory)?.color ??
+                'text-white/70 border-white/10 bg-white/5'
+              }`}
+            >
+              <span>{CATEGORY_OPTIONS.find((c) => c.id === selectedCategory)?.label}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategory('all')
+                  setSelectedIds([])
+                }}
+                className="ml-1 cursor-pointer text-white/40 hover:text-white"
+                title="Reset to All Candidates"
+                aria-label="Reset to All Candidates"
+              >
+                ✕
+              </button>
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-3 text-xs text-white/60">
@@ -305,7 +325,7 @@ export function DeclutterSettings() {
         <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
           {items.map((item) => {
             const isSelected = selectedIds.includes(item.tmdb_id)
-            const catMeta = CATEGORY_TABS.find((t) => t.id === item.category)
+            const catMeta = CATEGORY_OPTIONS.find((t) => t.id === item.category)
 
             return (
               <div
