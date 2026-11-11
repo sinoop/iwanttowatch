@@ -205,10 +205,27 @@ function OutlierCard({
   const [activeTags, setActiveTags] = useState<string[]>(item.tags || [])
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [isConfirmed, setIsConfirmed] = useState(false)
+  const [isCleared, setIsCleared] = useState(false)
 
   const showOriginal = item.original_title && item.original_title !== item.title
   const isPositive = activeReaction !== 'disliked'
   const tagOptions = isPositive ? item.liked_tags : item.disliked_tags
+
+  const clearRatingMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await api.POST('/api/v1/titles/{tmdb_id}/clear-rating', {
+        params: { path: { tmdb_id: item.tmdb_id } },
+      })
+      if (error) throw new Error(errorMessage(error))
+    },
+    onSuccess: () => {
+      refreshAfterReaction(queryClient, item.tmdb_id)
+      setIsCleared(true)
+      setIsConfirmed(true)
+      setStatusMessage('Rating cleared! Kept as watched.')
+      setTimeout(() => setStatusMessage(null), 3000)
+    },
+  })
 
   const confirmMutation = useMutation({
     mutationFn: async () => {
@@ -327,8 +344,14 @@ function OutlierCard({
 
             <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5">
               <span className="text-white/50">You rated:</span>
-              <ReactionBadge reaction={activeReaction} size="xs" />
-              <span className="font-semibold text-white">({item.user_rating.toFixed(1)}/10)</span>
+              {isCleared ? (
+                <span className="text-xs text-white/50 italic">Cleared (Kept watched)</span>
+              ) : (
+                <>
+                  <ReactionBadge reaction={activeReaction} size="xs" />
+                  <span className="font-semibold text-white">({item.user_rating.toFixed(1)}/10)</span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -382,6 +405,17 @@ function OutlierCard({
                 <span>Yes, I'd watch it again! (Keep Loved)</span>
               </Button>
             </div>
+            <div className="mt-3.5 flex items-center justify-between border-t border-white/10 pt-2.5">
+              <span className="text-xs text-white/50">Don't remember this movie?</span>
+              <button
+                type="button"
+                onClick={() => clearRatingMutation.mutate()}
+                disabled={clearRatingMutation.isPending || isCleared}
+                className="cursor-pointer text-xs font-medium text-white/70 hover:text-rose-300 underline decoration-white/20 underline-offset-2 transition-colors disabled:opacity-50"
+              >
+                {isCleared ? '✓ Rating cleared (kept watched)' : 'Clear rating, keep as watched'}
+              </button>
+            </div>
           </div>
         ) : item.outlier_type === 'predicted_dislike_user_liked' ? (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
@@ -428,6 +462,17 @@ function OutlierCard({
                 <ReactionIcon reaction="liked" className="h-3.5" />
                 <span>I genuinely liked it (Keep Liked)</span>
               </Button>
+            </div>
+            <div className="mt-3.5 flex items-center justify-between border-t border-white/10 pt-2.5">
+              <span className="text-xs text-white/50">Don't remember this movie?</span>
+              <button
+                type="button"
+                onClick={() => clearRatingMutation.mutate()}
+                disabled={clearRatingMutation.isPending || isCleared}
+                className="cursor-pointer text-xs font-medium text-white/70 hover:text-rose-300 underline decoration-white/20 underline-offset-2 transition-colors disabled:opacity-50"
+              >
+                {isCleared ? '✓ Rating cleared (kept watched)' : 'Clear rating, keep as watched'}
+              </button>
             </div>
           </div>
         ) : (
@@ -476,44 +521,63 @@ function OutlierCard({
                 <span>I actually liked it (Raise to Liked)</span>
               </Button>
             </div>
+            <div className="mt-3.5 flex items-center justify-between border-t border-white/10 pt-2.5">
+              <span className="text-xs text-white/50">Don't remember this movie?</span>
+              <button
+                type="button"
+                onClick={() => clearRatingMutation.mutate()}
+                disabled={clearRatingMutation.isPending || isCleared}
+                className="cursor-pointer text-xs font-medium text-white/70 hover:text-rose-300 underline decoration-white/20 underline-offset-2 transition-colors disabled:opacity-50"
+              >
+                {isCleared ? '✓ Rating cleared (kept watched)' : 'Clear rating, keep as watched'}
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       {/* Tags section */}
-      <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.02] p-4">
-        <div className="flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wider text-white/70">
-            {isPositive ? 'What worked best for you?' : 'What didn’t work?'}
+      {isCleared ? (
+        <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.02] p-4 text-center">
+          <p className="text-xs text-white/60">
+            Rating removed from taste modeling. Film remains marked as watched in your library.
           </p>
-          <span className="text-xs text-white/40">
-            {activeTags.length} of {MAX_TAGS} selected
-          </span>
         </div>
+      ) : (
+        <div className="mt-5 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-white/70">
+              {isPositive ? 'What worked best for you?' : 'What didn’t work?'}
+            </p>
+            <span className="text-xs text-white/40">
+              {activeTags.length} of {MAX_TAGS} selected
+            </span>
+          </div>
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          {tagOptions.map((tag) => {
-            const selected = activeTags.includes(tag.id)
-            return (
-              <button
-                key={tag.id}
-                type="button"
-                onClick={() => handleToggleTag(tag.id)}
-                disabled={!selected && activeTags.length >= MAX_TAGS}
-                className={`cursor-pointer rounded-full border px-3 py-1 text-xs transition-colors focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-30 ${
-                  selected
-                    ? isPositive
-                      ? 'border-accent bg-accent/20 font-semibold text-accent-strong'
-                      : 'border-red-500 bg-red-500/20 font-semibold text-red-200'
-                    : 'border-white/10 text-white/70 hover:border-white/25 hover:text-white'
-                }`}
-              >
-                {tag.label}
-              </button>
-            )
-          })}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {tagOptions.map((tag) => {
+              const selected = activeTags.includes(tag.id)
+              return (
+                <button
+                  key={tag.id}
+                  type="button"
+                  onClick={() => handleToggleTag(tag.id)}
+                  disabled={!selected && activeTags.length >= MAX_TAGS}
+                  className={`cursor-pointer rounded-full border px-3 py-1 text-xs transition-colors focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-30 ${
+                    selected
+                      ? isPositive
+                        ? 'border-accent bg-accent/20 font-semibold text-accent-strong'
+                        : 'border-red-500 bg-red-500/20 font-semibold text-red-200'
+                      : 'border-white/10 text-white/70 hover:border-white/25 hover:text-white'
+                  }`}
+                >
+                  {tag.label}
+                </button>
+              )
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {saveMutation.error && (
         <div className="mt-3">

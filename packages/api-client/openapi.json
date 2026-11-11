@@ -1380,6 +1380,39 @@
         }
       }
     },
+    "/api/v1/titles/{tmdb_id}/clear-rating": {
+      "post": {
+        "summary": "Clear Rating Keep Watched",
+        "description": "Clear any rating on the film across sources, but keep it marked as watched.",
+        "operationId": "clear_rating_keep_watched_api_v1_titles__tmdb_id__clear_rating_post",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me/jellyfin": {
       "get": {
         "summary": "Read Jellyfin Account",

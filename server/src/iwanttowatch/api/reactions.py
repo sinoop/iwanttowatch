@@ -11,6 +11,8 @@ from sqlalchemy import delete, select
 from iwanttowatch import imdb
 from iwanttowatch.api.deps import CurrentUser, DbSession
 from iwanttowatch.catalog import ensure_title
+from iwanttowatch.db import utcnow
+from iwanttowatch.feed import clear_user_rated_matches_cache
 from iwanttowatch.models import OutlierReview, Title, User, UserTitle
 from iwanttowatch.tags import BY_ID, MAX_NOTE, MAX_TAGS, Group, options_for
 from iwanttowatch.taste import REACTION_FALLBACK, rating_to_reaction, refresh_reaction_ratings
@@ -166,4 +168,38 @@ def clear_reaction(
         if not user.is_child:
             for child_id in session.scalars(select(User.id).where(User.is_child.is_(True))):
                 worker.rescore_soon(child_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{tmdb_id}/clear-rating", status_code=status.HTTP_204_NO_CONTENT)
+def clear_rating_keep_watched(
+    tmdb_id: int, user: CurrentUser, session: DbSession, request: Request
+) -> Response:
+    """Clear any rating on the film across sources, but keep it marked as watched."""
+    rows = session.scalars(
+        select(UserTitle).where(UserTitle.user_id == user.id, UserTitle.tmdb_id == tmdb_id)
+    ).all()
+    if not rows:
+        entry = UserTitle(user_id=user.id, tmdb_id=tmdb_id, source=SOURCE, watched=True)
+        session.add(entry)
+    else:
+        for r in rows:
+            r.rating = None
+            r.reaction = None
+            r.tags = []
+            r.watched = True
+            r.updated_at = utcnow()
+
+    existing_outlier = session.get(OutlierReview, (user.id, tmdb_id))
+    if existing_outlier is None:
+        session.add(OutlierReview(user_id=user.id, tmdb_id=tmdb_id))
+
+    refresh_reaction_ratings(session, user.id)
+    session.commit()
+    clear_user_rated_matches_cache(user.id)
+    worker = request.app.state.feed_worker
+    worker.rescore_soon(user.id)
+    if not user.is_child:
+        for child_id in session.scalars(select(User.id).where(User.is_child.is_(True))):
+            worker.rescore_soon(child_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

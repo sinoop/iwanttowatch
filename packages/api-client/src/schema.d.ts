@@ -530,6 +530,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/titles/{tmdb_id}/clear-rating": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clear Rating Keep Watched
+         * @description Clear any rating on the film across sources, but keep it marked as watched.
+         */
+        post: operations["clear_rating_keep_watched_api_v1_titles__tmdb_id__clear_rating_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/jellyfin": {
         parameters: {
             query?: never;
@@ -4509,6 +4529,35 @@ export interface operations {
         };
     };
     clear_reaction_api_v1_titles__tmdb_id__reaction_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_rating_keep_watched_api_v1_titles__tmdb_id__clear_rating_post: {
         parameters: {
             query?: never;
             header?: never;

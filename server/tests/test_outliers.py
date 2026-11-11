@@ -1,6 +1,7 @@
 from datetime import date
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from test_imports import KEY
 
@@ -242,3 +243,38 @@ def test_outliers_limit_validation(client: TestClient) -> None:
     # Requesting limit > 50 fails validation
     res_over = client.get("/api/v1/ratings/outliers?limit=60")
     assert res_over.status_code == 422
+
+
+def test_clear_rating_keep_watched(client: TestClient) -> None:
+    setup_taste_data(client)
+    res = client.get("/api/v1/ratings/outliers")
+    assert res.status_code == 200
+    items = res.json()["items"]
+    target_id = items[0]["tmdb_id"]
+
+    # Call clear-rating endpoint
+    clear_res = client.post(f"/api/v1/titles/{target_id}/clear-rating")
+    assert clear_res.status_code == 204
+
+    # Title is removed from outliers
+    res_after = client.get("/api/v1/ratings/outliers")
+    assert res_after.status_code == 200
+    remaining_ids = {o["tmdb_id"] for o in res_after.json()["items"]}
+    assert target_id not in remaining_ids
+
+    # Title is still watched in database, but rating and reaction are None
+    engine = client.app.state.engine  # type: ignore[attr-defined]
+    from iwanttowatch.feed import seen
+
+    with Session(engine) as session:
+        entries = session.scalars(
+            select(UserTitle).where(UserTitle.user_id == 1, UserTitle.tmdb_id == target_id)
+        ).all()
+        assert len(entries) > 0
+        for entry in entries:
+            assert entry.watched is True
+            assert entry.rating is None
+            assert entry.reaction is None
+            assert entry.tags == []
+        # Remains in seen() so it is never re-recommended in Discover
+        assert target_id in seen(session, 1)
