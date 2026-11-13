@@ -6099,6 +6099,11 @@
             "title": "Show Rent Buy",
             "default": false
           },
+          "show_continue_watching": {
+            "type": "boolean",
+            "title": "Show Continue Watching",
+            "default": false
+          },
           "birth_year": {
             "anyOf": [
               {
@@ -7240,6 +7245,22 @@
               }
             ],
             "title": "Jellyfin Url"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match"
+          },
+          "is_rewatch": {
+            "type": "boolean",
+            "title": "Is Rewatch",
+            "default": false
           }
         },
         "type": "object",
@@ -8072,6 +8093,11 @@
           "show_rent_buy": {
             "type": "boolean",
             "title": "Show Rent Buy",
+            "default": false
+          },
+          "show_continue_watching": {
+            "type": "boolean",
+            "title": "Show Continue Watching",
             "default": false
           },
           "birth_year": {
@@ -8959,6 +8985,17 @@
               }
             ],
             "title": "Default Content Type"
+          },
+          "show_continue_watching": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Continue Watching"
           }
         },
         "type": "object",

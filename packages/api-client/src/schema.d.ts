@@ -2260,6 +2260,11 @@ export interface components {
              * @default false
              */
             show_rent_buy: boolean;
+            /**
+             * Show Continue Watching
+             * @default false
+             */
+            show_continue_watching: boolean;
             /** Birth Year */
             birth_year?: number | null;
         };
@@ -2618,6 +2623,13 @@ export interface components {
             jellyfin_item_id: string;
             /** Jellyfin Url */
             jellyfin_url: string | null;
+            /** Match */
+            match?: number | null;
+            /**
+             * Is Rewatch
+             * @default false
+             */
+            is_rewatch: boolean;
         };
         /** InviteCreate */
         InviteCreate: {
@@ -2903,6 +2915,11 @@ export interface components {
              * @default false
              */
             show_rent_buy: boolean;
+            /**
+             * Show Continue Watching
+             * @default false
+             */
+            show_continue_watching: boolean;
             /** Birth Year */
             birth_year: number | null;
             /**
@@ -3187,6 +3204,8 @@ export interface components {
             birth_year?: number | null;
             /** Default Content Type */
             default_content_type?: string | null;
+            /** Show Continue Watching */
+            show_continue_watching?: boolean | null;
         };
         /** Provider */
         Provider: {

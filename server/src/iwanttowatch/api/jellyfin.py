@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, func, or_, select
 
 from iwanttowatch.api.deps import AdultUser, CurrentUser, DbSession
+from iwanttowatch.feed import feed_films, score_films, user_rated_matches
 from iwanttowatch.jellyfin import (
     SOURCE,
     URL_SETTING,
@@ -20,6 +21,7 @@ from iwanttowatch.jellyfin import (
 from iwanttowatch.models import (
     LibraryItem,
     RatingPrompt,
+    Recommendation,
     ShortlistItem,
     Title,
     User,
@@ -59,6 +61,8 @@ class InProgressItem(BaseModel):
     playback_updated_at: datetime | None
     jellyfin_item_id: str
     jellyfin_url: str | None
+    match: int | None = None
+    is_rewatch: bool = False
 
 
 class RatingPromptItem(BaseModel):
@@ -142,7 +146,6 @@ def list_in_progress(user: CurrentUser, session: DbSession) -> list[InProgressIt
         .outerjoin(Title, Title.tmdb_id == LibraryItem.tmdb_id)
         .where(
             LibraryItem.user_id == user.id,
-            LibraryItem.played.is_(False),
             LibraryItem.tmdb_id.is_not(None),
             or_(LibraryItem.playback_percentage > 0.0, LibraryItem.playback_position_ticks > 0),
         )
@@ -151,13 +154,63 @@ def list_in_progress(user: CurrentUser, session: DbSession) -> list[InProgressIt
             LibraryItem.last_played.desc().nulls_last(),
         )
     )
+    items_with_titles = session.execute(stmt).all()
+    if not items_with_titles:
+        return []
+
+    tmdb_ids = [item.tmdb_id for item, _ in items_with_titles if item.tmdb_id is not None]
+
+    # Check which items are watched previously in UserTitle across any source
+    watched_tmdb_ids = set(
+        session.scalars(
+            select(UserTitle.tmdb_id).where(
+                UserTitle.user_id == user.id,
+                UserTitle.tmdb_id.in_(tmdb_ids),
+                or_(UserTitle.watched.is_(True), UserTitle.rating.is_not(None)),
+            )
+        )
+    )
+
+    # Gather match scores from Recommendation
+    recommendations = {
+        rec.tmdb_id: round(rec.score * 100)
+        for rec in session.scalars(
+            select(Recommendation).where(
+                Recommendation.user_id == user.id,
+                Recommendation.tmdb_id.in_(tmdb_ids),
+            )
+        )
+    }
+
+    # Gather match scores for rated titles from user_rated_matches if not in recommendations
+    rated_matches = user_rated_matches(session, user)
+
+    # For any titles without a match score in recommendations or rated_matches,
+    # try scoring them if they have a Title
+    missing_score_ids = [
+        tid for tid in tmdb_ids if tid not in recommendations and tid not in rated_matches
+    ]
+    if missing_score_ids:
+        try:
+            feed_ids = feed_films(session, user)
+            scored = score_films(session, user, [*feed_ids, *missing_score_ids])
+            for s in scored:
+                if s.tmdb_id in missing_score_ids:
+                    recommendations[s.tmdb_id] = round(s.score * 100)
+        except Exception:
+            pass
+
     results: list[InProgressItem] = []
     seen_tmdb: set[int] = set()
-    for item, title in session.execute(stmt):
+    for item, title in items_with_titles:
         assert item.tmdb_id is not None
         if item.tmdb_id in seen_tmdb:
             continue
         seen_tmdb.add(item.tmdb_id)
+
+        is_rewatch = bool(item.played or item.tmdb_id in watched_tmdb_ids)
+        match_pct = recommendations.get(item.tmdb_id) or rated_matches.get(item.tmdb_id)
+
         results.append(
             InProgressItem(
                 tmdb_id=item.tmdb_id,
@@ -172,8 +225,24 @@ def list_in_progress(user: CurrentUser, session: DbSession) -> list[InProgressIt
                 jellyfin_url=f"{jellyfin_url}/web/#/details?id={item.item_id}"
                 if jellyfin_url
                 else None,
+                match=match_pct,
+                is_rewatch=is_rewatch,
             )
         )
+
+    # Sort:
+    # 1. Non-rewatches first (is_rewatch=False), rewatches at the end (is_rewatch=True)
+    # 2. Within each group: decreasing match percentage (most recommended first)
+    # 3. Tie-breaker: higher playback percentage, then playback_updated_at
+    results.sort(
+        key=lambda x: (
+            x.is_rewatch,
+            -(x.match if x.match is not None else -1),
+            -(x.playback_percentage),
+            -(x.playback_updated_at.timestamp() if x.playback_updated_at else 0),
+        )
+    )
+
     return results
 
 

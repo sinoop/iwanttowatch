@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from test_imports import KEY
 
-from iwanttowatch.models import ShortlistItem, Title, UserTitle
+from iwanttowatch.models import Recommendation, ShortlistItem, Title, UserTitle
 
 JELLYFIN = "http://jellyfin.test:8096"
 API_KEY = "jellyfin-api-key"
@@ -318,6 +318,70 @@ def test_in_progress_playback_and_rating_prompts(
     )
     assert rate.status_code == 200
     assert client.get("/api/v1/me/rating-prompts").json() == []
+
+    # Test in-progress ordering:
+    # 1. Unwatched items ordered by decreasing match percentage (most recommended first)
+    # 2. Watched/rewatch items appear at the end
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        session.add_all(
+            [
+                Title(
+                    tmdb_id=401,
+                    title="Premam",
+                    original_title="Premam",
+                    original_language="ml",
+                    year=2015,
+                ),
+                Title(
+                    tmdb_id=501,
+                    title="Manichitrathazhu",
+                    original_title="Manichitrathazhu",
+                    original_language="ml",
+                    year=1993,
+                ),
+            ]
+        )
+        session.commit()
+        session.add_all(
+            [
+                # Recommendations: Manichitrathazhu (95% match), Premam (70% match)
+                Recommendation(user_id=1, tmdb_id=501, score=0.95, rank=1, reasons=[]),
+                Recommendation(user_id=1, tmdb_id=401, score=0.70, rank=2, reasons=[]),
+            ]
+        )
+        session.commit()
+
+    premam = jellyfin.add("Premam", 2015, Tmdb=str(401))
+    manichitrathazhu = jellyfin.add("Manichitrathazhu", 1993, Tmdb=str(501))
+
+    # Start Premam (unwatched, 70% match, 15% played)
+    jellyfin.play(RIYA, premam, played=False, PlaybackPositionTicks=3000, PlayedPercentage=15.0)
+    # Start Manichitrathazhu (unwatched, 95% match, 20% played)
+    jellyfin.play(
+        RIYA, manichitrathazhu, played=False, PlaybackPositionTicks=4000, PlayedPercentage=20.0
+    )
+    # Rewatch Drishyam (watched previously, marked as watched, 25% played)
+    jellyfin.play(RIYA, drishyam, played=True, PlaybackPositionTicks=5000, PlayedPercentage=25.0)
+
+    # Sync Jellyfin library
+    client.post("/api/v1/settings/jellyfin/sync")
+    idle(client)
+
+    in_prog_items = client.get("/api/v1/me/in-progress").json()
+    assert len(in_prog_items) == 3
+    # First: Manichitrathazhu (unwatched, 95% match)
+    assert in_prog_items[0]["tmdb_id"] == 501
+    assert in_prog_items[0]["match"] == 95
+    assert in_prog_items[0]["is_rewatch"] is False
+
+    # Second: Premam (unwatched, 70% match)
+    assert in_prog_items[1]["tmdb_id"] == 401
+    assert in_prog_items[1]["match"] == 70
+    assert in_prog_items[1]["is_rewatch"] is False
+
+    # At the end: Drishyam (rewatch)
+    assert in_prog_items[2]["tmdb_id"] == 301
+    assert in_prog_items[2]["is_rewatch"] is True
 
 
 def test_sync_shortlist_playlist(client: TestClient, jellyfin: FakeJellyfin) -> None:

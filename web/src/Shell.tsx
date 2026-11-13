@@ -1,7 +1,7 @@
 import type { Me } from '@iwanttowatch/api-client'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { NavLink, Outlet } from 'react-router'
+import { NavLink, Outlet, useLocation } from 'react-router'
 import { api, useChildren, useServerSettings } from './api'
 import HeaderSearch from './Search'
 import { JustWatchCredit } from './Streaming'
@@ -16,6 +16,8 @@ const NAV = [
 ]
 
 export default function Shell({ me }: { me: Me }) {
+  const location = useLocation()
+  const isDiscover = location.pathname === '/'
   const queryClient = useQueryClient()
   const settings = useServerSettings()
   const isChild = me.is_child
@@ -83,8 +85,8 @@ export default function Shell({ me }: { me: Me }) {
             ))}
           </SegmentedCapsule>
         </nav>
-        <HeaderSearch />
-        <div className={`flex items-center gap-2 text-sm sm:gap-3 ${settings.data?.tmdb_configured ? 'ml-auto sm:ml-0' : 'ml-auto'}`}>
+        {!isDiscover && <HeaderSearch />}
+        <div className={`flex items-center gap-2 text-sm sm:gap-3 ${!isDiscover && settings.data?.tmdb_configured ? 'ml-auto sm:ml-0' : 'ml-auto'}`}>
           {canSwitch ? (
             <div ref={menuRef} className="relative">
               <button

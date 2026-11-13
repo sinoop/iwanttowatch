@@ -153,3 +153,17 @@ def test_upgrading_keeps_data_in_tables_that_point_at_rebuilt_ones(tmp_path: Pat
     # Starting again, with nothing to upgrade, takes no further copy.
     create_app(settings)
     assert len(list((tmp_path / "backups").glob("*-before-upgrade.db"))) == 1
+
+
+def test_show_continue_watching_preference(client: TestClient) -> None:
+    client.post("/api/v1/setup", json=ADMIN)
+    me = client.get("/api/v1/me").json()
+    assert me["show_continue_watching"] is False
+
+    updated = client.put("/api/v1/me/profile", json={"show_continue_watching": True}).json()
+    assert updated["show_continue_watching"] is True
+    assert client.get("/api/v1/me").json()["show_continue_watching"] is True
+
+    off = client.put("/api/v1/me/profile", json={"show_continue_watching": False}).json()
+    assert off["show_continue_watching"] is False
+    assert client.get("/api/v1/me").json()["show_continue_watching"] is False

@@ -610,11 +610,12 @@ export function usePeopleTaste() {
 }
 
 /** Movies the user is currently watching on Jellyfin (in progress / resume). */
-export function useInProgress() {
+export function useInProgress(enabled = true) {
   return useQuery({
     queryKey: ['jellyfin', 'in-progress'],
     queryFn: async () => (await api.GET('/api/v1/me/in-progress')).data ?? [],
-    refetchInterval: 30_000,
+    enabled,
+    refetchInterval: enabled ? 30_000 : false,
   })
 }
 

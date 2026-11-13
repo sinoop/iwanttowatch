@@ -11,6 +11,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     delete,
+    false,
 )
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
@@ -37,6 +38,8 @@ class User(Base):
     )
     # Show rent and buy options in movie details (off by default).
     show_rent_buy: Mapped[bool] = mapped_column(default=False)
+    # Show "Continue Watching on Jellyfin" in-progress shelf on Discover (off by default).
+    show_continue_watching: Mapped[bool] = mapped_column(default=False, server_default=false())
     # Optional on adults (films from before it count a little against their matches);
     # required on child profiles, where it sets their certificate age limit.
     birth_year: Mapped[int | None]

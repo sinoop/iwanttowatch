@@ -92,8 +92,8 @@ export function FilmSearch({
   )
 }
 
-/** The header's unified search and Ask AI box. */
-export default function HeaderSearch() {
+/** The unified search and Ask AI box. */
+export default function HeaderSearch({ className = '' }: { className?: string } = {}) {
   const settings = useServerSettings()
   const navigate = useNavigate()
   const location = useLocation()
@@ -208,7 +208,7 @@ export default function HeaderSearch() {
   }
 
   return (
-    <div ref={containerRef} className="relative order-2 w-full sm:order-none sm:ml-auto sm:w-72 md:w-80 lg:w-96">
+    <div ref={containerRef} className={className || 'relative order-2 w-full sm:order-none sm:ml-auto sm:w-72 md:w-80 lg:w-96'}>
       <form onSubmit={handleSubmit} role="search" className="relative flex items-center">
         <label htmlFor="header-search" className="sr-only">
           {mode === 'search' ? 'Search films, actors, or directors' : 'Ask AI for recommendations'}
@@ -276,7 +276,11 @@ export default function HeaderSearch() {
       </form>
 
       {dropdownOpen && mode === 'search' && (
-        <div className="absolute top-full left-0 right-0 z-50 mt-2 sm:right-auto sm:w-[28rem] md:w-[32rem] rounded-xl border border-white/15 bg-[#11141b] p-3 text-white shadow-2xl shadow-black/80 backdrop-blur-md">
+        <div
+          className={`absolute top-full left-0 z-50 mt-2 rounded-xl border border-white/15 bg-[#11141b] p-3 text-white shadow-2xl shadow-black/80 backdrop-blur-md ${
+            className ? 'right-0' : 'right-0 sm:right-auto sm:w-[28rem] md:w-[32rem]'
+          }`}
+        >
           {search.isPending && (
             <div className="flex items-center gap-2 py-3 text-xs text-white/60">
               <span className="size-3.5 animate-spin rounded-full border-2 border-white/20 border-t-accent" aria-hidden />

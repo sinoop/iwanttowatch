@@ -20,6 +20,8 @@ class Me(BaseModel):
     subscriptions: list[int]
     # Whether to show Rent and Buy options in film details.
     show_rent_buy: bool = False
+    # Whether to show "Continue Watching on Jellyfin" on Discover.
+    show_continue_watching: bool = False
     birth_year: int | None
     is_child: bool = False
     # Maximum film certificate in the user's region, e.g. "U/A 7+" or "PG".
@@ -35,6 +37,7 @@ BirthYear = Annotated[int, Field(ge=1900, le=2100)]
 class ProfileUpdate(BaseModel):
     birth_year: BirthYear | None = None
     default_content_type: str | None = None
+    show_continue_watching: bool | None = None
 
 
 class SetupStatus(BaseModel):

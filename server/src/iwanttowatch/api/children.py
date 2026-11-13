@@ -83,6 +83,7 @@ def create_child(
         languages=list(adult.languages),
         subscriptions=list(adult.subscriptions),
         show_rent_buy=adult.show_rent_buy,
+        show_continue_watching=adult.show_continue_watching,
     )
     if not refresh_limit(child, tmdb):
         child.max_certificate, child.allowed_certificates = "", []

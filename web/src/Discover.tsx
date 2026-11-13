@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { api, errorMessage, facts, useChildren, useDismissRatingPrompt, useInProgress, useQuickRate, useRadarrBatchSync, useRadarrShortlist, useRatingPrompts, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
 import { QuickTags, ReactionIcon } from './RateDialog'
+import HeaderSearch from './Search'
 import { JellyfinLogo, PlatformFilter, WatchBadges } from './Streaming'
 import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, DownloadIcon, ImdbBadge, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
@@ -87,7 +88,18 @@ export default function Discover({ me }: { me: Me }) {
     onSettled: refreshFeed,
   })
   const shortlist = useShortlist()
-  const inProgress = useInProgress()
+  const inProgress = useInProgress(me.show_continue_watching)
+  const hideContinueWatching = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await api.PUT('/api/v1/me/profile', { body: { show_continue_watching: false } })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['me'], data)
+      queryClient.invalidateQueries({ queryKey: ['jellyfin', 'in-progress'] })
+    },
+  })
   const ratingPrompts = useRatingPrompts()
   const dismissRatingPrompt = useDismissRatingPrompt()
   useEffect(() => {
@@ -204,10 +216,9 @@ export default function Discover({ me }: { me: Me }) {
 
   return (
     <>
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Discover</h1>
-          <p className="mt-1 text-white/60">Films picked for {me.display_name}, recommended first.</p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1">
+          <HeaderSearch className="w-full" />
         </div>
         {first && <RefreshButton page={first} language={language} genre={genre} contentType={contentType} />}
       </div>
@@ -274,10 +285,11 @@ export default function Discover({ me }: { me: Me }) {
       )}
 
       {/* Movies in progress / continue watching on Jellyfin */}
-      {inProgress.data && inProgress.data.length > 0 && (
+      {me.show_continue_watching && inProgress.data && inProgress.data.length > 0 && (
         <ContinueWatchingShelf
           items={inProgress.data}
           onOpen={(tmdbId) => setOpen(tmdbId)}
+          onHide={() => hideContinueWatching.mutate()}
         />
       )}
 
@@ -291,6 +303,7 @@ export default function Discover({ me }: { me: Me }) {
           onWatchOn={setWatchOn}
           contentType={contentType}
           onContentType={setContentType}
+          defaultContentType={me.default_content_type ?? 'movies'}
           language={language}
           onLanguage={setLanguage}
           genre={genre}
@@ -350,7 +363,8 @@ export default function Discover({ me }: { me: Me }) {
             setYearMin(null)
             setYearMax(null)
             setCertificate(null)
-            if (shortlistFilter === 'hide') setShortlistFilter('all')
+            if (shortlistFilter !== 'all') setShortlistFilter('all')
+            if (contentType !== (me.default_content_type ?? 'movies')) setContentType(me.default_content_type ?? 'movies')
           }}
         />
       )}
@@ -475,6 +489,17 @@ function RefreshButton({
   )
 }
 
+function SlidersIcon({ className = 'size-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className={className} aria-hidden="true">
+      <path d="M3 5h8M15 5h2M3 10h2M9 10h8M3 15h11M18 15h-1" strokeLinecap="round" />
+      <circle cx="13" cy="5" r="2" />
+      <circle cx="7" cy="10" r="2" />
+      <circle cx="16" cy="15" r="2" />
+    </svg>
+  )
+}
+
 function Filters({
   page,
   maxCertificate,
@@ -484,6 +509,7 @@ function Filters({
   onWatchOn,
   contentType,
   onContentType,
+  defaultContentType,
   language,
   onLanguage,
   genre,
@@ -512,6 +538,7 @@ function Filters({
   onWatchOn: (value: WatchOn) => void
   contentType: string
   onContentType: (value: string) => void
+  defaultContentType: string
   language: string | null
   onLanguage: (value: string | null) => void
   genre: string | null
@@ -536,12 +563,22 @@ function Filters({
     mutate: () => void
   }
 }) {
-  const selectClass = (active: boolean) =>
-    `rounded-lg border px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30 ${
+  const [expanded, setExpanded] = useState(false)
+
+  const filterSelectClass = (active: boolean) =>
+    `rounded-lg border px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30 cursor-pointer ${
       active
-        ? 'border-accent/60 bg-accent/10 text-accent-strong'
+        ? 'border-accent/60 bg-accent/15 text-accent-strong font-medium shadow-xs'
         : 'border-white/10 bg-black/30 text-white/80 hover:border-white/25 hover:text-white'
     }`
+
+  const panelSelectClass = (active: boolean) =>
+    `w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30 cursor-pointer ${
+      active
+        ? 'border-accent/60 bg-accent/15 text-accent-strong font-medium'
+        : 'border-white/10 bg-black/40 text-white/90 hover:border-white/25'
+    }`
+
   // Keep a chosen filter visible even when it no longer matches anything.
   const languages = page.languages.map((l) => l.language)
   if (language && !languages.includes(language)) languages.push(language)
@@ -551,179 +588,407 @@ function Filters({
       ? [...page.certificates, certificate]
       : page.certificates
 
+  // Build active filter chips for quick removal
+  interface ActiveChip {
+    id: string
+    label: string
+    onRemove: () => void
+  }
+  const activeChips: ActiveChip[] = []
+
+  if (genre !== null) {
+    activeChips.push({
+      id: 'genre',
+      label: `Genre: ${genre}`,
+      onRemove: () => onGenre(null),
+    })
+  }
+
+  if (yearMin !== null || yearMax !== null) {
+    const rangeLabel =
+      yearMin !== null && yearMax !== null
+        ? `${yearMin}–${yearMax}`
+        : yearMin !== null
+          ? `From ${yearMin}`
+          : `Until ${yearMax}`
+    activeChips.push({
+      id: 'yearRange',
+      label: `Years: ${rangeLabel}`,
+      onRemove: () => onYearRange(null, null),
+    })
+  } else if (decade !== null) {
+    activeChips.push({
+      id: 'decade',
+      label: `${decade}s`,
+      onRemove: () => onDecade(null),
+    })
+  }
+
+  if (language !== null) {
+    activeChips.push({
+      id: 'language',
+      label: `Language: ${languageName.of(language) ?? language}`,
+      onRemove: () => onLanguage(null),
+    })
+  }
+
+  if (contentType !== defaultContentType) {
+    const typeLabels: Record<string, string> = {
+      movies: 'Movies only',
+      standup: 'Stand-up comedy',
+      concerts: 'Concerts & Live',
+      all: 'All content',
+    }
+    activeChips.push({
+      id: 'contentType',
+      label: typeLabels[contentType] ?? contentType,
+      onRemove: () => onContentType(defaultContentType),
+    })
+  }
+
+  if (shortlistFilter !== 'all') {
+    activeChips.push({
+      id: 'shortlist',
+      label: shortlistFilter === 'only' ? 'Shortlist only' : 'Hide shortlisted',
+      onRemove: () => onShortlistFilter('all'),
+    })
+  }
+
+  if (!maxCertificate && certificate !== null) {
+    activeChips.push({
+      id: 'certificate',
+      label: `Rated ${certificate} & under`,
+      onRemove: () => onCertificate(null),
+    })
+  } else if (maxCertificate && !ageLimit) {
+    activeChips.push({
+      id: 'ageLimit',
+      label: 'Age restriction: Off',
+      onRemove: () => onAgeLimit(true),
+    })
+  }
+
+  const secondaryActiveCount = activeChips.filter((c) => c.id !== 'genre').length
+
+  const clearAllFilters = () => {
+    onGenre(null)
+    onDecade(null)
+    onYearRange(null, null)
+    onLanguage(null)
+    onCertificate(null)
+    onShortlistFilter('all')
+    onContentType(defaultContentType)
+    if (maxCertificate) onAgeLimit(true)
+  }
+
   return (
-    <div className="mt-6 flex flex-wrap items-center gap-2.5">
-      <PlatformFilter platforms={page.platforms} value={watchOn} onChange={onWatchOn} />
-      <select
-        value={shortlistFilter}
-        onChange={(e) => onShortlistFilter(e.target.value as ShortlistFilter)}
-        aria-label="Shortlist"
-        className={selectClass(shortlistFilter !== 'all')}
-      >
-        <option value="all">All films</option>
-        <option value="only">Shortlist only ({page.shortlist_count})</option>
-        <option value="hide">Hide shortlisted ({page.shortlist_count})</option>
-      </select>
-      {shortlistFilter === 'only' && radarrShortlist?.configured && (
-        <>
-          {radarrShortlist.to_request_count > 0 && (
-            <button
-              type="button"
-              disabled={batchSync?.isPending}
-              onClick={() => batchSync?.mutate({ scope: 'user' })}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50 transition-colors cursor-pointer"
-              title="Batch request unstreamable shortlisted films to Radarr"
+    <div className="mt-6 space-y-3">
+      {/* Primary Filter Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Where to watch */}
+          <PlatformFilter platforms={page.platforms} value={watchOn} onChange={onWatchOn} />
+
+          {/* Genre quick selector */}
+          {genres.length > 0 && (
+            <select
+              value={genre ?? ''}
+              onChange={(e) => onGenre(e.target.value || null)}
+              aria-label="Genre"
+              className={filterSelectClass(genre !== null)}
             >
-              <DownloadIcon className="size-3.5" />
-              {batchSync?.isPending
-                ? 'Requesting…'
-                : `Download via Radarr (${radarrShortlist.to_request_count})`}
-            </button>
+              <option value="">All genres</option>
+              {genres.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
           )}
-          {radarrShortlist.to_request_count === 0 && radarrShortlist.unstreamable_count > 0 && (
-            <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-xs text-white/60">
-              {radarrShortlist.downloading_count > 0 ? (
-                <>
-                  <span className="text-amber-400">⏳</span> {radarrShortlist.downloading_count} downloading in Radarr
-                </>
-              ) : (
-                <>
-                  <span className="text-emerald-400">✓</span> Radarr synced
-                </>
-              )}
-            </span>
-          )}
-          {batchSync?.data && (
-            <span className="inline-flex items-center text-xs text-emerald-400">
-              ✓ Queued {batchSync.data.requested_count} film(s)
-            </span>
-          )}
-        </>
-      )}
-      {shortlistFilter === 'only' && jellyfinLinked && (
-        <>
+          {/* Sort order */}
+          <select
+            value={sort}
+            onChange={(e) => onSort(e.target.value as FeedSort)}
+            aria-label="Order by"
+            className={filterSelectClass(sort !== 'recommended')}
+          >
+            <option value="recommended">Recommended</option>
+            <option value="match">Highest match</option>
+            <option value="rating">Highest rated</option>
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="shortest">Shortest first</option>
+          </select>
+
+          {/* More Filters button with active count badge */}
           <button
             type="button"
-            disabled={jellyfinSync?.isPending}
-            onClick={() => jellyfinSync?.mutate()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-indigo-500/20 disabled:opacity-50 transition-colors cursor-pointer"
-            title="Sync shortlisted movies on Jellyfin into a Jellyfin playlist"
+            onClick={() => setExpanded((prev) => !prev)}
+            aria-expanded={expanded}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer ${
+              expanded || secondaryActiveCount > 0
+                ? 'border-accent/60 bg-accent/15 text-accent-strong shadow-xs'
+                : 'border-white/10 bg-black/30 text-white/80 hover:border-white/25 hover:text-white'
+            }`}
           >
-            <JellyfinLogo className="size-3.5" />
-            {jellyfinSync?.isPending ? 'Syncing…' : 'Sync to Jellyfin playlist'}
-          </button>
-          {jellyfinSync?.data && (
-            <span className="inline-flex items-center text-xs text-emerald-400">
-              ✓ Synced {jellyfinSync.data.synced_count} film(s)
-              {jellyfinSync.data.skipped_count > 0
-                ? ` (${jellyfinSync.data.skipped_count} not in Jellyfin)`
-                : ''}
-            </span>
-          )}
-        </>
-      )}
-      <select
-        value={contentType}
-        onChange={(e) => onContentType(e.target.value)}
-        aria-label="Content type"
-        className={selectClass(contentType !== 'movies')}
-      >
-        <option value="movies">Movies only</option>
-        <option value="standup">Stand-up comedy</option>
-        <option value="concerts">Concerts &amp; Live</option>
-        <option value="all">All content</option>
-      </select>
-      {(languages.length > 1 || language) && (
-        <select
-          value={language ?? ''}
-          onChange={(e) => onLanguage(e.target.value || null)}
-          aria-label="Language"
-          className={selectClass(language !== null)}
-        >
-          <option value="">All languages</option>
-          {languages.map((code) => (
-            <option key={code} value={code}>
-              {languageName.of(code)}
-            </option>
-          ))}
-        </select>
-      )}
-      {genres.length > 0 && (
-        <select
-          value={genre ?? ''}
-          onChange={(e) => onGenre(e.target.value || null)}
-          aria-label="Genre"
-          className={selectClass(genre !== null)}
-        >
-          <option value="">All genres</option>
-          {genres.map((g) => (
-            <option key={g} value={g}>
-              {g}
-            </option>
-          ))}
-        </select>
-      )}
-      <YearFilter
-        decades={page.decades ?? []}
-        decade={decade}
-        yearMin={yearMin}
-        yearMax={yearMax}
-        onDecade={onDecade}
-        onYearRange={onYearRange}
-        allLabel="All decades"
-        ariaLabel="Decade"
-        selectClass={selectClass}
-      />
-      {!maxCertificate && certificates.length > 0 && (
-        <select
-          value={certificate ?? ''}
-          onChange={(e) => onCertificate(e.target.value || null)}
-          aria-label="Age rating"
-          className={selectClass(certificate !== null)}
-        >
-          <option value="">All age ratings</option>
-          {certificates.map((cert) => (
-            <option key={cert} value={cert}>
-              Rated {cert} &amp; under
-            </option>
-          ))}
-        </select>
-      )}
-      <select
-        value={sort}
-        onChange={(e) => onSort(e.target.value as FeedSort)}
-        aria-label="Order by"
-        className={selectClass(sort !== 'recommended')}
-      >
-        <option value="recommended">Order: Recommended</option>
-        <option value="match">Order: Highest match</option>
-        <option value="rating">Order: Highest rated</option>
-        <option value="newest">Order: Newest first</option>
-        <option value="oldest">Order: Oldest first</option>
-        <option value="shortest">Order: Shortest first</option>
-      </select>
-      {maxCertificate && (
-        <div className="inline-flex items-center gap-1">
-          <select
-            value={ageLimit ? 'on' : 'off'}
-            onChange={(e) => onAgeLimit(e.target.value === 'on')}
-            aria-label="Age restriction"
-            className={selectClass(ageLimit)}
-          >
-            <option value="on">Rated {maxCertificate} &amp; under</option>
-            <option value="off">All age ratings</option>
-          </select>
-          {ageLimit && (
-            <button
-              type="button"
-              title="Remove age restriction filter"
-              aria-label="Remove age restriction filter"
-              onClick={() => onAgeLimit(false)}
-              className="flex size-8 items-center justify-center rounded-lg border border-white/10 bg-black/30 text-sm text-white/60 hover:border-white/25 hover:text-white focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none"
+            <SlidersIcon className="size-3.5" />
+            <span>Filters</span>
+            {secondaryActiveCount > 0 && (
+              <span className="rounded-full bg-accent px-1.5 py-0.2 text-[10px] font-bold text-black leading-tight">
+                {secondaryActiveCount}
+              </span>
+            )}
+            <svg
+              viewBox="0 0 20 20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className={`size-3 text-white/50 transition-transform ${expanded ? 'rotate-180' : ''}`}
             >
-              ×
-            </button>
-          )}
+              <path d="m5 7.5 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Right side: Radarr batch sync & Jellyfin playlist sync if shortlist only is selected */}
+        {shortlistFilter === 'only' && (
+          <div className="flex flex-wrap items-center gap-2">
+            {radarrShortlist?.configured && (
+              <>
+                {radarrShortlist.to_request_count > 0 && (
+                  <button
+                    type="button"
+                    disabled={batchSync?.isPending}
+                    onClick={() => batchSync?.mutate({ scope: 'user' })}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-200 hover:bg-sky-500/20 disabled:opacity-50 transition-colors cursor-pointer"
+                    title="Batch request unstreamable shortlisted films to Radarr"
+                  >
+                    <DownloadIcon className="size-3.5" />
+                    {batchSync?.isPending
+                      ? 'Requesting…'
+                      : `Download via Radarr (${radarrShortlist.to_request_count})`}
+                  </button>
+                )}
+                {radarrShortlist.to_request_count === 0 && radarrShortlist.unstreamable_count > 0 && (
+                  <span className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-xs text-white/60">
+                    {radarrShortlist.downloading_count > 0 ? (
+                      <>
+                        <span className="text-amber-400">⏳</span> {radarrShortlist.downloading_count} downloading in Radarr
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-emerald-400">✓</span> Radarr synced
+                      </>
+                    )}
+                  </span>
+                )}
+                {batchSync?.data && (
+                  <span className="inline-flex items-center text-xs text-emerald-400">
+                    ✓ Queued {batchSync.data.requested_count} film(s)
+                  </span>
+                )}
+              </>
+            )}
+            {jellyfinLinked && (
+              <>
+                <button
+                  type="button"
+                  disabled={jellyfinSync?.isPending}
+                  onClick={() => jellyfinSync?.mutate()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-indigo-500/20 disabled:opacity-50 transition-colors cursor-pointer"
+                  title="Sync shortlisted movies on Jellyfin into a Jellyfin playlist"
+                >
+                  <JellyfinLogo className="size-3.5" />
+                  {jellyfinSync?.isPending ? 'Syncing…' : 'Sync to Jellyfin playlist'}
+                </button>
+                {jellyfinSync?.data && (
+                  <span className="inline-flex items-center text-xs text-emerald-400">
+                    ✓ Synced {jellyfinSync.data.synced_count} film(s)
+                    {jellyfinSync.data.skipped_count > 0
+                      ? ` (${jellyfinSync.data.skipped_count} not in Jellyfin)`
+                      : ''}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Expandable Detailed Filters Drawer */}
+      {expanded && (
+        <div className="rounded-2xl border border-white/10 bg-[#131722]/95 p-4 shadow-xl backdrop-blur-md">
+          <div className="mb-3.5 flex items-center justify-between border-b border-white/10 pb-2.5 text-xs">
+            <span className="font-semibold uppercase tracking-wider text-white/50">Detailed filters</span>
+            <div className="flex items-center gap-3">
+              {activeChips.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearAllFilters}
+                  className="font-medium text-white/60 hover:text-accent transition cursor-pointer"
+                >
+                  Reset all
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                className="text-white/60 hover:text-white transition cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Shortlist Filter */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-white/60">Shortlist</label>
+              <select
+                value={shortlistFilter}
+                onChange={(e) => onShortlistFilter(e.target.value as ShortlistFilter)}
+                aria-label="Shortlist"
+                className={panelSelectClass(shortlistFilter !== 'all')}
+              >
+                <option value="all">All films</option>
+                <option value="only">Shortlist only ({page.shortlist_count})</option>
+                <option value="hide">Hide shortlisted ({page.shortlist_count})</option>
+              </select>
+            </div>
+
+            {/* Format / Content Type */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-white/60">Format</label>
+              <select
+                value={contentType}
+                onChange={(e) => onContentType(e.target.value)}
+                aria-label="Content type"
+                className={panelSelectClass(contentType !== defaultContentType)}
+              >
+                <option value="movies">Movies only</option>
+                <option value="standup">Stand-up comedy</option>
+                <option value="concerts">Concerts &amp; Live</option>
+                <option value="all">All content</option>
+              </select>
+            </div>
+
+            {/* Decade & Year Range */}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-white/60">Decade / Era</label>
+              <YearFilter
+                decades={page.decades ?? []}
+                decade={decade}
+                yearMin={yearMin}
+                yearMax={yearMax}
+                onDecade={onDecade}
+                onYearRange={onYearRange}
+                allLabel="All decades"
+                ariaLabel="Decade"
+                selectClass={panelSelectClass}
+              />
+            </div>
+
+            {/* Language */}
+            {(languages.length > 1 || language) && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-white/60">Language</label>
+                <select
+                  value={language ?? ''}
+                  onChange={(e) => onLanguage(e.target.value || null)}
+                  aria-label="Language"
+                  className={panelSelectClass(language !== null)}
+                >
+                  <option value="">All languages</option>
+                  {languages.map((code) => (
+                    <option key={code} value={code}>
+                      {languageName.of(code)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Age Rating (Adult) */}
+            {!maxCertificate && certificates.length > 0 && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-white/60">Age rating</label>
+                <select
+                  value={certificate ?? ''}
+                  onChange={(e) => onCertificate(e.target.value || null)}
+                  aria-label="Age rating"
+                  className={panelSelectClass(certificate !== null)}
+                >
+                  <option value="">All age ratings</option>
+                  {certificates.map((cert) => (
+                    <option key={cert} value={cert}>
+                      Rated {cert} &amp; under
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Age Restriction (Child) */}
+            {maxCertificate && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-white/60">Age limit</label>
+                <div className="flex items-center gap-1">
+                  <select
+                    value={ageLimit ? 'on' : 'off'}
+                    onChange={(e) => onAgeLimit(e.target.value === 'on')}
+                    aria-label="Age restriction"
+                    className={panelSelectClass(ageLimit)}
+                  >
+                    <option value="on">Rated {maxCertificate} &amp; under</option>
+                    <option value="off">All age ratings</option>
+                  </select>
+                  {ageLimit && (
+                    <button
+                      type="button"
+                      title="Remove age restriction filter"
+                      aria-label="Remove age restriction filter"
+                      onClick={() => onAgeLimit(false)}
+                      className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/40 text-sm text-white/60 hover:border-white/25 hover:text-white transition cursor-pointer"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Active Filter Chips */}
+      {activeChips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
+          <span className="text-[11px] font-medium text-white/40 mr-1">Active filters:</span>
+          {activeChips.map((chip) => (
+            <span
+              key={chip.id}
+              className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent-strong"
+            >
+              <span>{chip.label}</span>
+              <button
+                type="button"
+                onClick={chip.onRemove}
+                aria-label={`Remove filter ${chip.label}`}
+                className="rounded-full p-0.5 text-accent-strong hover:bg-accent/25 transition cursor-pointer"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" className="size-3">
+                  <path d="M4 4l8 8M12 4l-8 8" strokeLinecap="round" />
+                </svg>
+              </button>
+            </span>
+          ))}
+          <button
+            type="button"
+            onClick={clearAllFilters}
+            className="ml-1 text-xs text-white/50 hover:text-white underline underline-offset-2 transition cursor-pointer"
+          >
+            Clear all
+          </button>
         </div>
       )}
     </div>
@@ -1130,9 +1395,11 @@ function RatingPromptBanner({
 function ContinueWatchingShelf({
   items,
   onOpen,
+  onHide,
 }: {
   items: InProgressItem[]
   onOpen: (tmdbId: number) => void
+  onHide?: () => void
 }) {
   if (items.length === 0) return null
   return (
@@ -1145,6 +1412,16 @@ function ContinueWatchingShelf({
             {items.length}
           </span>
         </div>
+        {onHide && (
+          <button
+            type="button"
+            onClick={onHide}
+            className="text-xs text-white/40 hover:text-white transition cursor-pointer"
+            title="Hide shelf from Discover (can re-enable in Settings)"
+          >
+            Hide shelf
+          </button>
+        )}
       </div>
 
       <div className="flex gap-3.5 overflow-x-auto pb-2 scrollbar-thin">
@@ -1177,7 +1454,13 @@ function ContinueWatchingShelf({
                     className="size-full object-cover transition group-hover:scale-105"
                   />
                 </button>
-                {/* Progress pill on top */}
+                {/* Match badge on top left */}
+                {item.match !== undefined && item.match !== null && (
+                  <div className="absolute top-1.5 left-1.5 pointer-events-none">
+                    <MatchBadge match={item.match} />
+                  </div>
+                )}
+                {/* Progress pill on top right */}
                 <div className="absolute top-1.5 right-1.5 pointer-events-none">
                   <span className="rounded-md bg-black/80 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30 backdrop-blur-xs">
                     {progressLabel}
@@ -1202,7 +1485,14 @@ function ContinueWatchingShelf({
                   {item.title}
                 </button>
                 <div className="flex items-center justify-between text-[11px] text-white/50 mt-0.5">
-                  <span>{item.year ?? ''}</span>
+                  <span className="flex items-center gap-1.5">
+                    {item.year && <span>{item.year}</span>}
+                    {item.is_rewatch && (
+                      <span className="rounded bg-amber-400/15 px-1 py-0.2 text-[9px] font-semibold text-amber-300">
+                        Rewatch
+                      </span>
+                    )}
+                  </span>
                   <span>{Math.round(item.playback_percentage)}%</span>
                 </div>
               </div>

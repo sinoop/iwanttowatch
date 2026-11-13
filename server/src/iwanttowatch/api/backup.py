@@ -34,6 +34,7 @@ class ExportedProfile(BaseModel):
     languages: list[LanguageCode] = Field(max_length=20)
     subscriptions: list[int]
     show_rent_buy: bool = False
+    show_continue_watching: bool = False
     birth_year: BirthYear | None = None
 
 
@@ -129,6 +130,7 @@ def export_data(user: AdultUser, session: DbSession, response: Response) -> Data
             languages=user.languages,
             subscriptions=user.subscriptions,
             show_rent_buy=user.show_rent_buy,
+            show_continue_watching=user.show_continue_watching,
             birth_year=user.birth_year,
         ),
         entries=[
@@ -252,6 +254,7 @@ def restore_data(
     user.languages = data.profile.languages
     user.subscriptions = data.profile.subscriptions
     user.show_rent_buy = data.profile.show_rent_buy
+    user.show_continue_watching = data.profile.show_continue_watching
     # Older exports have no birth year; keep the one set here.
     if data.profile.birth_year is not None:
         user.birth_year = data.profile.birth_year

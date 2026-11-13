@@ -20,6 +20,9 @@ export function ProfileSettings({ me }: { me: Me }) {
       <div id="jellyfin-account" className="scroll-mt-6">
         <JellyfinAccount />
       </div>
+      <div id="continue-watching" className="scroll-mt-6">
+        <ContinueWatchingPreference me={me} />
+      </div>
       {!me.is_child && (
         <div id="taste-profile" className="scroll-mt-6">
           <TastePersonaCard />
@@ -323,6 +326,55 @@ function ShareTaste({ share }: { share: TogetherOptions['share'] }) {
           <Button onClick={() => create.mutate()} disabled={create.isPending}>
             {create.isPending ? 'Creating…' : 'Create share link'}
           </Button>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ContinueWatchingPreference({ me }: { me: Me }) {
+  const queryClient = useQueryClient()
+  const [enabled, setEnabled] = useState(me.show_continue_watching)
+  const save = useMutation({
+    mutationFn: async (show_continue_watching: boolean) => {
+      const { data, error } = await api.PUT('/api/v1/me/profile', { body: { show_continue_watching } })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['me'], data)
+      setEnabled(data.show_continue_watching)
+      queryClient.invalidateQueries({ queryKey: ['jellyfin', 'in-progress'] })
+    },
+  })
+
+  return (
+    <section className="rounded-xl border border-white/10 p-5">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="font-semibold text-white">Continue Watching shelf</h2>
+          <p className="mt-1 text-sm text-white/60">
+            Show movies you are currently watching on Jellyfin in a dedicated shelf on the Discover page.
+          </p>
+        </div>
+        <label className="relative inline-flex cursor-pointer items-center shrink-0">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => {
+              const val = e.target.checked
+              setEnabled(val)
+              save.mutate(val)
+            }}
+            disabled={save.isPending}
+            className="peer sr-only"
+          />
+          <div className="h-6 w-11 rounded-full bg-white/10 peer-checked:bg-accent peer-focus:ring-2 peer-focus:ring-accent/40 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white" />
+        </label>
+      </div>
+      {save.error && (
+        <div className="mt-3">
+          <ErrorText>{save.error.message}</ErrorText>
         </div>
       )}
     </section>

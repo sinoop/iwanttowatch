@@ -125,6 +125,8 @@ def update_profile(
                 f"Content type must be one of {sorted(VALID_CONTENT_TYPES)}",
             )
         user.default_content_type = body.default_content_type
+    if body.show_continue_watching is not None:
+        user.show_continue_watching = body.show_continue_watching
     session.commit()
     request.app.state.feed_worker.rescore_soon(user.id)
     return Me.model_validate(user)
