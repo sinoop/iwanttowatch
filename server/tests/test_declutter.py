@@ -856,3 +856,65 @@ def test_declutter_combinable_categories(client: TestClient, fake_radarr: FakeRa
     qual_only = client.get("/api/v1/library/declutter?category=low_quality")
     assert qual_only.status_code == 200
     assert {it["tmdb_id"] for it in qual_only.json()["items"]} == {401, 402}
+
+
+def test_declutter_low_interest_candidates(client: TestClient, fake_radarr: FakeRadarr) -> None:
+    _setup_radarr(client)
+
+    fake_radarr.movies = {
+        501: {
+            "id": 51,
+            "tmdbId": 501,
+            "title": "Mediocre Film",
+            "year": 2021,
+            "hasFile": True,
+            "sizeOnDisk": 2_000_000_000,
+        },
+        502: {
+            "id": 52,
+            "tmdbId": 502,
+            "title": "Luke-warm Unwatched",
+            "year": 2022,
+            "hasFile": True,
+            "sizeOnDisk": 2_000_000_000,
+        },
+    }
+
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        session.add_all(
+            [
+                Title(
+                    tmdb_id=501,
+                    title="Mediocre Film",
+                    original_title="Mediocre Film",
+                    original_language="en",
+                    year=2021,
+                ),
+                Title(
+                    tmdb_id=502,
+                    title="Luke-warm Unwatched",
+                    original_title="Luke-warm Unwatched",
+                    original_language="en",
+                    year=2022,
+                ),
+            ]
+        )
+        session.flush()
+        session.add_all(
+            [
+                UserTitle(
+                    user_id=1,
+                    tmdb_id=501,
+                    source="app",
+                    watched=True,
+                    rating=5.5,
+                ),
+                Recommendation(user_id=1, tmdb_id=502, score=0.42, rank=1, reasons=["Low match"]),
+            ]
+        )
+        session.commit()
+
+    res = client.get("/api/v1/library/declutter?category=low_interest")
+    assert res.status_code == 200
+    ids = {it["tmdb_id"] for it in res.json()["items"]}
+    assert ids == {501, 502}

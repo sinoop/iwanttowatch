@@ -20,6 +20,7 @@ const CATEGORY_OPTIONS = [
   { id: 'abandoned', label: 'Abandoned Play', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
   { id: 'redundant_streamable', label: 'Streaming Redundant', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' },
   { id: 'low_match', label: 'Low Taste Match', color: 'text-sky-400 bg-sky-500/10 border-sky-500/20' },
+  { id: 'low_interest', label: 'Low Interest', color: 'text-slate-300 bg-slate-500/10 border-slate-500/20' },
 ] as const
 
 export function DeclutterSettings() {

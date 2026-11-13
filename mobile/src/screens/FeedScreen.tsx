@@ -12,6 +12,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { FeedItem } from '@iwanttowatch/api-client'
 import { useServer } from '../context/ServerContext'
 import { MovieCard } from '../components/MovieCard'
+import { OfflineBanner } from '../components/OfflineBanner'
 import { MovieDetailModal } from './MovieDetailModal'
 import { Ionicons } from '@expo/vector-icons'
 
@@ -116,7 +117,7 @@ export function FeedScreen({ onOpenServerModal }: { onOpenServerModal: () => voi
     )
   }
 
-  if (isLoading) {
+  if (isLoading && !feedData) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#38bdf8" />
@@ -125,7 +126,7 @@ export function FeedScreen({ onOpenServerModal }: { onOpenServerModal: () => voi
     )
   }
 
-  if (error) {
+  if (error && !feedData) {
     return (
       <View style={styles.centerContainer}>
         <Ionicons name="alert-circle-outline" size={48} color="#ef4444" />
@@ -142,6 +143,7 @@ export function FeedScreen({ onOpenServerModal }: { onOpenServerModal: () => voi
 
   return (
     <View style={styles.container}>
+      <OfflineBanner error={error} onRetry={() => { void refetch() }} />
       <FlatList
         data={items}
         keyExtractor={(item) => String(item.tmdb_id)}

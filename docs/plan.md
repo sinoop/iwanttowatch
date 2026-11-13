@@ -251,9 +251,9 @@ Completed milestones (Phases 0–5d, 5f, 5g, 7, and completed Phase 6/Mobile v1 
 
 #### Batch 2 — Core UX & Mobile
 
-- [ ] **Actor + Director dual-role handling in filmography (#7):** Surface combined role badges (e.g. `Director · as <Character>`) in `PersonDialog.tsx` when someone both directed and acted in a film, and add role filter tabs (`All`, `Directed`, `Acted`).
-- [ ] **Mobile app offline caching (#9):** Wire `@tanstack/react-query-persist-client` + `@tanstack/query-async-storage-persister` (using the already-installed `@react-native-async-storage/async-storage`) in `mobile/` so cached feed and shortlist data remain browsable offline, with a non-blocking error banner when the server is unreachable.
-- [ ] **Declutter: include low-interest movies (#1):** Expand `declutter.py` beyond `disliked` and strict `low_match` (`< 0.35`) by raising/exposing the `low_match` threshold (e.g. `< 0.50`) and adding a `low_interest` signal for snoozed/dismissed items, mediocre non-favorite ratings (`5.0–6.0`), and long-unwatched low-match library items.
+- [x] **Actor + Director dual-role handling in filmography (#7):** Surface combined role badges (e.g. `Director · as <Character>`) in `PersonDialog.tsx` when someone both directed and acted in a film, and add role filter tabs (`All`, `Directed`, `Acted`) (2026-11-13).
+- [x] **Mobile app offline caching (#9):** Persist cached feed and shortlist data in `AsyncStorage` (`mobile/src/utils/queryPersistence.ts`) so cached data remains browsable offline, with a non-blocking error banner (`OfflineBanner`) when the server is unreachable (2026-11-13).
+- [x] **Declutter: include low-interest movies (#1):** Expand `declutter.py` beyond `disliked` and strict `low_match` (`< 0.35`) by adding a `low_interest` category for unwatched low-match (`< 0.50`), snoozed items, and mediocre non-favorite ratings (`4.0 < rating <= 6.0`) (2026-11-13).
 
 #### Batch 3 — AI Prompts & Taste Engine Upgrade
 

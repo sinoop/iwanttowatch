@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -10,11 +10,14 @@ import { ServerSetupModal } from './src/components/ServerSetupModal'
 import { FeedScreen } from './src/screens/FeedScreen'
 import { ShortlistScreen } from './src/screens/ShortlistScreen'
 import { SettingsScreen } from './src/screens/SettingsScreen'
+import { hydrateQueryCache, subscribeQueryPersistence } from './src/utils/queryPersistence'
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60 * 5, // 5 minutes
+      gcTime: 1000 * 60 * 60 * 24 * 7, // 7 days for offline cache
+      networkMode: 'offlineFirst',
       retry: 1,
     },
   },
@@ -25,6 +28,11 @@ type Tab = 'discover' | 'shortlist' | 'settings'
 function MainContent() {
   const [activeTab, setActiveTab] = useState<Tab>('discover')
   const [serverModalVisible, setServerModalVisible] = useState(false)
+
+  useEffect(() => {
+    void hydrateQueryCache(queryClient)
+    return subscribeQueryPersistence(queryClient)
+  }, [])
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>

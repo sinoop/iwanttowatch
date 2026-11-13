@@ -59,6 +59,7 @@ DECLUTTER_CATEGORIES = (
     "abandoned",
     "redundant_streamable",
     "low_match",
+    "low_interest",
     "unplayable",
 )
 
@@ -474,6 +475,31 @@ def inspect_declutter_candidates(
             low_match = True
             low_match_reasons.append(f"Predicted match only {user_match_pct}% · Unwatched on disk")
 
+        # --- 4b. Low Interest ---
+        low_interest = False
+        low_interest_reasons: list[str] = []
+        if (
+            not any_watched
+            and not any_favorited
+            and not low_match
+            and user_rec
+            and user_rec.score < 0.50
+        ):
+            low_interest = True
+            low_interest_reasons.append(f"Low predicted interest ({user_match_pct}%) · Unwatched")
+        if not disliked and not any_favorited:
+            for u in all_users:
+                for ut in ut_by_tmdb_and_user.get((tmdb_id, u.id), []):
+                    if ut.rating is not None and 4.0 < ut.rating <= 6.0:
+                        low_interest = True
+                        low_interest_reasons.append(
+                            f"Mediocre rating ({ut.rating:g}/10 by {u.display_name})"
+                        )
+            user_fb = fb_by_tmdb_and_user.get((tmdb_id, user.id))
+            if user_fb and user_fb.kind == "snooze":
+                low_interest = True
+                low_interest_reasons.append("Snoozed from recommendations")
+
         # --- 5. Unplayable in Jellyfin ---
         on_jellyfin = tmdb_id in lib_by_tmdb
         if not on_jellyfin and unmatched_lib_items:
@@ -555,6 +581,9 @@ def inspect_declutter_candidates(
         if low_match:
             matching_categories.append("low_match")
             all_reasons.extend(low_match_reasons)
+        if low_interest:
+            matching_categories.append("low_interest")
+            all_reasons.extend(low_interest_reasons)
 
         # Skip if not qualifying under any category
         if not matching_categories:

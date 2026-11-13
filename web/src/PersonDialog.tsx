@@ -33,12 +33,14 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
   const favoriteMutation = useFavoritePerson()
   const [prevPersonId, setPrevPersonId] = useState<number | null>(personId)
   const [tab, setTab] = useState<'available' | 'all'>('available')
+  const [roleFilter, setRoleFilter] = useState<'all' | 'directed' | 'acted'>('all')
   const [sortBy, setSortBy] = useState<'popular' | 'newest' | 'rating'>('popular')
   const [bioExpanded, setBioExpanded] = useState(false)
 
   if (personId !== prevPersonId) {
     setPrevPersonId(personId)
     setTab('available')
+    setRoleFilter('all')
     setSortBy('popular')
     setBioExpanded(false)
   }
@@ -59,8 +61,17 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
   }
 
   const allFilms = person?.filmography ?? []
+  const hasDirected = allFilms.some((f) => f.job === 'Director')
+  const hasActed = allFilms.some((f) => Boolean(f.character) || !f.job)
+  const isDualRole = hasDirected && hasActed
   const availableFilms = allFilms.filter((f) => f.in_library || (f.streaming_services?.length ?? 0) > 0)
-  const baseFilms = tab === 'available' ? availableFilms : allFilms
+  const tabFilms = tab === 'available' ? availableFilms : allFilms
+  const baseFilms =
+    !isDualRole || roleFilter === 'all'
+      ? tabFilms
+      : tabFilms.filter((f) =>
+          roleFilter === 'directed' ? f.job === 'Director' : Boolean(f.character) || !f.job,
+        )
   const displayedFilms =
     sortBy === 'popular'
       ? baseFilms
@@ -242,16 +253,36 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                   </span>
                 </button>
               </SegmentedCapsule>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'popular' | 'newest' | 'rating')}
-                aria-label="Sort filmography"
-                className="rounded-lg border border-white/10 bg-black/40 px-2.5 py-1 text-xs text-white/80 outline-none transition-colors hover:border-white/25 focus:border-accent"
-              >
-                <option value="popular">Popular</option>
-                <option value="newest">Newest</option>
-                <option value="rating">Top rated</option>
-              </select>
+              <div className="flex items-center gap-2">
+                {isDualRole && (
+                  <div className="inline-flex rounded-lg border border-white/10 bg-black/40 p-0.5 text-xs">
+                    {(['all', 'directed', 'acted'] as const).map((role) => (
+                      <button
+                        key={role}
+                        type="button"
+                        onClick={() => setRoleFilter(role)}
+                        className={`rounded-md px-2 py-0.5 font-medium transition-colors ${
+                          roleFilter === role
+                            ? 'bg-accent text-white'
+                            : 'text-white/60 hover:text-white'
+                        }`}
+                      >
+                        {role === 'all' ? 'All roles' : role === 'directed' ? 'Directed' : 'Acted'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as 'popular' | 'newest' | 'rating')}
+                  aria-label="Sort filmography"
+                  className="rounded-lg border border-white/10 bg-black/40 px-2.5 py-1 text-xs text-white/80 outline-none transition-colors hover:border-white/25 focus:border-accent"
+                >
+                  <option value="popular">Popular</option>
+                  <option value="newest">Newest</option>
+                  <option value="rating">Top rated</option>
+                </select>
+              </div>
             </div>
 
             {displayedFilms.length === 0 ? (
@@ -302,7 +333,17 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                         </div>
 
                         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-white/50">
-                          {film.job && <span className="font-medium text-white/70">{film.job}</span>}
+                          {film.job && (
+                            <span
+                              className={
+                                film.character
+                                  ? 'rounded bg-amber-500/15 px-1.5 py-0.2 text-[10px] font-semibold text-amber-300'
+                                  : 'font-medium text-white/70'
+                              }
+                            >
+                              {film.job}
+                            </span>
+                          )}
                           {film.character && (
                             <span className="truncate max-w-[200px]">as {film.character}</span>
                           )}
