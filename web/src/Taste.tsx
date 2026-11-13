@@ -12,6 +12,7 @@ import { WatchBadges } from './Streaming'
 import TitleDialog, { MatchBadge } from './TitleDialog'
 import { segmentedBadgeClass, segmentedTabClass } from './tabs'
 import { Button, ErrorText, Poster, SegmentedCapsule } from './ui'
+import { YearFilter } from './YearFilter'
 
 const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
 const PAGE = 48
@@ -86,6 +87,8 @@ function Ratings({
   const [languageFilter, setLanguageFilter] = useState<string | null>(null)
   const [genreFilter, setGenreFilter] = useState<string | null>(null)
   const [decadeFilter, setDecadeFilter] = useState<number | null>(null)
+  const [yearMinFilter, setYearMinFilter] = useState<number | null>(null)
+  const [yearMaxFilter, setYearMaxFilter] = useState<number | null>(null)
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [personFilter, setPersonFilter] = useState('')
   const [debouncedPerson, setDebouncedPerson] = useState('')
@@ -109,6 +112,8 @@ function Ratings({
       languageFilter ||
       genreFilter ||
       decadeFilter !== null ||
+      yearMinFilter !== null ||
+      yearMaxFilter !== null ||
       tagFilter ||
       personFilter.trim() ||
       watchOnFilter ||
@@ -123,6 +128,8 @@ function Ratings({
     setLanguageFilter(null)
     setGenreFilter(null)
     setDecadeFilter(null)
+    setYearMinFilter(null)
+    setYearMaxFilter(null)
     setTagFilter(null)
     setPersonFilter('')
     setDebouncedPerson('')
@@ -146,6 +153,8 @@ function Ratings({
       languageFilter,
       genreFilter,
       decadeFilter,
+      yearMinFilter,
+      yearMaxFilter,
       tagFilter,
       debouncedPerson,
       watchOnFilter,
@@ -165,6 +174,8 @@ function Ratings({
               language: languageFilter || undefined,
               genre: genreFilter || undefined,
               decade: decadeFilter ?? undefined,
+              year_min: yearMinFilter ?? undefined,
+              year_max: yearMaxFilter ?? undefined,
               tag: tagFilter || undefined,
               person: debouncedPerson.trim() || undefined,
               watch_on: watchOnFilter || undefined,
@@ -498,22 +509,21 @@ function Ratings({
                   </select>
                 )}
 
-                {/* Decade */}
-                {first.decades.length > 0 && (
-                  <select
-                    value={decadeFilter ?? ''}
-                    onChange={(e) => setDecadeFilter(e.target.value ? Number(e.target.value) : null)}
-                    aria-label="Filter by decade"
-                    className={selectClass(decadeFilter !== null)}
-                  >
-                    <option value="">All eras</option>
-                    {first.decades.map((dec) => (
-                      <option key={dec} value={dec}>
-                        {dec}s
-                      </option>
-                    ))}
-                  </select>
-                )}
+                {/* Decade / Year range */}
+                <YearFilter
+                  decades={first.decades}
+                  decade={decadeFilter}
+                  yearMin={yearMinFilter}
+                  yearMax={yearMaxFilter}
+                  onDecade={setDecadeFilter}
+                  onYearRange={(min, max) => {
+                    setYearMinFilter(min)
+                    setYearMaxFilter(max)
+                  }}
+                  allLabel="All eras"
+                  ariaLabel="Filter by decade"
+                  selectClass={selectClass}
+                />
 
                 {/* Tag ("What I liked") */}
                 {first.tags.length > 0 && (

@@ -2935,6 +2935,11 @@ export interface components {
             vote_average?: number | null;
             /** Vote Count */
             vote_count?: number | null;
+            /**
+             * Popularity
+             * @default 0
+             */
+            popularity: number;
             /** User Rating */
             user_rating?: number | null;
             /** User Reaction */
@@ -4434,6 +4439,8 @@ export interface operations {
                 person?: string | null;
                 tag?: string | null;
                 decade?: number | null;
+                year_min?: number | null;
+                year_max?: number | null;
                 watch_on?: string | null;
                 has_note?: boolean | null;
                 favorite?: boolean | null;
@@ -5109,6 +5116,8 @@ export interface operations {
                 language?: string | null;
                 genre?: string | null;
                 decade?: number | null;
+                year_min?: number | null;
+                year_max?: number | null;
                 max_certificate?: string | null;
                 shortlist?: boolean;
                 hide_shortlisted?: boolean;
@@ -5154,6 +5163,8 @@ export interface operations {
                 language?: string | null;
                 genre?: string | null;
                 decade?: number | null;
+                year_min?: number | null;
+                year_max?: number | null;
                 max_certificate?: string | null;
                 shortlist?: boolean;
                 hide_shortlisted?: boolean;

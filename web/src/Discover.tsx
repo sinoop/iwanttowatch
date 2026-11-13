@@ -7,6 +7,7 @@ import { QuickTags, ReactionIcon } from './RateDialog'
 import { JellyfinLogo, PlatformFilter, WatchBadges } from './Streaming'
 import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, DownloadIcon, ImdbBadge, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
+import { YearFilter } from './YearFilter'
 
 const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
 const PAGE = 24
@@ -28,6 +29,8 @@ export default function Discover({ me }: { me: Me }) {
   const [language, setLanguage] = useState<string | null>(null)
   const [genre, setGenre] = useState<string | null>(null)
   const [decade, setDecade] = useState<number | null>(null)
+  const [yearMin, setYearMin] = useState<number | null>(null)
+  const [yearMax, setYearMax] = useState<number | null>(null)
   const [certificate, setCertificate] = useState<string | null>(null)
   const [shortlistFilter, setShortlistFilter] = useState<ShortlistFilter>('all')
   const [sort, setSort] = useState<FeedSort>('recommended')
@@ -91,6 +94,8 @@ export default function Discover({ me }: { me: Me }) {
     language: language ?? undefined,
     genre: genre ?? undefined,
     decade: decade ?? undefined,
+    year_min: yearMin ?? undefined,
+    year_max: yearMax ?? undefined,
     content_type: contentType,
     max_certificate: !me.is_child ? (certificate ?? undefined) : undefined,
     shortlist: shortlistFilter === 'only' || undefined,
@@ -113,7 +118,7 @@ export default function Discover({ me }: { me: Me }) {
   // While an answer is shown, the feed lists only the AI's picks, in the feed's order.
   const only = answer?.picks.map((p) => p.tmdb_id)
   const feed = useInfiniteQuery({
-    queryKey: ['feed', me.id, watchOn, language, genre, decade, contentType, certificate, shortlistFilter, sort, ageLimit, only],
+    queryKey: ['feed', me.id, watchOn, language, genre, decade, yearMin, yearMax, contentType, certificate, shortlistFilter, sort, ageLimit, only],
     queryFn: async ({ pageParam }) => {
       const { data, error } = await api.GET('/api/v1/feed', {
         params: {
@@ -276,6 +281,12 @@ export default function Discover({ me }: { me: Me }) {
           onGenre={setGenre}
           decade={decade}
           onDecade={setDecade}
+          yearMin={yearMin}
+          yearMax={yearMax}
+          onYearRange={(min, max) => {
+            setYearMin(min)
+            setYearMax(max)
+          }}
           certificate={!me.is_child ? certificate : null}
           onCertificate={setCertificate}
           shortlistFilter={shortlistFilter}
@@ -305,6 +316,8 @@ export default function Discover({ me }: { me: Me }) {
             language !== null ||
             genre !== null ||
             decade !== null ||
+            yearMin !== null ||
+            yearMax !== null ||
             (!me.is_child && certificate !== null) ||
             shortlistFilter === 'hide'
           }
@@ -314,6 +327,8 @@ export default function Discover({ me }: { me: Me }) {
             setLanguage(null)
             setGenre(null)
             setDecade(null)
+            setYearMin(null)
+            setYearMax(null)
             setCertificate(null)
             if (shortlistFilter === 'hide') setShortlistFilter('all')
           }}
@@ -455,6 +470,9 @@ function Filters({
   onGenre,
   decade,
   onDecade,
+  yearMin,
+  yearMax,
+  onYearRange,
   certificate,
   onCertificate,
   shortlistFilter,
@@ -478,6 +496,9 @@ function Filters({
   onGenre: (value: string | null) => void
   decade: number | null
   onDecade: (value: number | null) => void
+  yearMin: number | null
+  yearMax: number | null
+  onYearRange: (min: number | null, max: number | null) => void
   certificate: string | null
   onCertificate: (value: string | null) => void
   shortlistFilter: ShortlistFilter
@@ -497,11 +518,6 @@ function Filters({
   const languages = page.languages.map((l) => l.language)
   if (language && !languages.includes(language)) languages.push(language)
   const genres = genre && !page.genres.includes(genre) ? [...page.genres, genre] : page.genres
-  const pageDecades = page.decades ?? []
-  const decades =
-    decade !== null && !pageDecades.includes(decade)
-      ? [...pageDecades, decade].sort((a, b) => b - a)
-      : pageDecades
   const certificates =
     certificate && !page.certificates.includes(certificate)
       ? [...page.certificates, certificate]
@@ -597,21 +613,17 @@ function Filters({
           ))}
         </select>
       )}
-      {decades.length > 0 && (
-        <select
-          value={decade ?? ''}
-          onChange={(e) => onDecade(e.target.value ? Number(e.target.value) : null)}
-          aria-label="Decade"
-          className={selectClass(decade !== null)}
-        >
-          <option value="">All decades</option>
-          {decades.map((d) => (
-            <option key={d} value={d}>
-              {d}s
-            </option>
-          ))}
-        </select>
-      )}
+      <YearFilter
+        decades={page.decades ?? []}
+        decade={decade}
+        yearMin={yearMin}
+        yearMax={yearMax}
+        onDecade={onDecade}
+        onYearRange={onYearRange}
+        allLabel="All decades"
+        ariaLabel="Decade"
+        selectClass={selectClass}
+      />
       {!maxCertificate && certificates.length > 0 && (
         <select
           value={certificate ?? ''}

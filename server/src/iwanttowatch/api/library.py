@@ -84,6 +84,8 @@ def list_ratings(
     person: str | None = None,
     tag: str | None = None,
     decade: int | None = None,
+    year_min: int | None = None,
+    year_max: int | None = None,
     watch_on: str | None = None,
     has_note: bool | None = None,
     favorite: bool | None = None,
@@ -174,6 +176,10 @@ def list_ratings(
         stmt = stmt.where(cast(effective.c.tags, String).like(f'%"{tag}"%'))
     if decade is not None:
         stmt = stmt.where(Title.year >= decade, Title.year < decade + 10)
+    if year_min is not None:
+        stmt = stmt.where(Title.year >= year_min)
+    if year_max is not None:
+        stmt = stmt.where(Title.year <= year_max)
     if has_note:
         stmt = stmt.where(effective.c.note.is_not(None), effective.c.note != "")
     if favorite:

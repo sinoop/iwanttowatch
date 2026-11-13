@@ -33,11 +33,13 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
   const favoriteMutation = useFavoritePerson()
   const [prevPersonId, setPrevPersonId] = useState<number | null>(personId)
   const [tab, setTab] = useState<'available' | 'all'>('available')
+  const [sortBy, setSortBy] = useState<'popular' | 'newest' | 'rating'>('popular')
   const [bioExpanded, setBioExpanded] = useState(false)
 
   if (personId !== prevPersonId) {
     setPrevPersonId(personId)
     setTab('available')
+    setSortBy('popular')
     setBioExpanded(false)
   }
 
@@ -58,7 +60,16 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
 
   const allFilms = person?.filmography ?? []
   const availableFilms = allFilms.filter((f) => f.in_library || (f.streaming_services?.length ?? 0) > 0)
-  const displayedFilms = tab === 'available' ? availableFilms : allFilms
+  const baseFilms = tab === 'available' ? availableFilms : allFilms
+  const displayedFilms =
+    sortBy === 'popular'
+      ? baseFilms
+      : [...baseFilms].sort((a, b) => {
+          if (sortBy === 'newest') {
+            return (b.year ?? -1) - (a.year ?? -1) || (b.vote_count ?? 0) - (a.vote_count ?? 0)
+          }
+          return (b.vote_average ?? -1) - (a.vote_average ?? -1) || (b.vote_count ?? 0) - (a.vote_count ?? 0)
+        })
 
   const toggleFavorite = () => {
     if (!person) return
@@ -231,6 +242,16 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                   </span>
                 </button>
               </SegmentedCapsule>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as 'popular' | 'newest' | 'rating')}
+                aria-label="Sort filmography"
+                className="rounded-lg border border-white/10 bg-black/40 px-2.5 py-1 text-xs text-white/80 outline-none transition-colors hover:border-white/25 focus:border-accent"
+              >
+                <option value="popular">Popular</option>
+                <option value="newest">Newest</option>
+                <option value="rating">Top rated</option>
+              </select>
             </div>
 
             {displayedFilms.length === 0 ? (

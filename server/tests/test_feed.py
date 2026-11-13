@@ -924,3 +924,10 @@ def test_feed_filters_by_decade(client: TestClient) -> None:
 
     page_80s_crime = feed(client, available_only=False, decade=1980, genre="Crime")
     assert len(page_80s_crime["items"]) == 0
+
+    # 7. Filter by year_min / year_max range
+    page_range = feed(client, available_only=False, year_min=1990, year_max=2009)
+    assert {i["tmdb_id"] for i in page_range["items"]} == {802, 803}
+
+    page_min_only = feed(client, available_only=False, year_min=2000)
+    assert {i["tmdb_id"] for i in page_min_only["items"]} == {803, 804}

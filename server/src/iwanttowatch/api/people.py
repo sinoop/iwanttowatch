@@ -31,6 +31,7 @@ class PersonCredit(BaseModel):
     department: str | None = None
     vote_average: float | None = None
     vote_count: int | None = None
+    popularity: float = 0.0
     user_rating: float | None = None
     user_reaction: str | None = None
     watched: bool = False
@@ -385,6 +386,7 @@ def get_person(
                 department=m["department"],
                 vote_average=m["vote_average"],
                 vote_count=m["vote_count"],
+                popularity=m["popularity"],
                 user_rating=rating,
                 user_reaction=reaction,
                 watched=is_watched,
@@ -393,12 +395,12 @@ def get_person(
             )
         )
 
-    # Sort filmography by year descending, missing year last, then by title.
+    # Sort filmography by popularity descending, then vote count, then year descending.
     filmography.sort(
         key=lambda c: (
-            1 if c.year is not None else 0,
-            c.year or 0,
+            c.popularity or 0.0,
             c.vote_count or 0,
+            c.year or 0,
         ),
         reverse=True,
     )

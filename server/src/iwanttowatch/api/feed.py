@@ -157,6 +157,8 @@ def read_feed(
     language: str | None = None,
     genre: str | None = None,
     decade: int | None = None,
+    year_min: int | None = None,
+    year_max: int | None = None,
     # Maximum film certificate in the user's region, e.g. "U/A 13+" or "PG-13".
     max_certificate: str | None = None,
     # Only the user's shortlist, which may hold films the feed would hide.
@@ -269,6 +271,8 @@ def read_feed(
         if (language is None or title.original_language == language)
         and (genre is None or genre in title.genres)
         and (decade is None or (title.year is not None and decade <= title.year < decade + 10))
+        and (year_min is None or (title.year is not None and title.year >= year_min))
+        and (year_max is None or (title.year is not None and title.year <= year_max))
         and allowed_for(title, user.region, cert_limit)
     ]
     if sort != "recommended":
@@ -341,6 +345,8 @@ def ask_feed(
     language: str | None = None,
     genre: str | None = None,
     decade: int | None = None,
+    year_min: int | None = None,
+    year_max: int | None = None,
     max_certificate: str | None = None,
     shortlist: bool = False,
     hide_shortlisted: bool = False,
@@ -362,6 +368,8 @@ def ask_feed(
         language=language,
         genre=genre,
         decade=decade,
+        year_min=year_min,
+        year_max=year_max,
         max_certificate=max_certificate,
         shortlist=shortlist,
         hide_shortlisted=hide_shortlisted,

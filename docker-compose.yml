@@ -8,6 +8,8 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    # For HTTPS / remote access, run Tailscale (`tailscale serve --bg 8080`) on the host
+    # or place a reverse proxy (Caddy, Nginx, Traefik) in front of port 8080. See docs/install.md.
     environment:
       TZ: ${TZ:-UTC}
       # Optional: set a fixed secret instead of the one generated in /data on first start.

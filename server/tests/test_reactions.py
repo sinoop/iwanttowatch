@@ -339,9 +339,12 @@ def test_ratings_filtering_and_sorting(client: TestClient) -> None:
     twist = client.get("/api/v1/ratings", params={"tag": "clever_twist"}).json()
     assert [i["tmdb_id"] for i in twist["items"]] == [602]
 
-    # 8. Filter by decade
+    # 8. Filter by decade and year_min / year_max
     d2000s = client.get("/api/v1/ratings", params={"decade": 2000}).json()
     assert {i["tmdb_id"] for i in d2000s["items"]} == {603, 604}
+
+    yr_range = client.get("/api/v1/ratings", params={"year_min": 2005, "year_max": 2019}).json()
+    assert {i["tmdb_id"] for i in yr_range["items"]} == {601, 602}
 
     # 9. Filter by has_note
     notes = client.get("/api/v1/ratings", params={"has_note": True}).json()

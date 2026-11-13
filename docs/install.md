@@ -80,9 +80,21 @@ Prompts carry films and an aggregated taste summary, never usernames or server d
 
 **Settings → Household** creates a one-time invite link, valid for a week. **Settings → Child profiles** adds parent-managed profiles with an age limit by certificate and a parent PIN. **Watch together** finds films for everyone in the room, including guests voting from their phones.
 
-## Install it as an app
+## Install as an app & HTTPS / Tailscale
 
-On a phone, open iWantToWatch and choose **Add to Home Screen** (Safari) or **Install app** (Chrome); on a computer, use the install icon in Chrome's or Edge's address bar. Android and desktop browsers only offer this over HTTPS, so put iWantToWatch behind a reverse proxy with a certificate. With [Caddy](https://caddyserver.com):
+### Remote access with Tailscale (recommended)
+
+If you use [Tailscale](https://tailscale.com), install it on your Docker host (no changes to iWantToWatch are needed). Your server becomes reachable over your private tailnet, and `tailscale serve` provides automatic HTTPS with a valid certificate:
+
+```sh
+tailscale serve --bg 8080
+```
+
+You can then open `https://<your-machine>.<your-tailnet>.ts.net` from any device on your tailnet (including the mobile app and PWA install).
+
+### Reverse proxy HTTPS & PWA install
+
+On a phone, open iWantToWatch and choose **Add to Home Screen** (Safari) or **Install app** (Chrome); on a computer, use the install icon in Chrome's or Edge's address bar. Android and desktop browsers only offer this over HTTPS, so use `tailscale serve` above or put iWantToWatch behind a reverse proxy with a certificate. With [Caddy](https://caddyserver.com):
 
 ```caddy
 movies.example.com {
