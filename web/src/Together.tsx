@@ -188,7 +188,9 @@ export default function Together({ me }: { me: Me }) {
             ? ', and the films must be on the platforms you chose'
             : watchOn === 'anywhere'
               ? ', and the films must be on your Jellyfin server or services'
-              : ''}
+              : watchOn === 'unavailable'
+                ? ', and the films must be unavailable to you'
+                : ''}
           .
         </Empty>
       ) : (

@@ -100,6 +100,11 @@ def test_group_picks_suit_everyone_and_skip_what_anyone_has_seen(
     ).json()
     assert [i["tmdb_id"] for i in page["items"]] == [302]
     assert [(p["key"], p["count"]) for p in page["platforms"]] == [("jellyfin", 1)]
+    unavailable_page = client.get(
+        "/api/v1/together/picks",
+        params={"users": [1, 2], "guests": [guest["id"]], "unavailable_only": True},
+    ).json()
+    assert 302 not in [i["tmdb_id"] for i in unavailable_page["items"]]
 
     # Mira revokes her link; at the next refresh her copy is dropped.
     friend.delete("/api/v1/me/share")

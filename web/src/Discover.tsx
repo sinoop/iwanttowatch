@@ -708,6 +708,13 @@ function EmptyFeed({
             Show what’s available to me
           </Button>
         </div>
+      ) : watchOn === 'unavailable' ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span>None of your picks are unavailable to you.</span>
+          <Button variant="ghost" onClick={() => onWatchOn('anywhere')}>
+            Show what’s available to me
+          </Button>
+        </div>
       ) : watchOn === 'anywhere' ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span>

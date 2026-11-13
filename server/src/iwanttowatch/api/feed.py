@@ -151,6 +151,7 @@ def read_feed(
     session: DbSession,
     request: Request,
     available_only: bool = True,
+    unavailable_only: bool = False,
     # "jellyfin" or TMDb provider IDs; when given, only films on one of them.
     platforms: Annotated[list[str], Query()] = [],  # noqa: B006 (FastAPI copies defaults)
     language: str | None = None,
@@ -251,7 +252,11 @@ def read_feed(
         if max_certificate is not None
         else None
     )
-    shown = [row for row in listed if shown_for(row[2], available_only, platforms)]
+    shown = [
+        row
+        for row in listed
+        if shown_for(row[2], available_only, platforms, unavailable_only=unavailable_only)
+    ]
     languages = Counter(title.original_language for _, title, _ in shown)
     genres = Counter(g for _, title, _ in shown for g in title.genres)
     decades = sorted(
@@ -331,6 +336,7 @@ def ask_feed(
     session: DbSession,
     request: Request,
     available_only: bool = True,
+    unavailable_only: bool = False,
     platforms: Annotated[list[str], Query()] = [],  # noqa: B006
     language: str | None = None,
     genre: str | None = None,
@@ -350,10 +356,11 @@ def ask_feed(
         user,
         session,
         request,
-        available_only,
-        platforms,
-        language,
-        genre,
+        available_only=available_only,
+        unavailable_only=unavailable_only,
+        platforms=platforms,
+        language=language,
+        genre=genre,
         decade=decade,
         max_certificate=max_certificate,
         shortlist=shortlist,

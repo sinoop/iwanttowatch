@@ -187,6 +187,7 @@ def together_picks(
     users: Annotated[list[int], Query()] = [],  # noqa: B006 (FastAPI copies defaults)
     guests: Annotated[list[int], Query()] = [],  # noqa: B006
     available_only: bool = True,
+    unavailable_only: bool = False,
     # "jellyfin" or TMDb provider IDs; when given, only films on one of them.
     platforms: Annotated[list[str], Query()] = [],  # noqa: B006
     # Only the group shortlist.
@@ -267,7 +268,7 @@ def together_picks(
             pick.tmdb_id, offers.get(pick.tmdb_id), pick.tmdb_id in library, user.subscriptions
         )
         places.append(where)
-        if not shown_for(where, available_only, platforms):
+        if not shown_for(where, available_only, platforms, unavailable_only=unavailable_only):
             continue
         # Kids can't see other people's ratings, including in group reasons.
         reasons = (

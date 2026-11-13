@@ -71,6 +71,8 @@ def test_feed_suggests_unseen_films_the_user_can_play(
 
     everything = feed(client, available_only=False)
     assert {i["tmdb_id"] for i in everything["items"]} == {201, 301, 302, 401, 402}
+    unavailable = feed(client, unavailable_only=True)
+    assert {i["tmdb_id"] for i in unavailable["items"]} == {301, 401, 402}
     assert [i["tmdb_id"] for i in feed(client, language="ml")["items"]] == [201]
 
     # Platform chips list where the feed's films can be played, Jellyfin first, counted
@@ -314,6 +316,10 @@ def test_the_ai_tags_moods_explains_and_answers_requests(
     # The default filter leaves out films the user can't play, so the AI never sees them.
     playable = client.post("/api/v1/feed/ask", json={"text": "Malayalam"}).json()
     assert playable["considered"] == len(feed(client)["items"]) < len(everything)
+    unavailable_ask = client.post(
+        "/api/v1/feed/ask", params={"unavailable_only": True}, json={"text": "Malayalam"}
+    ).json()
+    assert unavailable_ask["considered"] == len(feed(client, unavailable_only=True)["items"])
     # The feed shows just the picks, in its own order.
     shown = feed(client, available_only=False, only=malayalam[::-1])["items"]
     assert [i["tmdb_id"] for i in shown] == malayalam

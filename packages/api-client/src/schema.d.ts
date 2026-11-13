@@ -4885,6 +4885,7 @@ export interface operations {
         parameters: {
             query?: {
                 available_only?: boolean;
+                unavailable_only?: boolean;
                 platforms?: string[];
                 language?: string | null;
                 genre?: string | null;
@@ -4929,6 +4930,7 @@ export interface operations {
         parameters: {
             query?: {
                 available_only?: boolean;
+                unavailable_only?: boolean;
                 platforms?: string[];
                 language?: string | null;
                 genre?: string | null;
@@ -5495,6 +5497,7 @@ export interface operations {
                 users?: number[];
                 guests?: number[];
                 available_only?: boolean;
+                unavailable_only?: boolean;
                 platforms?: string[];
                 shortlist?: boolean;
                 limit?: number;

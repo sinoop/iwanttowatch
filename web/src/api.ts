@@ -332,12 +332,14 @@ export function facts(film: {
 }
 
 /** Where films must be playable: anywhere the user can watch, on chosen platforms
- * ("jellyfin" or TMDb provider IDs), or everything including films on none of them. */
-export type WatchOn = 'anywhere' | 'everything' | string[]
+ * ("jellyfin" or TMDb provider IDs), everything including films on none of them,
+ * or only films unavailable to the user. */
+export type WatchOn = 'anywhere' | 'everything' | 'unavailable' | string[]
 
 export function watchOnQuery(watchOn: WatchOn) {
   return {
-    available_only: watchOn !== 'everything',
+    available_only: watchOn !== 'everything' && watchOn !== 'unavailable',
+    unavailable_only: watchOn === 'unavailable' || undefined,
     platforms: Array.isArray(watchOn) ? watchOn : undefined,
   }
 }

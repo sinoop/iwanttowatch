@@ -168,19 +168,24 @@ def platform_counts(places: list[TitleAvailability]) -> list[PlatformCount]:
     return counts
 
 
-def shown_for(where: TitleAvailability, available_only: bool, platforms: list[str]) -> bool:
+def shown_for(
+    where: TitleAvailability,
+    available_only: bool,
+    platforms: list[str],
+    unavailable_only: bool = False,
+) -> bool:
     """Whether a film passes the platform filter: on any chosen platform when some are
-    chosen, otherwise on Jellyfin or a subscription unless everything is wanted. Free
-    services count only when chosen; they're mostly ad-funded or need a library card."""
+    chosen, otherwise on Jellyfin or a subscription unless everything is wanted or only
+    unavailable films are wanted. Free services count only when chosen; they're mostly
+    ad-funded or need a library card."""
+    is_available = where.on_jellyfin or any(offer.kind == "flatrate" for offer in where.offers)
+    if unavailable_only:
+        return not is_available
     if platforms:
         return (JELLYFIN in platforms and where.on_jellyfin) or any(
             str(offer.provider_id) in platforms for offer in where.offers
         )
-    return (
-        not available_only
-        or where.on_jellyfin
-        or any(offer.kind == "flatrate" for offer in where.offers)
-    )
+    return not available_only or is_available
 
 
 def title_availability(

@@ -120,3 +120,60 @@ def test_streaming_settings_show_rent_buy_preference(client: TestClient) -> None
         json={"region": "IN", "subscriptions": [8], "show_rent_buy": False},
     ).json()
     assert off["show_rent_buy"] is False
+
+
+def test_shown_for_unavailable_only() -> None:
+    from iwanttowatch.api.streaming import Offer, TitleAvailability, shown_for
+
+    avail_jellyfin = TitleAvailability(
+        tmdb_id=1, on_jellyfin=True, offers=[], link=None, checked_at=None, stale=False
+    )
+    avail_subscription = TitleAvailability(
+        tmdb_id=2,
+        on_jellyfin=False,
+        offers=[Offer(provider_id=8, name="Netflix", logo_path=None, kind="flatrate")],
+        link=None,
+        checked_at=None,
+        stale=False,
+    )
+    avail_free = TitleAvailability(
+        tmdb_id=3,
+        on_jellyfin=False,
+        offers=[Offer(provider_id=515, name="MX Player", logo_path=None, kind="ads")],
+        link=None,
+        checked_at=None,
+        stale=False,
+    )
+    avail_none = TitleAvailability(
+        tmdb_id=4, on_jellyfin=False, offers=[], link=None, checked_at=None, stale=False
+    )
+
+    # When available_only=True: only Jellyfin and subscriptions are shown
+    assert shown_for(avail_jellyfin, available_only=True, platforms=[]) is True
+    assert shown_for(avail_subscription, available_only=True, platforms=[]) is True
+    assert shown_for(avail_free, available_only=True, platforms=[]) is False
+    assert shown_for(avail_none, available_only=True, platforms=[]) is False
+
+    # When unavailable_only=True: Jellyfin and subscriptions are excluded, free and none are included
+    assert (
+        shown_for(avail_jellyfin, available_only=False, platforms=[], unavailable_only=True)
+        is False
+    )
+    assert (
+        shown_for(avail_subscription, available_only=False, platforms=[], unavailable_only=True)
+        is False
+    )
+    assert shown_for(avail_free, available_only=False, platforms=[], unavailable_only=True) is True
+    assert shown_for(avail_none, available_only=False, platforms=[], unavailable_only=True) is True
+
+    # When available_only=False and unavailable_only=False: everything is shown
+    assert (
+        shown_for(avail_jellyfin, available_only=False, platforms=[], unavailable_only=False)
+        is True
+    )
+    assert (
+        shown_for(avail_subscription, available_only=False, platforms=[], unavailable_only=False)
+        is True
+    )
+    assert shown_for(avail_free, available_only=False, platforms=[], unavailable_only=False) is True
+    assert shown_for(avail_none, available_only=False, platforms=[], unavailable_only=False) is True

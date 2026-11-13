@@ -268,6 +268,7 @@ Built and tested against a fake TMDb on 2026-11-06; channel variants are listed 
 
 - [x] Features (TF-IDF over genres, keywords, people, language, decade), candidate generation, neighbour + ridge models with a per-language quality prior, cross-validated blend and calibration. Embeddings are deferred: the neighbour model uses the sparse features for now, which keeps the image small
 - [x] Filters (available only, language, genre), MMR, reasons, mood tags; feed and title detail UI with "Play on Jellyfin" and rate-from-detail
+- [x] Unavailable-only filter on Discover (2026-11-13): dropdown option to filter for only films unavailable to the user (not on Jellyfin and not on flatrate subscriptions), easing acquisition workflows via Radarr and shortlists
 - [x] `iwanttowatch eval <username>`: Spearman and NDCG@20 against a popularity baseline
 - [x] Faster page loads (2026-11-06): gzip for text responses, hashed assets cached for good, and the page preloads the setup and account requests alongside the script. At 250 ms latency the feed data arrives at 0.90 s instead of 1.48 s
 

@@ -302,11 +302,13 @@ export function PlatformFilter({
   const label =
     value === 'anywhere'
       ? 'Available to me'
-      : value === 'everything'
-        ? 'Include unavailable'
-        : activePlatforms.length === 1
-          ? activePlatforms[0].name
-          : `${activePlatforms.length} platforms`
+      : value === 'unavailable'
+        ? 'Only unavailable to me'
+        : value === 'everything'
+          ? 'Include unavailable'
+          : activePlatforms.length === 1
+            ? activePlatforms[0].name
+            : `${activePlatforms.length} platforms`
 
   return (
     <div ref={menuRef} className="relative">
@@ -317,7 +319,7 @@ export function PlatformFilter({
         aria-label={`Where to watch: ${label}`}
         onClick={() => setOpen((v) => !v)}
         className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none ${
-          Array.isArray(value) || value === 'everything'
+          Array.isArray(value) || value === 'everything' || value === 'unavailable'
             ? 'border-accent/60 bg-accent/10 text-accent-strong'
             : 'border-white/10 bg-black/30 text-white/80 hover:border-white/25 hover:text-white'
         }`}
@@ -360,6 +362,18 @@ export function PlatformFilter({
           >
             <span>Available to me</span>
             {value === 'anywhere' && <span aria-hidden>✓</span>}
+          </button>
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={value === 'unavailable'}
+            onClick={() => onChange('unavailable')}
+            className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+              value === 'unavailable' ? 'bg-accent/15 text-accent-strong' : 'text-white/75 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <span>Only unavailable to me</span>
+            {value === 'unavailable' && <span aria-hidden>✓</span>}
           </button>
           <button
             type="button"
