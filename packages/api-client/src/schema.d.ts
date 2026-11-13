@@ -242,7 +242,7 @@ export interface paths {
         get?: never;
         /**
          * Set Llm
-         * @description Set up Ollama or Gemini, after a short test prompt. A new provider is asked after
+         * @description Set up an LLM provider after a short test prompt. A new provider is asked after
          *     the ones already in use.
          */
         put: operations["set_llm_api_v1_settings_llm_put"];
@@ -686,6 +686,26 @@ export interface paths {
          * @description Dismiss a rating prompt without rating the film.
          */
         post: operations["dismiss_rating_prompt_api_v1_me_rating_prompts__tmdb_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/jellyfin/sync-shortlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Shortlist To Jellyfin
+         * @description Sync the user's shortlisted movies that are in Jellyfin into a Jellyfin playlist.
+         */
+        post: operations["sync_shortlist_to_jellyfin_api_v1_jellyfin_sync_shortlist_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1791,6 +1811,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/integrations/home-assistant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Home Assistant Feed
+         * @description High-match recommendations and shortlisted movies for Home Assistant sensors.
+         */
+        get: operations["home_assistant_feed_api_v1_integrations_home_assistant_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2426,6 +2466,45 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HomeAssistantMovie */
+        HomeAssistantMovie: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Year */
+            year?: number | null;
+            /** Match */
+            match?: number | null;
+            /** Imdb Rating */
+            imdb_rating?: number | null;
+            /** Poster Url */
+            poster_url?: string | null;
+            /**
+             * In Jellyfin
+             * @default false
+             */
+            in_jellyfin: boolean;
+            /**
+             * Streaming Services
+             * @default []
+             */
+            streaming_services: string[];
+        };
+        /** HomeAssistantPayload */
+        HomeAssistantPayload: {
+            /** User */
+            user: string;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** High Rated Recommendations */
+            high_rated_recommendations: components["schemas"]["HomeAssistantMovie"][];
+            /** Shortlisted */
+            shortlisted: components["schemas"]["HomeAssistantMovie"][];
+        };
         /**
          * ImdbScore
          * @description IMDb's rating of a film, shown when an admin turned IMDb ratings on.
@@ -2720,12 +2799,12 @@ export interface components {
         /** LlmOrder */
         LlmOrder: {
             /** Order */
-            order: ("ollama" | "gemini")[];
+            order: ("ollama" | "gemini" | "openai" | "claude")[];
         };
         /** LlmSettings */
         LlmSettings: {
             /** Order */
-            order: ("ollama" | "gemini")[];
+            order: ("ollama" | "gemini" | "openai" | "claude")[];
             /** Ollama Url */
             ollama_url: string | null;
             /** Ollama Model */
@@ -2739,6 +2818,37 @@ export interface components {
              * @default gemini-flash-latest
              */
             default_gemini_model: string;
+            /** Openai Base Url */
+            openai_base_url?: string | null;
+            /**
+             * Openai Configured
+             * @default false
+             */
+            openai_configured: boolean;
+            /** Openai Model */
+            openai_model?: string | null;
+            /**
+             * Default Openai Url
+             * @default https://api.openai.com/v1
+             */
+            default_openai_url: string;
+            /**
+             * Default Openai Model
+             * @default gpt-4o-mini
+             */
+            default_openai_model: string;
+            /**
+             * Claude Configured
+             * @default false
+             */
+            claude_configured: boolean;
+            /** Claude Model */
+            claude_model?: string | null;
+            /**
+             * Default Claude Model
+             * @default claude-3-5-haiku-latest
+             */
+            default_claude_model: string;
         };
         /** LlmUpdate */
         LlmUpdate: {
@@ -2746,13 +2856,19 @@ export interface components {
              * Provider
              * @enum {string}
              */
-            provider: "ollama" | "gemini";
+            provider: "ollama" | "gemini" | "openai" | "claude";
             /** Model */
             model?: string | null;
             /** Ollama Url */
             ollama_url?: string | null;
             /** Gemini Api Key */
             gemini_api_key?: string | null;
+            /** Openai Base Url */
+            openai_base_url?: string | null;
+            /** Openai Api Key */
+            openai_api_key?: string | null;
+            /** Claude Api Key */
+            claude_api_key?: string | null;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -2970,6 +3086,12 @@ export interface components {
             vote_average?: number | null;
             /** Vote Count */
             vote_count?: number | null;
+            /** Imdb Rating */
+            imdb_rating?: number | null;
+            /** Imdb Votes */
+            imdb_votes?: number | null;
+            /** Match */
+            match?: number | null;
             /**
              * Popularity
              * @default 0
@@ -3532,6 +3654,15 @@ export interface components {
             labels: components["schemas"]["SharedLabel"][];
             /** Seen */
             seen: number[];
+        };
+        /** ShortlistSyncResponse */
+        ShortlistSyncResponse: {
+            /** Synced Count */
+            synced_count: number;
+            /** Skipped Count */
+            skipped_count: number;
+            /** Playlist Name */
+            playlist_name: string;
         };
         /** StreamingRegion */
         StreamingRegion: {
@@ -4145,7 +4276,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                provider: "ollama" | "gemini";
+                provider: "ollama" | "gemini" | "openai" | "claude";
             };
             cookie?: never;
         };
@@ -5026,6 +5157,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_shortlist_to_jellyfin_api_v1_jellyfin_sync_shortlist_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShortlistSyncResponse"];
                 };
             };
         };
@@ -7016,6 +7167,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    home_assistant_feed_api_v1_integrations_home_assistant_get: {
+        parameters: {
+            query?: {
+                username?: string | null;
+                limit?: number;
+                min_match?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HomeAssistantPayload"];
                 };
             };
             /** @description Validation Error */

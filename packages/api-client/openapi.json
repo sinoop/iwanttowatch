@@ -401,7 +401,9 @@
             "schema": {
               "enum": [
                 "ollama",
-                "gemini"
+                "gemini",
+                "openai",
+                "claude"
               ],
               "type": "string",
               "title": "Provider"
@@ -435,7 +437,7 @@
     "/api/v1/settings/llm": {
       "put": {
         "summary": "Set Llm",
-        "description": "Set up Ollama or Gemini, after a short test prompt. A new provider is asked after\nthe ones already in use.",
+        "description": "Set up an LLM provider after a short test prompt. A new provider is asked after\nthe ones already in use.",
         "operationId": "set_llm_api_v1_settings_llm_put",
         "requestBody": {
           "content": {
@@ -1733,6 +1735,25 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jellyfin/sync-shortlist": {
+      "post": {
+        "summary": "Sync Shortlist To Jellyfin",
+        "description": "Sync the user's shortlisted movies that are in Jellyfin into a Jellyfin playlist.",
+        "operationId": "sync_shortlist_to_jellyfin_api_v1_jellyfin_sync_shortlist_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortlistSyncResponse"
                 }
               }
             }
@@ -4808,6 +4829,77 @@
           }
         }
       }
+    },
+    "/api/v1/integrations/home-assistant": {
+      "get": {
+        "summary": "Home Assistant Feed",
+        "description": "High-match recommendations and shortlisted movies for Home Assistant sensors.",
+        "operationId": "home_assistant_feed_api_v1_integrations_home_assistant_get",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Username"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "min_match",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 0,
+              "default": 75,
+              "title": "Min Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeAssistantPayload"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6713,6 +6805,116 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HomeAssistantMovie": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match"
+          },
+          "imdb_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imdb Rating"
+          },
+          "poster_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Url"
+          },
+          "in_jellyfin": {
+            "type": "boolean",
+            "title": "In Jellyfin",
+            "default": false
+          },
+          "streaming_services": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Streaming Services",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title"
+        ],
+        "title": "HomeAssistantMovie"
+      },
+      "HomeAssistantPayload": {
+        "properties": {
+          "user": {
+            "type": "string",
+            "title": "User"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "high_rated_recommendations": {
+            "items": {
+              "$ref": "#/components/schemas/HomeAssistantMovie"
+            },
+            "type": "array",
+            "title": "High Rated Recommendations"
+          },
+          "shortlisted": {
+            "items": {
+              "$ref": "#/components/schemas/HomeAssistantMovie"
+            },
+            "type": "array",
+            "title": "Shortlisted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user",
+          "generated_at",
+          "high_rated_recommendations",
+          "shortlisted"
+        ],
+        "title": "HomeAssistantPayload"
+      },
       "ImdbScore": {
         "properties": {
           "id": {
@@ -7568,7 +7770,9 @@
               "type": "string",
               "enum": [
                 "ollama",
-                "gemini"
+                "gemini",
+                "openai",
+                "claude"
               ]
             },
             "type": "array",
@@ -7588,7 +7792,9 @@
               "type": "string",
               "enum": [
                 "ollama",
-                "gemini"
+                "gemini",
+                "openai",
+                "claude"
               ]
             },
             "type": "array",
@@ -7635,6 +7841,64 @@
             "type": "string",
             "title": "Default Gemini Model",
             "default": "gemini-flash-latest"
+          },
+          "openai_base_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Openai Base Url"
+          },
+          "openai_configured": {
+            "type": "boolean",
+            "title": "Openai Configured",
+            "default": false
+          },
+          "openai_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Openai Model"
+          },
+          "default_openai_url": {
+            "type": "string",
+            "title": "Default Openai Url",
+            "default": "https://api.openai.com/v1"
+          },
+          "default_openai_model": {
+            "type": "string",
+            "title": "Default Openai Model",
+            "default": "gpt-4o-mini"
+          },
+          "claude_configured": {
+            "type": "boolean",
+            "title": "Claude Configured",
+            "default": false
+          },
+          "claude_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claude Model"
+          },
+          "default_claude_model": {
+            "type": "string",
+            "title": "Default Claude Model",
+            "default": "claude-3-5-haiku-latest"
           }
         },
         "type": "object",
@@ -7653,7 +7917,9 @@
             "type": "string",
             "enum": [
               "ollama",
-              "gemini"
+              "gemini",
+              "openai",
+              "claude"
             ],
             "title": "Provider"
           },
@@ -7692,6 +7958,42 @@
               }
             ],
             "title": "Gemini Api Key"
+          },
+          "openai_base_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Openai Base Url"
+          },
+          "openai_api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Openai Api Key"
+          },
+          "claude_api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Claude Api Key"
           }
         },
         "type": "object",
@@ -8329,6 +8631,39 @@
               }
             ],
             "title": "Vote Count"
+          },
+          "imdb_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imdb Rating"
+          },
+          "imdb_votes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imdb Votes"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match"
           },
           "popularity": {
             "type": "number",
@@ -9992,6 +10327,29 @@
           "seen"
         ],
         "title": "SharedTaste"
+      },
+      "ShortlistSyncResponse": {
+        "properties": {
+          "synced_count": {
+            "type": "integer",
+            "title": "Synced Count"
+          },
+          "skipped_count": {
+            "type": "integer",
+            "title": "Skipped Count"
+          },
+          "playlist_name": {
+            "type": "string",
+            "title": "Playlist Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "synced_count",
+          "skipped_count",
+          "playlist_name"
+        ],
+        "title": "ShortlistSyncResponse"
       },
       "StreamingRegion": {
         "properties": {

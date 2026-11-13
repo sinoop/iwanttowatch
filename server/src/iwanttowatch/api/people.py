@@ -12,7 +12,7 @@ from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.children import library_owners
 from iwanttowatch.db import utcnow
 from iwanttowatch.feed import seen
-from iwanttowatch.models import Availability, FavoritePerson, LibraryItem, Title
+from iwanttowatch.models import Availability, FavoritePerson, LibraryItem, Recommendation, Title
 from iwanttowatch.taste import effective_ratings, rating_to_reaction
 from iwanttowatch.tmdb import TmdbNotFound
 
@@ -31,6 +31,9 @@ class PersonCredit(BaseModel):
     department: str | None = None
     vote_average: float | None = None
     vote_count: int | None = None
+    imdb_rating: float | None = None
+    imdb_votes: int | None = None
+    match: int | None = None
     popularity: float = 0.0
     user_rating: float | None = None
     user_reaction: str | None = None
@@ -366,6 +369,22 @@ def get_person(
             if active_names:
                 avail_map[av.tmdb_id] = list(dict.fromkeys(active_names))
 
+    imdb_map: dict[int, tuple[float | None, int | None]] = {}
+    match_map: dict[int, int] = {}
+    if movie_ids:
+        for row in session.execute(
+            select(Title.tmdb_id, Title.imdb_rating, Title.imdb_votes).where(
+                Title.tmdb_id.in_(movie_ids), Title.imdb_rating.is_not(None)
+            )
+        ):
+            imdb_map[row.tmdb_id] = (row.imdb_rating, row.imdb_votes)
+        for tmdb_id, score in session.execute(
+            select(Recommendation.tmdb_id, Recommendation.score).where(
+                Recommendation.user_id == user.id, Recommendation.tmdb_id.in_(movie_ids)
+            )
+        ):
+            match_map[tmdb_id] = round(score * 100)
+
     filmography: list[PersonCredit] = []
     for mid, m in movies.items():
         rating, reaction = ratings_map.get(mid, (None, None))
@@ -374,6 +393,7 @@ def get_person(
         is_watched = mid in ratings_map or mid in watched_set
         is_in_library = mid in library_set
         services = avail_map.get(mid, [])
+        imdb_r, imdb_v = imdb_map.get(mid, (None, None))
         filmography.append(
             PersonCredit(
                 tmdb_id=mid,
@@ -386,6 +406,9 @@ def get_person(
                 department=m["department"],
                 vote_average=m["vote_average"],
                 vote_count=m["vote_count"],
+                imdb_rating=imdb_r,
+                imdb_votes=imdb_v,
+                match=match_map.get(mid),
                 popularity=m["popularity"],
                 user_rating=rating,
                 user_reaction=reaction,

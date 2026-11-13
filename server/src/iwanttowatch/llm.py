@@ -28,10 +28,19 @@ OLLAMA_URL_SETTING = "ollama_url"
 OLLAMA_MODEL_SETTING = "ollama_model"
 GEMINI_KEY_SETTING = "gemini_api_key"
 GEMINI_MODEL_SETTING = "gemini_model"
+OPENAI_URL_SETTING = "openai_base_url"
+OPENAI_KEY_SETTING = "openai_api_key"
+OPENAI_MODEL_SETTING = "openai_model"
+CLAUDE_KEY_SETTING = "claude_api_key"
+CLAUDE_MODEL_SETTING = "claude_model"
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 # An alias Google moves to its current Flash model, so the default survives renames.
 DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
+DEFAULT_OPENAI_URL = "https://api.openai.com/v1"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+CLAUDE_BASE_URL = "https://api.anthropic.com/v1"
+DEFAULT_CLAUDE_MODEL = "claude-3-5-haiku-latest"
 # Small CPU models on a home server can take a while.
 TIMEOUT_SECONDS = 180
 # Gemini answers 503 when overloaded and 429 at its free-tier limit, usually briefly.
@@ -43,8 +52,8 @@ KEEP_CALLS = 200
 Purpose = Literal[
     "suggestions", "persona", "themes", "moods", "why", "ask", "check", "test", "clash"
 ]
-ProviderName = Literal["ollama", "gemini"]
-PROVIDERS: tuple[ProviderName, ...] = ("ollama", "gemini")
+ProviderName = Literal["ollama", "gemini", "openai", "claude"]
+PROVIDERS: tuple[ProviderName, ...] = ("ollama", "gemini", "openai", "claude")
 
 
 class LlmError(Exception):
@@ -95,6 +104,63 @@ class GeminiProvider:
         candidates = data.get("candidates") or []
         parts = candidates[0].get("content", {}).get("parts", []) if candidates else []
         return "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+
+
+class OpenAICompatibleProvider:
+    """Any OpenAI-compatible chat completions API (OpenAI, Groq, OpenRouter, Mistral, LM Studio)."""
+
+    def __init__(self, api_key: str, model: str, base_url: str = DEFAULT_OPENAI_URL) -> None:
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        self._http = httpx.Client(
+            base_url=base_url.rstrip("/"), timeout=TIMEOUT_SECONDS, headers=headers
+        )
+        self._model = model
+
+    def generate(self, system: str, prompt: str, *, json_reply: bool = False) -> str:
+        body: dict[str, Any] = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+        }
+        if json_reply:
+            body["response_format"] = {"type": "json_object"}
+        data = _post(self._http, "/chat/completions", body, "OpenAI-compatible")
+        choices = data.get("choices") or []
+        if not choices:
+            return ""
+        content = choices[0].get("message", {}).get("content", "")
+        return str(content).strip()
+
+
+class ClaudeProvider:
+    """Anthropic Messages API provider."""
+
+    def __init__(self, api_key: str, model: str, base_url: str = CLAUDE_BASE_URL) -> None:
+        self._http = httpx.Client(
+            base_url=base_url.rstrip("/"),
+            timeout=TIMEOUT_SECONDS,
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+            },
+        )
+        self._model = model
+
+    def generate(self, system: str, prompt: str, *, json_reply: bool = False) -> str:
+        sys_prompt = f"{system}\nReturn only valid JSON." if json_reply else system
+        body: dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": 2048,
+            "system": sys_prompt,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        data = _post(self._http, "/messages", body, "Claude")
+        parts = data.get("content") or []
+        return "".join(
+            p.get("text", "") for p in parts if isinstance(p, dict) and p.get("type") == "text"
+        ).strip()
 
 
 def _post(http: httpx.Client, path: str, body: dict[str, Any], name: str) -> dict[str, Any]:
@@ -181,12 +247,22 @@ def make_provider(
     ollama_url: str | None,
     gemini_api_key: str | None,
     user_id: int | None = None,
+    *,
+    openai_url: str | None = None,
+    openai_api_key: str | None = None,
+    claude_api_key: str | None = None,
 ) -> LlmProvider:
     inner: LlmProvider
     if provider == "ollama" and ollama_url:
         inner = OllamaProvider(ollama_url, model)
     elif provider == "gemini" and gemini_api_key:
         inner = GeminiProvider(gemini_api_key, model)
+    elif provider == "openai" and (openai_api_key or openai_url):
+        inner = OpenAICompatibleProvider(
+            openai_api_key or "", model, openai_url or DEFAULT_OPENAI_URL
+        )
+    elif provider == "claude" and claude_api_key:
+        inner = ClaudeProvider(claude_api_key, model)
     else:
         raise LlmError(f"{provider} is not fully configured")
     return LoggedProvider(inner, session, purpose, provider, model, user_id)
@@ -217,6 +293,10 @@ def llm_order(session: Session) -> list[ProviderName]:
 def model_for(session: Session, name: ProviderName) -> str:
     if name == "ollama":
         return get_setting(session, OLLAMA_MODEL_SETTING) or ""
+    if name == "openai":
+        return get_setting(session, OPENAI_MODEL_SETTING) or DEFAULT_OPENAI_MODEL
+    if name == "claude":
+        return get_setting(session, CLAUDE_MODEL_SETTING) or DEFAULT_CLAUDE_MODEL
     return get_setting(session, GEMINI_MODEL_SETTING) or DEFAULT_GEMINI_MODEL
 
 
@@ -233,6 +313,9 @@ def provider_from_settings(
             get_setting(session, OLLAMA_URL_SETTING),
             get_setting(session, GEMINI_KEY_SETTING),
             user_id,
+            openai_url=get_setting(session, OPENAI_URL_SETTING),
+            openai_api_key=get_setting(session, OPENAI_KEY_SETTING),
+            claude_api_key=get_setting(session, CLAUDE_KEY_SETTING),
         )
         for name in llm_order(session)
     ]

@@ -17,7 +17,15 @@ from iwanttowatch.jellyfin import (
     normalise_id,
     record_webhook,
 )
-from iwanttowatch.models import LibraryItem, RatingPrompt, Title, User, UserTitle, get_setting
+from iwanttowatch.models import (
+    LibraryItem,
+    RatingPrompt,
+    ShortlistItem,
+    Title,
+    User,
+    UserTitle,
+    get_setting,
+)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -205,6 +213,57 @@ def dismiss_rating_prompt(tmdb_id: int, user: CurrentUser, session: DbSession) -
         prompt.dismissed = True
         session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+class ShortlistSyncResponse(BaseModel):
+    synced_count: int
+    skipped_count: int
+    playlist_name: str
+
+
+@router.post("/jellyfin/sync-shortlist")
+def sync_shortlist_to_jellyfin(user: CurrentUser, session: DbSession) -> ShortlistSyncResponse:
+    """Sync the user's shortlisted movies that are in Jellyfin into a Jellyfin playlist."""
+    jellyfin = client_from_settings(session)
+    if jellyfin is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "An admin needs to connect Jellyfin first")
+    if not user.jellyfin_user_id:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Link your Jellyfin account first in Settings"
+        )
+    shortlisted_tmdb_ids = list(
+        session.scalars(select(ShortlistItem.tmdb_id).where(ShortlistItem.user_id == user.id))
+    )
+    if not shortlisted_tmdb_ids:
+        return ShortlistSyncResponse(
+            synced_count=0,
+            skipped_count=0,
+            playlist_name="iWantToWatch Shortlist",
+        )
+    library_rows = session.execute(
+        select(LibraryItem.tmdb_id, LibraryItem.item_id).where(
+            LibraryItem.user_id == user.id,
+            LibraryItem.tmdb_id.in_(shortlisted_tmdb_ids),
+        )
+    ).all()
+    tmdb_to_item: dict[int, str] = {}
+    for tmdb_id, item_id in library_rows:
+        if tmdb_id is not None and tmdb_id not in tmdb_to_item:
+            tmdb_to_item[tmdb_id] = item_id
+    item_ids = [tmdb_to_item[tid] for tid in shortlisted_tmdb_ids if tid in tmdb_to_item]
+    skipped_count = len(shortlisted_tmdb_ids) - len(item_ids)
+    playlist_name = "iWantToWatch Shortlist"
+    try:
+        synced_count = jellyfin.sync_shortlist_playlist(
+            user.jellyfin_user_id, item_ids, playlist_name=playlist_name
+        )
+    except JellyfinError as error:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
+    return ShortlistSyncResponse(
+        synced_count=synced_count,
+        skipped_count=skipped_count,
+        playlist_name=playlist_name,
+    )
 
 
 async def _json_body(request: Request) -> dict[str, Any]:

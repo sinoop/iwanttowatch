@@ -267,10 +267,10 @@ Completed milestones (Phases 0–5d, 5f, 5g, 7, and completed Phase 6/Mobile v1 
 
 #### Batch 4 — Ecosystem & Integrations
 
-- [ ] **Additional LLM providers — OpenAI-compatible & Claude (#11):** Add a generic OpenAI-compatible provider (`base_url`, `api_key`, `model`) to `llm.py`—unlocking OpenAI, Groq (free tier), OpenRouter (`:free` models), Mistral (free tier), and local LM Studio/vLLM—plus optional Anthropic Claude support.
-- [ ] **Match % & IMDb rating on every film entry, incl. All Filmography (#10):** Batch-enrich `PersonCredit` (and any film list) from local `Title` (`imdb_rating`) and `Recommendation` (`score`) tables, with TMDb `vote_average` fallback and optional background enrichment for uncached popular credits.
-- [ ] **Home Assistant integration (#6):** Add an authenticated JSON endpoint (e.g. `/api/v1/integrations/home-assistant`) exposing top-rated recommendations and shortlisted movies (with match %, IMDb rating, poster URL, and availability) for Home Assistant `rest` sensors and dashboard cards.
-- [ ] **Sync shortlist to Jellyfin & streaming watchlists (#2):** Add optional 1-way sync of shortlisted films in the Jellyfin library to a dedicated Jellyfin Playlist (e.g. `"iWantToWatch Shortlist"`). Streaming services (Netflix, Disney+, Prime Video) have no public watchlist write APIs, so continue deep-linking to their title pages.
+- [x] **Additional LLM providers — OpenAI-compatible & Claude (#11):** Add a generic OpenAI-compatible provider (`base_url`, `api_key`, `model`) to `llm.py`—unlocking OpenAI, Groq (free tier), OpenRouter (`:free` models), Mistral (free tier), and local LM Studio/vLLM—plus optional Anthropic Claude support.
+- [x] **Match % & IMDb rating on every film entry, incl. All Filmography (#10):** Batch-enrich `PersonCredit` (and any film list) from local `Title` (`imdb_rating`) and `Recommendation` (`score`) tables, with TMDb `vote_average` fallback and optional background enrichment for uncached popular credits.
+- [x] **Home Assistant integration (#6):** Add an authenticated JSON endpoint (e.g. `/api/v1/integrations/home-assistant`) exposing top-rated recommendations and shortlisted movies (with match %, IMDb rating, poster URL, and availability) for Home Assistant `rest` sensors and dashboard cards.
+- [x] **Sync shortlist to Jellyfin & streaming watchlists (#2):** Add optional 1-way sync of shortlisted films in the Jellyfin library to a dedicated Jellyfin Playlist (e.g. `"iWantToWatch Shortlist"`). Streaming services (Netflix, Disney+, Prime Video) have no public watchlist write APIs, so continue deep-linking to their title pages.
 
 ### After the Web App: mobile and multi-device roadmap
 

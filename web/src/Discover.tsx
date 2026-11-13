@@ -48,6 +48,22 @@ export default function Discover({ me }: { me: Me }) {
     shortlistFilter === 'only' && !!settings.data?.radarr.configured && !me.is_child
   )
   const batchSync = useRadarrBatchSync()
+  const jellyfinAccount = useQuery({
+    queryKey: ['me', 'jellyfin'],
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/v1/me/jellyfin')
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    enabled: shortlistFilter === 'only' && !me.is_child,
+  })
+  const jellyfinSync = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await api.POST('/api/v1/jellyfin/sync-shortlist')
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+  })
   const quickRate = useQuickRate()
   const feedback = useMutation({
     mutationFn: async ({ item, kind }: { item: FeedItem; kind: 'snoozed' | 'dismissed' }) => {
@@ -295,12 +311,16 @@ export default function Discover({ me }: { me: Me }) {
           onSort={setSort}
           radarrShortlist={radarrShortlist.data}
           batchSync={batchSync}
+          jellyfinLinked={!!jellyfinAccount.data?.linked}
+          jellyfinSync={jellyfinSync}
         />
       )}
 
-      {(feedback.error || shortlist.error || batchSync.error) && (
+      {(feedback.error || shortlist.error || batchSync.error || jellyfinSync.error) && (
         <div className="mt-6">
-          <ErrorText>{(feedback.error ?? shortlist.error ?? batchSync.error)?.message}</ErrorText>
+          <ErrorText>
+            {(feedback.error ?? shortlist.error ?? batchSync.error ?? jellyfinSync.error)?.message}
+          </ErrorText>
         </div>
       )}
       {feed.error && (
@@ -481,6 +501,8 @@ function Filters({
   onSort,
   radarrShortlist,
   batchSync,
+  jellyfinLinked,
+  jellyfinSync,
 }: {
   page: FeedPage
   maxCertificate: string | null
@@ -507,6 +529,12 @@ function Filters({
   onSort: (value: FeedSort) => void
   radarrShortlist?: RadarrShortlistStatus | null
   batchSync?: ReturnType<typeof useRadarrBatchSync>
+  jellyfinLinked?: boolean
+  jellyfinSync?: {
+    isPending: boolean
+    data?: { synced_count: number; skipped_count: number; playlist_name: string }
+    mutate: () => void
+  }
 }) {
   const selectClass = (active: boolean) =>
     `rounded-lg border px-3 py-1.5 text-sm outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30 ${
@@ -568,6 +596,28 @@ function Filters({
           {batchSync?.data && (
             <span className="inline-flex items-center text-xs text-emerald-400">
               ✓ Queued {batchSync.data.requested_count} film(s)
+            </span>
+          )}
+        </>
+      )}
+      {shortlistFilter === 'only' && jellyfinLinked && (
+        <>
+          <button
+            type="button"
+            disabled={jellyfinSync?.isPending}
+            onClick={() => jellyfinSync?.mutate()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/40 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-200 hover:bg-indigo-500/20 disabled:opacity-50 transition-colors cursor-pointer"
+            title="Sync shortlisted movies on Jellyfin into a Jellyfin playlist"
+          >
+            <JellyfinLogo className="size-3.5" />
+            {jellyfinSync?.isPending ? 'Syncing…' : 'Sync to Jellyfin playlist'}
+          </button>
+          {jellyfinSync?.data && (
+            <span className="inline-flex items-center text-xs text-emerald-400">
+              ✓ Synced {jellyfinSync.data.synced_count} film(s)
+              {jellyfinSync.data.skipped_count > 0
+                ? ` (${jellyfinSync.data.skipped_count} not in Jellyfin)`
+                : ''}
             </span>
           )}
         </>

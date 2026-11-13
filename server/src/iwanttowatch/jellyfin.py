@@ -146,6 +146,72 @@ class JellyfinClient:
             if not items or start >= page.get("TotalRecordCount", 0):
                 return
 
+    def sync_shortlist_playlist(
+        self,
+        user_id: str,
+        item_ids: list[str],
+        playlist_name: str = "iWantToWatch Shortlist",
+    ) -> int:
+        """Ensure a Jellyfin playlist exists with the given item IDs and return synced count."""
+        unique_ids = list(dict.fromkeys(item_id for item_id in item_ids if item_id))
+        data = (
+            self._request(
+                "GET",
+                f"/Users/{user_id}/Items",
+                self._api_key,
+                params={
+                    "IncludeItemTypes": "Playlist",
+                    "Recursive": "true",
+                    "Fields": "Id,Name",
+                },
+            )
+            or {}
+        )
+        existing = next(
+            (
+                item
+                for item in data.get("Items", [])
+                if item.get("Name") == playlist_name and item.get("Id")
+            ),
+            None,
+        )
+        if existing is None:
+            if not unique_ids:
+                return 0
+            self._request(
+                "POST",
+                "/Playlists",
+                self._api_key,
+                json={
+                    "Name": playlist_name,
+                    "Ids": unique_ids,
+                    "UserId": user_id,
+                    "MediaType": "Video",
+                },
+            )
+            return len(unique_ids)
+
+        playlist_id = str(existing["Id"])
+        current = (
+            self._request(
+                "GET",
+                f"/Playlists/{playlist_id}/Items",
+                self._api_key,
+                params={"UserId": user_id},
+            )
+            or {}
+        )
+        current_ids = {str(item["Id"]) for item in current.get("Items", []) if item.get("Id")}
+        to_add = [item_id for item_id in unique_ids if item_id not in current_ids]
+        if to_add:
+            self._request(
+                "POST",
+                f"/Playlists/{playlist_id}/Items",
+                self._api_key,
+                params={"ids": ",".join(to_add), "userId": user_id},
+            )
+        return len(unique_ids)
+
 
 def client_from_settings(session: Session) -> JellyfinClient | None:
     url = get_setting(session, URL_SETTING)

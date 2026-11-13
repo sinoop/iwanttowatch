@@ -20,11 +20,19 @@ from iwanttowatch.jellyfin import (
     JellyfinError,
 )
 from iwanttowatch.llm import (
+    CLAUDE_KEY_SETTING,
+    CLAUDE_MODEL_SETTING,
+    DEFAULT_CLAUDE_MODEL,
     DEFAULT_GEMINI_MODEL,
+    DEFAULT_OPENAI_MODEL,
+    DEFAULT_OPENAI_URL,
     GEMINI_KEY_SETTING,
     GEMINI_MODEL_SETTING,
     OLLAMA_MODEL_SETTING,
     OLLAMA_URL_SETTING,
+    OPENAI_KEY_SETTING,
+    OPENAI_MODEL_SETTING,
+    OPENAI_URL_SETTING,
     ORDER_SETTING,
     LlmError,
     ProviderName,
@@ -53,6 +61,14 @@ class LlmSettings(BaseModel):
     gemini_configured: bool
     gemini_model: str | None
     default_gemini_model: str = DEFAULT_GEMINI_MODEL
+    openai_base_url: str | None = None
+    openai_configured: bool = False
+    openai_model: str | None = None
+    default_openai_url: str = DEFAULT_OPENAI_URL
+    default_openai_model: str = DEFAULT_OPENAI_MODEL
+    claude_configured: bool = False
+    claude_model: str | None = None
+    default_claude_model: str = DEFAULT_CLAUDE_MODEL
 
 
 class JellyfinSettings(BaseModel):
@@ -173,8 +189,11 @@ class LlmUpdate(BaseModel):
     provider: ProviderName
     model: str | None = Field(default=None, max_length=200)
     ollama_url: str | None = Field(default=None, max_length=500)
-    # Omit to keep the stored Gemini key.
+    # Omit to keep the stored key.
     gemini_api_key: str | None = Field(default=None, max_length=500)
+    openai_base_url: str | None = Field(default=None, max_length=500)
+    openai_api_key: str | None = Field(default=None, max_length=500)
+    claude_api_key: str | None = Field(default=None, max_length=500)
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -286,6 +305,11 @@ def _settings_out(session: Session, is_admin: bool) -> ServerSettings:
             ollama_model=get_setting(session, OLLAMA_MODEL_SETTING),
             gemini_configured=get_setting(session, GEMINI_KEY_SETTING) is not None,
             gemini_model=get_setting(session, GEMINI_MODEL_SETTING),
+            openai_base_url=get_setting(session, OPENAI_URL_SETTING),
+            openai_configured=get_setting(session, OPENAI_KEY_SETTING) is not None,
+            openai_model=get_setting(session, OPENAI_MODEL_SETTING),
+            claude_configured=get_setting(session, CLAUDE_KEY_SETTING) is not None,
+            claude_model=get_setting(session, CLAUDE_MODEL_SETTING),
         ),
     )
 
@@ -429,19 +453,44 @@ def remove_llm(provider: ProviderName, _admin: AdminUser, session: DbSession) ->
 
 @router.put("/llm")
 def set_llm(body: LlmUpdate, _admin: AdminUser, session: DbSession) -> ServerSettings:
-    """Set up Ollama or Gemini, after a short test prompt. A new provider is asked after
+    """Set up an LLM provider after a short test prompt. A new provider is asked after
     the ones already in use."""
     gemini_key = (body.gemini_api_key or "").strip() or get_setting(session, GEMINI_KEY_SETTING)
-    ollama_url = (body.ollama_url or "").strip() or None
-    model = (body.model or "").strip() or (
-        DEFAULT_GEMINI_MODEL if body.provider == "gemini" else ""
+    openai_key = (body.openai_api_key or "").strip() or get_setting(session, OPENAI_KEY_SETTING)
+    openai_url = (
+        (body.openai_base_url or "").strip()
+        or get_setting(session, OPENAI_URL_SETTING)
+        or DEFAULT_OPENAI_URL
     )
+    claude_key = (body.claude_api_key or "").strip() or get_setting(session, CLAUDE_KEY_SETTING)
+    ollama_url = (body.ollama_url or "").strip() or None
+    default_model = {
+        "gemini": DEFAULT_GEMINI_MODEL,
+        "openai": DEFAULT_OPENAI_MODEL,
+        "claude": DEFAULT_CLAUDE_MODEL,
+        "ollama": "",
+    }[body.provider]
+    model = (body.model or "").strip() or default_model
     if body.provider == "ollama" and not (ollama_url and model):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter the Ollama URL and a model name")
     if body.provider == "gemini" and not gemini_key:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter a Gemini API key")
+    if body.provider == "openai" and not (openai_key or body.openai_base_url):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter an API key or custom base URL")
+    if body.provider == "claude" and not claude_key:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter an Anthropic API key")
     try:
-        llm = make_provider(session, "test", body.provider, model, ollama_url, gemini_key)
+        llm = make_provider(
+            session,
+            "test",
+            body.provider,
+            model,
+            ollama_url,
+            gemini_key,
+            openai_url=openai_url,
+            openai_api_key=openai_key,
+            claude_api_key=claude_key,
+        )
         if not llm.generate("Answer with one word.", "Say OK."):
             raise LlmError("The model returned an empty answer")
     except LlmError as error:
@@ -450,9 +499,17 @@ def set_llm(body: LlmUpdate, _admin: AdminUser, session: DbSession) -> ServerSet
     if body.provider == "ollama":
         set_setting(session, OLLAMA_URL_SETTING, ollama_url)
         set_setting(session, OLLAMA_MODEL_SETTING, model)
-    else:
+    elif body.provider == "gemini":
         set_setting(session, GEMINI_KEY_SETTING, gemini_key)
         set_setting(session, GEMINI_MODEL_SETTING, model)
+    elif body.provider == "openai":
+        set_setting(session, OPENAI_URL_SETTING, openai_url)
+        if openai_key:
+            set_setting(session, OPENAI_KEY_SETTING, openai_key)
+        set_setting(session, OPENAI_MODEL_SETTING, model)
+    else:
+        set_setting(session, CLAUDE_KEY_SETTING, claude_key)
+        set_setting(session, CLAUDE_MODEL_SETTING, model)
     order = llm_order(session)
     if body.provider not in order:
         _set_order(session, [*order, body.provider])

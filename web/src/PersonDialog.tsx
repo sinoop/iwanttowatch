@@ -2,6 +2,7 @@ import type { Reaction } from '@iwanttowatch/api-client'
 import { useEffect, useRef, useState } from 'react'
 import { ratingToReaction, useFavoritePerson, usePerson } from './api'
 import { ReactionBadge } from './RateDialog'
+import { ImdbBadge, MatchBadge } from './TitleDialog'
 import { segmentedBadgeClass, segmentedTabClass } from './tabs'
 import { Button, ErrorText, Poster, SegmentedCapsule } from './ui'
 
@@ -351,6 +352,19 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
 
                         {/* Badges row */}
                         <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          {film.match !== null && film.match !== undefined && (
+                            <MatchBadge match={film.match} />
+                          )}
+                          {film.imdb_rating !== null && film.imdb_rating !== undefined ? (
+                            <ImdbBadge
+                              imdb={{ id: '', rating: film.imdb_rating, votes: film.imdb_votes ?? 0 }}
+                              showVotes
+                            />
+                          ) : film.vote_average ? (
+                            <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-white/70 tabular-nums">
+                              TMDb {film.vote_average.toFixed(1)}
+                            </span>
+                          ) : null}
                           {film.in_library && (
                             <span className="rounded bg-indigo-500/20 px-1.5 py-0.2 text-[10px] font-semibold text-indigo-300">
                               On Jellyfin

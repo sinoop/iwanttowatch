@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from test_imports import KEY
 
-from iwanttowatch.models import Availability, LibraryItem, Title, UserTitle
+from iwanttowatch.models import Availability, LibraryItem, Recommendation, Title, UserTitle
 
 
 def test_person_details_affinity_and_filmography(client: TestClient) -> None:
@@ -305,3 +305,31 @@ def test_catalog_search_all_finds_actors_and_their_known_films(client: TestClien
     nolan_film_ids = [m["tmdb_id"] for m in data_nolan["movies"]]
     assert 157336 in nolan_film_ids  # Interstellar
     assert 27205 in nolan_film_ids  # Inception
+
+
+def test_person_filmography_match_and_imdb_enrichment(client: TestClient) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        session.add(
+            Title(
+                tmdb_id=157336,
+                title="Interstellar",
+                original_title="Interstellar",
+                original_language="en",
+                year=2014,
+                imdb_rating=8.7,
+                imdb_votes=2_100_000,
+                directors=[{"id": 525, "name": "Christopher Nolan"}],
+            )
+        )
+        session.flush()
+        session.add(Recommendation(user_id=1, tmdb_id=157336, score=0.91, rank=1, reasons=[]))
+        session.commit()
+
+    res = client.get("/api/v1/people/525")
+    assert res.status_code == 200, res.text
+    filmography = res.json()["filmography"]
+    interstellar = next(item for item in filmography if item["tmdb_id"] == 157336)
+    assert interstellar["imdb_rating"] == 8.7
+    assert interstellar["imdb_votes"] == 2_100_000
+    assert interstellar["match"] == 91

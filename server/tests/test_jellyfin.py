@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from test_imports import KEY
 
-from iwanttowatch.models import UserTitle
+from iwanttowatch.models import ShortlistItem, Title, UserTitle
 
 JELLYFIN = "http://jellyfin.test:8096"
 API_KEY = "jellyfin-api-key"
@@ -26,6 +26,7 @@ class FakeJellyfin:
     def __init__(self) -> None:
         self.items: dict[str, dict[str, Any]] = {}
         self.user_data: dict[tuple[uuid.UUID, str], dict[str, Any]] = {}
+        self.playlists: dict[str, dict[str, Any]] = {}
 
     def add(self, name: str, year: int, **provider_ids: str) -> str:
         item_id = uuid.uuid4().hex
@@ -69,6 +70,30 @@ class FakeJellyfin:
             start, limit = int(params["startIndex"]), int(params["limit"])
             page = items[start : start + limit]
             return httpx.Response(200, json={"Items": page, "TotalRecordCount": len(items)})
+        if path.startswith("/Users/") and path.endswith("/Items"):
+            return httpx.Response(
+                200,
+                json={
+                    "Items": [{"Id": pid, "Name": p["Name"]} for pid, p in self.playlists.items()]
+                },
+            )
+        if path == "/Playlists" and request.method == "POST":
+            body = json.loads(request.content)
+            pid = uuid.uuid4().hex
+            self.playlists[pid] = {"Name": body["Name"], "Ids": list(body["Ids"])}
+            return httpx.Response(200, json={"Id": pid})
+        if path.startswith("/Playlists/") and path.endswith("/Items"):
+            pid = path.split("/")[2]
+            pl = self.playlists.get(pid)
+            if pl is None:
+                return httpx.Response(404)
+            if request.method == "GET":
+                return httpx.Response(200, json={"Items": [{"Id": i} for i in pl["Ids"]]})
+            if request.method == "POST":
+                for new_id in params.get("ids", "").split(","):
+                    if new_id and new_id not in pl["Ids"]:
+                        pl["Ids"].append(new_id)
+                return httpx.Response(204)
         return httpx.Response(404)
 
 
@@ -293,3 +318,61 @@ def test_in_progress_playback_and_rating_prompts(
     )
     assert rate.status_code == 200
     assert client.get("/api/v1/me/rating-prompts").json() == []
+
+
+def test_sync_shortlist_playlist(client: TestClient, jellyfin: FakeJellyfin) -> None:
+    drishyam = jellyfin.add("Drishyam", 2013, Tmdb="301")
+    connect(client)
+    assert (
+        client.put(
+            "/api/v1/me/jellyfin",
+            json={"username": "riya", "password": PASSWORDS["riya"][0]},
+        ).status_code
+        == 200
+    )
+    idle(client)
+
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        if session.get(Title, 301) is None:
+            session.add(
+                Title(
+                    tmdb_id=301,
+                    title="Drishyam",
+                    original_title="Drishyam",
+                    original_language="ml",
+                    year=2013,
+                )
+            )
+        session.add(
+            Title(
+                tmdb_id=999,
+                title="Not In Jellyfin",
+                original_title="Not In Jellyfin",
+                original_language="en",
+                year=2022,
+            )
+        )
+        session.flush()
+        session.add_all(
+            [
+                ShortlistItem(user_id=1, tmdb_id=301),
+                ShortlistItem(user_id=1, tmdb_id=999),
+            ]
+        )
+        session.commit()
+
+    res = client.post("/api/v1/jellyfin/sync-shortlist")
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data["synced_count"] == 1
+    assert data["skipped_count"] == 1
+    assert data["playlist_name"] == "iWantToWatch Shortlist"
+    assert len(jellyfin.playlists) == 1
+    playlist = next(iter(jellyfin.playlists.values()))
+    assert playlist["Ids"] == [drishyam]
+
+    # Second sync is idempotent
+    res2 = client.post("/api/v1/jellyfin/sync-shortlist")
+    assert res2.status_code == 200
+    assert res2.json()["synced_count"] == 1
+    assert playlist["Ids"] == [drishyam]
