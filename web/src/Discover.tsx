@@ -1,10 +1,10 @@
-import type { AskAnswer, ChildProfile, FeedItem, FeedPage, FeedSort, Me, RadarrShortlistStatus, Reaction } from '@iwanttowatch/api-client'
+import type { AskAnswer, ChildProfile, FeedItem, FeedPage, FeedSort, InProgressItem, Me, RadarrShortlistStatus, RatingPromptItem, Reaction } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { api, errorMessage, facts, useChildren, useQuickRate, useRadarrBatchSync, useRadarrShortlist, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
+import { api, errorMessage, facts, useChildren, useDismissRatingPrompt, useInProgress, useQuickRate, useRadarrBatchSync, useRadarrShortlist, useRatingPrompts, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
 import { QuickTags, ReactionIcon } from './RateDialog'
-import { PlatformFilter, WatchBadges } from './Streaming'
+import { JellyfinLogo, PlatformFilter, WatchBadges } from './Streaming'
 import TitleDialog, { AssignToChildButton, BookmarkIcon, Chips, DownloadIcon, ImdbBadge, MatchBadge } from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
 
@@ -68,6 +68,9 @@ export default function Discover({ me }: { me: Me }) {
     onSettled: refreshFeed,
   })
   const shortlist = useShortlist()
+  const inProgress = useInProgress()
+  const ratingPrompts = useRatingPrompts()
+  const dismissRatingPrompt = useDismissRatingPrompt()
   useEffect(() => {
     if (!toast) return
     const timer = setTimeout(() => setToast(null), TOAST_SECONDS * 1000)
@@ -233,6 +236,28 @@ export default function Discover({ me }: { me: Me }) {
             Back to the full feed
           </Button>
         </div>
+      )}
+
+      {/* Prompts for movies recently finished on Jellyfin */}
+      {ratingPrompts.data && ratingPrompts.data.length > 0 && (
+        <RatingPromptBanner
+          prompt={ratingPrompts.data[0]}
+          onRate={(reaction) => {
+            const p = ratingPrompts.data[0]
+            rateFilm({ tmdb_id: p.tmdb_id, title: p.title } as FeedItem, reaction)
+            dismissRatingPrompt.mutate(p.tmdb_id)
+          }}
+          onDismiss={() => dismissRatingPrompt.mutate(ratingPrompts.data[0].tmdb_id)}
+          onOpen={() => setOpen(ratingPrompts.data[0].tmdb_id)}
+        />
+      )}
+
+      {/* Movies in progress / continue watching on Jellyfin */}
+      {inProgress.data && inProgress.data.length > 0 && (
+        <ContinueWatchingShelf
+          items={inProgress.data}
+          onOpen={(tmdbId) => setOpen(tmdbId)}
+        />
       )}
 
       {first && (
@@ -949,6 +974,195 @@ function NextStep({ to, action, children }: { to: string; action: string; childr
       >
         {action}
       </Link>
+    </div>
+  )
+}
+
+function RatingPromptBanner({
+  prompt,
+  onRate,
+  onDismiss,
+  onOpen,
+}: {
+  prompt: RatingPromptItem
+  onRate: (reaction: Reaction) => void
+  onDismiss: () => void
+  onOpen: () => void
+}) {
+  return (
+    <div className="relative mt-6 overflow-hidden rounded-2xl border border-accent/30 bg-gradient-to-r from-accent/15 via-[#1a1e27] to-[#12161f] p-4 shadow-xl shadow-black/40 sm:p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3.5 sm:gap-4 min-w-0">
+          <button
+            type="button"
+            onClick={onOpen}
+            className="group relative shrink-0 overflow-hidden rounded-xl ring-1 ring-white/10 hover:ring-accent transition"
+          >
+            <Poster
+              path={prompt.poster_path}
+              title={prompt.title}
+              className="h-20 w-14 object-cover sm:h-24 sm:w-16 transition group-hover:scale-105"
+            />
+          </button>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full bg-black/40 px-2 py-0.5 text-[11px] font-medium text-white/80 ring-1 ring-white/10">
+                <JellyfinLogo className="size-3.5 rounded-full" />
+                <span>Finished on Jellyfin</span>
+              </span>
+            </div>
+            <h2 className="mt-1 text-base font-semibold text-white sm:text-lg truncate">
+              {prompt.title} {prompt.year ? <span className="text-white/40 font-normal">({prompt.year})</span> : null}
+            </h2>
+            <p className="text-xs text-white/60">
+              How was it? Rating teaches iWantToWatch your taste for tonight’s recommendations.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+          <div className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-black/40 p-1 backdrop-blur-md">
+            <button
+              type="button"
+              onClick={() => onRate('disliked')}
+              title="Didn't like"
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-white/75 hover:bg-rose-500/20 hover:text-rose-300 transition"
+            >
+              <ReactionIcon reaction="disliked" className="size-4" />
+              <span className="hidden sm:inline">Didn't like</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onRate('liked')}
+              title="Liked"
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-white/75 hover:bg-sky-500/20 hover:text-sky-300 transition"
+            >
+              <ReactionIcon reaction="liked" className="size-4" />
+              <span className="hidden sm:inline">Liked</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onRate('loved')}
+              title="Loved"
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-white/75 hover:bg-accent/20 hover:text-accent-strong transition"
+            >
+              <ReactionIcon reaction="loved" className="size-4" />
+              <span className="hidden sm:inline">Loved</span>
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={onDismiss}
+            title="Dismiss rating prompt"
+            aria-label="Dismiss rating prompt"
+            className="flex size-8 items-center justify-center rounded-lg border border-white/10 bg-black/30 text-white/40 hover:text-white hover:bg-white/10 transition"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ContinueWatchingShelf({
+  items,
+  onOpen,
+}: {
+  items: InProgressItem[]
+  onOpen: (tmdbId: number) => void
+}) {
+  if (items.length === 0) return null
+  return (
+    <div className="mt-6">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <JellyfinLogo className="size-4.5 rounded" />
+          <h2 className="text-sm font-semibold text-white/90">Continue Watching on Jellyfin</h2>
+          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/60">
+            {items.length}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex gap-3.5 overflow-x-auto pb-2 scrollbar-thin">
+        {items.map((item) => {
+          const minsLeft = item.runtime
+            ? Math.max(1, Math.round(item.runtime * (1 - item.playback_percentage / 100)))
+            : null
+          const progressLabel =
+            minsLeft !== null
+              ? minsLeft >= 60
+                ? `${Math.floor(minsLeft / 60)}h ${minsLeft % 60}m left`
+                : `${minsLeft}m left`
+              : `${Math.round(item.playback_percentage)}%`
+
+          return (
+            <div
+              key={item.tmdb_id}
+              className="group relative flex w-36 sm:w-40 shrink-0 flex-col rounded-xl border border-white/10 bg-[#161922] p-2 hover:border-white/20 transition shadow-lg"
+            >
+              <div className="relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-black/40">
+                <button
+                  type="button"
+                  onClick={() => onOpen(item.tmdb_id)}
+                  className="size-full cursor-pointer"
+                  title={`View details for ${item.title}`}
+                >
+                  <Poster
+                    path={item.poster_path}
+                    title={item.title}
+                    className="size-full object-cover transition group-hover:scale-105"
+                  />
+                </button>
+                {/* Progress pill on top */}
+                <div className="absolute top-1.5 right-1.5 pointer-events-none">
+                  <span className="rounded-md bg-black/80 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30 backdrop-blur-xs">
+                    {progressLabel}
+                  </span>
+                </div>
+                {/* Progress bar at bottom */}
+                <div className="absolute inset-x-0 bottom-0 h-1.5 bg-black/60 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-500 to-accent"
+                    style={{ width: `${Math.min(100, Math.max(2, item.playback_percentage))}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-2 flex-1 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => onOpen(item.tmdb_id)}
+                  className="block text-left text-xs font-semibold text-white/90 hover:text-accent transition truncate w-full"
+                  title={item.title}
+                >
+                  {item.title}
+                </button>
+                <div className="flex items-center justify-between text-[11px] text-white/50 mt-0.5">
+                  <span>{item.year ?? ''}</span>
+                  <span>{Math.round(item.playback_percentage)}%</span>
+                </div>
+              </div>
+
+              {item.jellyfin_url && (
+                <a
+                  href={item.jellyfin_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 py-1 text-xs font-medium text-white/80 hover:bg-white/10 hover:text-white transition"
+                  title="Resume in Jellyfin"
+                >
+                  <svg viewBox="0 0 24 24" className="size-3 fill-current" aria-hidden="true">
+                    <polygon points="5 3 19 12 5 21 5 3" />
+                  </svg>
+                  <span>Resume</span>
+                </a>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

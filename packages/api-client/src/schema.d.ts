@@ -592,6 +592,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/in-progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List In Progress
+         * @description Movies the user is currently watching on Jellyfin (in progress / resume).
+         */
+        get: operations["list_in_progress_api_v1_me_in_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/rating-prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Rating Prompts
+         * @description Active prompts to rate movies recently finished on Jellyfin.
+         */
+        get: operations["list_rating_prompts_api_v1_me_rating_prompts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/rating-prompts/{tmdb_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Dismiss Rating Prompt
+         * @description Dismiss a rating prompt without rating the film.
+         */
+        delete: operations["dismiss_rating_prompt_api_v1_me_rating_prompts__tmdb_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/rating-prompts/{tmdb_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss Rating Prompt
+         * @description Dismiss a rating prompt without rating the film.
+         */
+        post: operations["dismiss_rating_prompt_api_v1_me_rating_prompts__tmdb_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/webhooks/jellyfin": {
         parameters: {
             query?: never;
@@ -2402,6 +2482,29 @@ export interface components {
             /** Message */
             message: string | null;
         };
+        /** InProgressItem */
+        InProgressItem: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Year */
+            year: number | null;
+            /** Poster Path */
+            poster_path: string | null;
+            /** Runtime */
+            runtime: number | null;
+            /** Playback Position Ticks */
+            playback_position_ticks: number;
+            /** Playback Percentage */
+            playback_percentage: number;
+            /** Playback Updated At */
+            playback_updated_at: string | null;
+            /** Jellyfin Item Id */
+            jellyfin_item_id: string;
+            /** Jellyfin Url */
+            jellyfin_url: string | null;
+        };
         /** InviteCreate */
         InviteCreate: {
             /** Name */
@@ -3204,6 +3307,24 @@ export interface components {
             note?: string | null;
             /** Match */
             match?: number | null;
+        };
+        /** RatingPromptItem */
+        RatingPromptItem: {
+            /** Id */
+            id: number;
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Year */
+            year: number | null;
+            /** Poster Path */
+            poster_path: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** RatingsPage */
         RatingsPage: {
@@ -4733,6 +4854,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JellyfinAccount"];
+                };
+            };
+        };
+    };
+    list_in_progress_api_v1_me_in_progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InProgressItem"][];
+                };
+            };
+        };
+    };
+    list_rating_prompts_api_v1_me_rating_prompts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatingPromptItem"][];
+                };
+            };
+        };
+    };
+    dismiss_rating_prompt_api_v1_me_rating_prompts__tmdb_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dismiss_rating_prompt_api_v1_me_rating_prompts__tmdb_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

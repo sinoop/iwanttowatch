@@ -1,7 +1,17 @@
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, UniqueConstraint, delete
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    DateTime,
+    Float,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+    delete,
+)
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from iwanttowatch.db import Base, utcnow
@@ -217,6 +227,22 @@ class LibraryItem(Base):
     played: Mapped[bool] = mapped_column(default=False)
     last_played: Mapped[date | None]
     favorite: Mapped[bool] = mapped_column(default=False)
+    playback_position_ticks: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    playback_percentage: Mapped[float] = mapped_column(Float, default=0.0, server_default="0.0")
+    playback_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class RatingPrompt(Base):
+    """A prompt asking the user to rate a movie they recently finished on Jellyfin."""
+
+    __tablename__ = "rating_prompts"
+    __table_args__ = (UniqueConstraint("user_id", "tmdb_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    tmdb_id: Mapped[int] = mapped_column(ForeignKey("titles.tmdb_id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    dismissed: Mapped[bool] = mapped_column(default=False, server_default="0")
 
 
 class ConnectorStatus(Base):

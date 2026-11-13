@@ -1541,6 +1541,118 @@
         }
       }
     },
+    "/api/v1/me/in-progress": {
+      "get": {
+        "summary": "List In Progress",
+        "description": "Movies the user is currently watching on Jellyfin (in progress / resume).",
+        "operationId": "list_in_progress_api_v1_me_in_progress_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InProgressItem"
+                  },
+                  "type": "array",
+                  "title": "Response List In Progress Api V1 Me In Progress Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/rating-prompts": {
+      "get": {
+        "summary": "List Rating Prompts",
+        "description": "Active prompts to rate movies recently finished on Jellyfin.",
+        "operationId": "list_rating_prompts_api_v1_me_rating_prompts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RatingPromptItem"
+                  },
+                  "type": "array",
+                  "title": "Response List Rating Prompts Api V1 Me Rating Prompts Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/rating-prompts/{tmdb_id}": {
+      "delete": {
+        "summary": "Dismiss Rating Prompt",
+        "description": "Dismiss a rating prompt without rating the film.",
+        "operationId": "dismiss_rating_prompt_api_v1_me_rating_prompts__tmdb_id__delete",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/rating-prompts/{tmdb_id}/dismiss": {
+      "post": {
+        "summary": "Dismiss Rating Prompt",
+        "description": "Dismiss a rating prompt without rating the film.",
+        "operationId": "dismiss_rating_prompt_api_v1_me_rating_prompts__tmdb_id__dismiss_post",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/webhooks/jellyfin": {
       "post": {
         "summary": "Jellyfin Webhook",
@@ -6657,6 +6769,100 @@
         ],
         "title": "ImportRowOut"
       },
+      "InProgressItem": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "poster_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Path"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime"
+          },
+          "playback_position_ticks": {
+            "type": "integer",
+            "title": "Playback Position Ticks"
+          },
+          "playback_percentage": {
+            "type": "number",
+            "title": "Playback Percentage"
+          },
+          "playback_updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playback Updated At"
+          },
+          "jellyfin_item_id": {
+            "type": "string",
+            "title": "Jellyfin Item Id"
+          },
+          "jellyfin_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jellyfin Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "year",
+          "poster_path",
+          "runtime",
+          "playback_position_ticks",
+          "playback_percentage",
+          "playback_updated_at",
+          "jellyfin_item_id",
+          "jellyfin_url"
+        ],
+        "title": "InProgressItem"
+      },
       "InviteCreate": {
         "properties": {
           "name": {
@@ -9085,6 +9291,59 @@
           "tags"
         ],
         "title": "RatedTitle"
+      },
+      "RatingPromptItem": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "poster_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Path"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "tmdb_id",
+          "title",
+          "year",
+          "poster_path",
+          "created_at"
+        ],
+        "title": "RatingPromptItem"
       },
       "RatingsPage": {
         "properties": {

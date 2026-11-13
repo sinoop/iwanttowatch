@@ -200,3 +200,96 @@ def test_jellyfin_users_sign_in_without_taking_over_local_accounts(
     assert admin.json()["is_admin"] is True
     taken = client.put("/api/v1/me/jellyfin", json={"username": "riya", "password": "jfpass1"})
     assert taken.status_code == 409
+    idle(client)
+
+
+def test_in_progress_playback_and_rating_prompts(
+    client: TestClient, jellyfin: FakeJellyfin
+) -> None:
+    drishyam = jellyfin.add("Drishyam", 2013, Tmdb="301")
+    kumbalangi = jellyfin.add("Kumbalangi Nights", 2019, Imdb="tt8413338")
+
+    # Start Drishyam with 42% progress
+    jellyfin.play(
+        RIYA,
+        drishyam,
+        played=False,
+        PlaybackPositionTicks=18000000000,
+        PlayedPercentage=42.0,
+    )
+
+    webhook = connect(client)
+    link = client.put("/api/v1/me/jellyfin", json={"username": "riya", "password": "jfpass1"})
+    assert link.status_code == 200
+    idle(client)
+
+    # In progress endpoint should return Drishyam
+    in_prog = client.get("/api/v1/me/in-progress").json()
+    assert len(in_prog) == 1
+    assert in_prog[0]["tmdb_id"] == 301
+    assert in_prog[0]["title"] == "Drishyam"
+    assert in_prog[0]["playback_percentage"] == 42.0
+    assert in_prog[0]["playback_position_ticks"] == 18000000000
+    assert in_prog[0]["jellyfin_url"] == f"{JELLYFIN}/web/#/details?id={drishyam}"
+
+    # No rating prompts yet
+    assert client.get("/api/v1/me/rating-prompts").json() == []
+
+    # Finish Drishyam in Jellyfin via webhook
+    jellyfin.play(RIYA, drishyam, played=True, PlaybackPositionTicks=0, PlayedPercentage=0.0)
+    body = json.dumps(
+        {
+            "ItemType": "Movie",
+            "NotificationType": "PlaybackStop",
+            "UserId": str(RIYA),
+            "ItemId": drishyam,
+        }
+    )
+    res = client.post(webhook, content=body, headers={"Content-Type": "text/plain"})
+    assert res.status_code == 204
+    idle(client)
+
+    # Drishyam is no longer in progress
+    assert client.get("/api/v1/me/in-progress").json() == []
+
+    # Rating prompt is created for Drishyam
+    prompts = client.get("/api/v1/me/rating-prompts").json()
+    assert len(prompts) == 1
+    assert prompts[0]["tmdb_id"] == 301
+    assert prompts[0]["title"] == "Drishyam"
+
+    # Start and finish Kumbalangi Nights
+    jellyfin.play(RIYA, kumbalangi, played=True)
+    body = json.dumps(
+        {
+            "ItemType": "Movie",
+            "NotificationType": "PlaybackStop",
+            "UserId": str(RIYA),
+            "ItemId": kumbalangi,
+        }
+    )
+    assert (
+        client.post(webhook, content=body, headers={"Content-Type": "text/plain"}).status_code
+        == 204
+    )
+    idle(client)
+
+    prompts = client.get("/api/v1/me/rating-prompts").json()
+    assert len(prompts) == 2
+    prompt_ids = {p["tmdb_id"] for p in prompts}
+    assert prompt_ids == {201, 301}
+
+    # Dismiss Kumbalangi Nights prompt
+    dismiss = client.post("/api/v1/me/rating-prompts/201/dismiss")
+    assert dismiss.status_code == 204
+    prompts = client.get("/api/v1/me/rating-prompts").json()
+    assert len(prompts) == 1
+    assert prompts[0]["tmdb_id"] == 301
+
+    # Rate Drishyam via reaction endpoint -> automatically clears its rating prompt
+    rate = client.put(
+        "/api/v1/titles/301/reaction",
+        json={"reaction": "loved", "tags": [], "watched": True},
+    )
+    assert rate.status_code == 200
+    assert client.get("/api/v1/me/rating-prompts").json() == []

@@ -17,7 +17,7 @@ from datetime import date, timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, or_, select
 from sqlalchemy.orm import Session
 
 from iwanttowatch import __version__
@@ -28,7 +28,14 @@ from iwanttowatch.catalog import (
     find_by_title,
 )
 from iwanttowatch.db import utcnow
-from iwanttowatch.models import ConnectorStatus, LibraryItem, User, UserTitle, get_setting
+from iwanttowatch.models import (
+    ConnectorStatus,
+    LibraryItem,
+    RatingPrompt,
+    User,
+    UserTitle,
+    get_setting,
+)
 from iwanttowatch.tmdb import TmdbClient, TmdbError, TmdbNotFound
 from iwanttowatch.tmdb import client_from_settings as tmdb_from_settings
 
@@ -171,10 +178,13 @@ def sync_user(
         )
     }
     touched: set[int] = set()
+    newly_played: set[int] = set()
     seen: set[str] = set()
     for data in jellyfin.movies(user.jellyfin_user_id, item_ids):
         item_id = normalise_id(data["Id"])
         seen.add(item_id)
+        is_new = item_id not in known
+        was_played = known[item_id].played if not is_new else False
         item = known.get(item_id)
         if item is None:
             item = known[item_id] = LibraryItem(user_id=user.id, item_id=item_id)
@@ -190,15 +200,35 @@ def sync_user(
         item.favorite = bool(user_data.get("IsFavorite"))
         last_played = user_data.get("LastPlayedDate")
         item.last_played = date.fromisoformat(last_played[:10]) if last_played else None
+
+        # Playback position & in-progress state:
+        ticks = user_data.get("PlaybackPositionTicks")
+        item.playback_position_ticks = int(ticks) if ticks is not None else 0
+        pct = user_data.get("PlayedPercentage")
+        item.playback_percentage = float(pct) if pct is not None else 0.0
+        if item.playback_position_ticks > 0 or item.playback_percentage > 0:
+            item.playback_updated_at = utcnow()
+        elif item.played:
+            item.playback_position_ticks = 0
+            item.playback_percentage = 0.0
+
         if item.tmdb_id is not None:
             touched.add(item.tmdb_id)
+            if (
+                not was_played
+                and item.played
+                and (
+                    not is_new or (item.last_played and (date.today() - item.last_played).days <= 1)
+                )
+            ):
+                newly_played.add(item.tmdb_id)
     if item_ids is None:
         for item_id, item in known.items():
             if item_id not in seen:
                 session.delete(item)
     session.flush()
     for tmdb_id in touched:
-        _merge_history(session, tmdb, user.id, tmdb_id)
+        _merge_history(session, tmdb, user.id, tmdb_id, is_newly_played=tmdb_id in newly_played)
 
 
 def _match(tmdb: TmdbClient, data: dict[str, Any], previous: int | None) -> int | None:
@@ -226,34 +256,62 @@ def _match(tmdb: TmdbClient, data: dict[str, Any], previous: int | None) -> int 
     return tmdb_id
 
 
-def _merge_history(session: Session, tmdb: TmdbClient, user_id: int, tmdb_id: int) -> None:
+def _merge_history(
+    session: Session, tmdb: TmdbClient, user_id: int, tmdb_id: int, is_newly_played: bool = False
+) -> None:
     """Set the user's "jellyfin" UserTitle for a film from all its library items."""
     items = session.scalars(
         select(LibraryItem).where(LibraryItem.user_id == user_id, LibraryItem.tmdb_id == tmdb_id)
     ).all()
     played = [item for item in items if item.played]
     favorite = any(item.favorite for item in items)
+    in_progress = any((i.playback_position_ticks > 0 or i.playback_percentage > 0) for i in items)
     entry = session.scalar(
         select(UserTitle).where(
             UserTitle.user_id == user_id, UserTitle.tmdb_id == tmdb_id, UserTitle.source == SOURCE
         )
     )
+    if not played and not favorite and not in_progress:
+        if entry is not None:
+            session.delete(entry)
+        return
+    try:
+        ensure_title(session, tmdb, tmdb_id)
+    except TmdbNotFound:
+        for item in items:
+            item.tmdb_id = None
+        return
     if not played and not favorite:
         if entry is not None:
             session.delete(entry)
         return
     if entry is None:
-        try:
-            ensure_title(session, tmdb, tmdb_id)
-        except TmdbNotFound:
-            for item in items:
-                item.tmdb_id = None
-            return
         entry = UserTitle(user_id=user_id, tmdb_id=tmdb_id, source=SOURCE)
         session.add(entry)
     entry.watched = bool(played)
     entry.watched_at = max((i.last_played for i in played if i.last_played), default=None)
     entry.favorite = favorite
+
+    if is_newly_played and played:
+        # Prompt user to rate if they have not rated or reacted yet
+        already_rated = (
+            session.scalar(
+                select(UserTitle.id).where(
+                    UserTitle.user_id == user_id,
+                    UserTitle.tmdb_id == tmdb_id,
+                    or_(UserTitle.rating.is_not(None), UserTitle.reaction.is_not(None)),
+                )
+            )
+            is not None
+        )
+        if not already_rated:
+            prompt = session.scalar(
+                select(RatingPrompt).where(
+                    RatingPrompt.user_id == user_id, RatingPrompt.tmdb_id == tmdb_id
+                )
+            )
+            if prompt is None:
+                session.add(RatingPrompt(user_id=user_id, tmdb_id=tmdb_id))
 
 
 def sync(engine: Engine, tmdb_base_url: str, items: dict[int, set[str]] | None = None) -> None:

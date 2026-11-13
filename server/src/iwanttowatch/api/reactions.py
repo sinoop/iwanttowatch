@@ -13,7 +13,7 @@ from iwanttowatch.api.deps import CurrentUser, DbSession
 from iwanttowatch.catalog import ensure_title
 from iwanttowatch.db import utcnow
 from iwanttowatch.feed import clear_user_rated_matches_cache
-from iwanttowatch.models import OutlierReview, Title, User, UserTitle
+from iwanttowatch.models import OutlierReview, RatingPrompt, Title, User, UserTitle
 from iwanttowatch.tags import BY_ID, MAX_NOTE, MAX_TAGS, Group, options_for
 from iwanttowatch.taste import REACTION_FALLBACK, rating_to_reaction, refresh_reaction_ratings
 from iwanttowatch.tmdb import TmdbError, client_from_settings
@@ -143,6 +143,12 @@ def set_reaction(
     entry.watched = body.watched
     entry.watched_at = entry.watched_at or today
     entry.rating = REACTION_FALLBACK[body.reaction] if body.reaction else None
+    # Dismiss any pending Jellyfin rating prompt for this film.
+    prompt = session.scalar(
+        select(RatingPrompt).where(RatingPrompt.user_id == user.id, RatingPrompt.tmdb_id == tmdb_id)
+    )
+    if prompt is not None:
+        prompt.dismissed = True
     # Scores this reaction, and re-scores earlier ones, against the user's current scale.
     refresh_reaction_ratings(session, user.id)
     session.commit()

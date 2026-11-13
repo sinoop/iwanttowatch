@@ -220,6 +220,8 @@ export function refreshAfterReaction(queryClient: QueryClient, tmdbId: number) {
   queryClient.invalidateQueries({ queryKey: ['feed'] })
   queryClient.invalidateQueries({ queryKey: ['together'] })
   queryClient.invalidateQueries({ queryKey: ['title', tmdbId] })
+  queryClient.invalidateQueries({ queryKey: ['jellyfin', 'rating-prompts'] })
+  queryClient.invalidateQueries({ queryKey: ['jellyfin', 'in-progress'] })
 }
 
 /** A film's reaction, tags and note, with saving and removing; rating a film also marks it watched. */
@@ -604,5 +606,42 @@ export function usePeopleTaste() {
         top_directors: [],
         top_actors: [],
       },
+  })
+}
+
+/** Movies the user is currently watching on Jellyfin (in progress / resume). */
+export function useInProgress() {
+  return useQuery({
+    queryKey: ['jellyfin', 'in-progress'],
+    queryFn: async () => (await api.GET('/api/v1/me/in-progress')).data ?? [],
+    refetchInterval: 30_000,
+  })
+}
+
+/** Prompts to rate movies recently finished on Jellyfin. */
+export function useRatingPrompts() {
+  return useQuery({
+    queryKey: ['jellyfin', 'rating-prompts'],
+    queryFn: async () => (await api.GET('/api/v1/me/rating-prompts')).data ?? [],
+    refetchInterval: 30_000,
+  })
+}
+
+/** Dismiss a rating prompt without rating the movie. */
+export function useDismissRatingPrompt() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (tmdbId: number) => {
+      const { error } = await api.POST('/api/v1/me/rating-prompts/{tmdb_id}/dismiss', {
+        params: { path: { tmdb_id: tmdbId } },
+      })
+      if (error) throw new Error(errorMessage(error))
+    },
+    onSuccess: (_, tmdbId) => {
+      queryClient.setQueryData<Array<{ tmdb_id: number }>>(['jellyfin', 'rating-prompts'], (prev) =>
+        prev ? prev.filter((p) => p.tmdb_id !== tmdbId) : []
+      )
+      queryClient.invalidateQueries({ queryKey: ['jellyfin', 'rating-prompts'] })
+    },
   })
 }

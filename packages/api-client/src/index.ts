@@ -43,6 +43,8 @@ export type RadarItem = Schemas['RadarItem']
 export type MissingCandidatesResponse = Schemas['MissingCandidatesResponse']
 export type TheatricalRadarResponse = Schemas['TheatricalRadarResponse']
 export type RadarQueueResponse = Schemas['RadarQueueResponse']
+export type InProgressItem = Schemas['InProgressItem']
+export type RatingPromptItem = Schemas['RatingPromptItem']
 export type FeedSort = NonNullable<NonNullable<paths['/api/v1/feed']['get']['parameters']['query']>['sort']>
 
 /**
