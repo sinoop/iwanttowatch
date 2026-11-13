@@ -799,8 +799,8 @@ function DivergentSection({
   const llmConfigured = Boolean(settings.data?.llm.order.length)
 
   const divergent = useQuery({
-    queryKey: ['divergent-ratings'],
-    queryFn: async () => (await api.GET('/api/v1/me/divergent-ratings')).data ?? [],
+    queryKey: ['against-the-grain'],
+    queryFn: async () => (await api.GET('/api/v1/me/against-the-grain')).data,
   })
 
   const askClash = useMutation({
@@ -813,11 +813,12 @@ function DivergentSection({
     },
     onSuccess: (data) => {
       queryClient.setQueryData(['title', data.tmdb_id], data)
-      queryClient.invalidateQueries({ queryKey: ['divergent-ratings'] })
+      queryClient.invalidateQueries({ queryKey: ['against-the-grain'] })
     },
   })
 
-  const items = divergent.data ?? []
+  const profile = divergent.data
+  const items = profile?.items ?? []
   const where = useAvailability(items.map((item) => item.tmdb_id))
 
   if (divergent.isLoading) {
@@ -838,6 +839,25 @@ function DivergentSection({
 
   return (
     <div className="mt-6">
+      {profile && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-accent/25 bg-accent/5 p-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-accent/40 bg-accent/15 px-3 py-0.5 text-xs font-semibold text-accent-strong">
+                {profile.archetype}
+              </span>
+              <span className="text-xs text-white/50">
+                {profile.divergent_count} of {profile.total_compared} films diverge ≥ 1.5★ from consensus
+              </span>
+            </div>
+            <p className="mt-1.5 text-sm text-white/80">{profile.summary}</p>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="text-2xl font-bold text-accent-strong">{profile.score}%</div>
+            <div className="text-[11px] uppercase tracking-wider text-white/45">Against the grain</div>
+          </div>
+        </div>
+      )}
       <p className="text-sm text-white/60">
         Films where your ratings strongly conflicted with general audience ratings on IMDb and TMDb.
       </p>

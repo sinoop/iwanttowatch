@@ -1125,6 +1125,61 @@
         }
       }
     },
+    "/api/v1/me/against-the-grain": {
+      "get": {
+        "summary": "Get Against The Grain",
+        "description": "Return the user's Against-the-Grain score, taste archetype, and divergent films.",
+        "operationId": "get_against_the_grain_api_v1_me_against_the_grain_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "threshold",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 5.0,
+              "minimum": 0.5,
+              "default": 1.5,
+              "title": "Threshold"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgainstTheGrainResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ratings/outliers": {
       "get": {
         "summary": "List Outliers",
@@ -4757,6 +4812,47 @@
   },
   "components": {
     "schemas": {
+      "AgainstTheGrainResponse": {
+        "properties": {
+          "score": {
+            "type": "integer",
+            "title": "Score"
+          },
+          "archetype": {
+            "type": "string",
+            "title": "Archetype"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "total_compared": {
+            "type": "integer",
+            "title": "Total Compared"
+          },
+          "divergent_count": {
+            "type": "integer",
+            "title": "Divergent Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DivergentTitle"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "score",
+          "archetype",
+          "summary",
+          "total_compared",
+          "divergent_count",
+          "items"
+        ],
+        "title": "AgainstTheGrainResponse"
+      },
       "AskAnswer": {
         "properties": {
           "picks": {

@@ -257,13 +257,13 @@ Completed milestones (Phases 0–5d, 5f, 5g, 7, and completed Phase 6/Mobile v1 
 
 #### Batch 3 — AI Prompts & Taste Engine Upgrade
 
-- [ ] **Optimize "How it suits you" & "Conflicting opinions" (#12):**
-  - **Real Story & Remake chips:** Parse `Real story` and `Remake` out of the plain bullet list into dedicated UI chips with expandable/hover details, shown only when positive (hidden when negative).
-  - **Remake penalty in personal match:** Apply a small configurable score penalty in `recommender.py` when a film is a remake of an already-watched movie following the same plot, unless the user's history shows they enjoy remakes.
-  - **Cross-reference common audience criticisms:** Feed common viewer complaints (e.g. TMDb reviews / pacing or story critiques) into `WHY_SYSTEM` so the AI compares known flaws against the user's disliked tags/notes.
-  - **Rewrite `CLASH_SYSTEM` ("Conflicting opinions"):** Stop parroting the user's own tags/notes back to them; instead synthesize patterns across their other divergent films and ratings to reveal non-obvious taste insights.
-  - **Weight conflicting opinions in recommendations:** Feed top divergent films ("loved what others hated" / "hated what others loved") into `taste_summary()` and give divergent signals higher weight in `recommender.py` so what sets the user apart actively drives picks.
-  - **"Against the grain" score & taste archetype label:** Compute a quantitative divergence score (e.g. % of ratings diverging $\ge 1.5$ from consensus) and assign a data-backed taste archetype label (e.g. *Movie Enthusiast*, *Contrarian Critic*, *Real Story Lover*).
+- [x] **Optimize "How it suits you" & "Conflicting opinions" (#12):** (2026-11-13)
+  - **Real Story & Remake chips:** Parse `Real story` and `Remake` out of the plain bullet list into dedicated interactive UI chips (`ThemeFeatureChips` in `TitleDialog.tsx`) with expandable details, shown only when positive.
+  - **Remake penalty in personal match:** Apply `REMAKE_PENALTY` in `recommender.py` when a candidate shares a normalized title with a watched film from another year, unless the user has rated remakes highly.
+  - **Cross-reference common audience criticisms:** Instruct `WHY_SYSTEM` in `taste.py` to compare common viewer complaints against the user's specific turn-offs and divergent taste.
+  - **Rewrite `CLASH_SYSTEM` ("Conflicting opinions"):** Stop parroting the user's tags/notes; pass other divergent films in `explain_clash()` to surface cross-film taste patterns.
+  - **Weight conflicting opinions in recommendations:** Surface `"Where they break from the crowd:"` in `taste_summary()` and boost divergent explicit label weights (`DIVERGENT_WEIGHT_BOOST`) in `recommender.py`.
+  - **"Against the grain" score & taste archetype label:** Add `against_the_grain_profile()` and `GET /api/v1/me/against-the-grain` returning divergence percentage, taste archetype, and summary banner in `Taste.tsx`.
 
 #### Batch 4 — Ecosystem & Integrations
 

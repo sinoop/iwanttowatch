@@ -24,6 +24,7 @@ from iwanttowatch.tags import options_for
 from iwanttowatch.taste import (
     MIN_RATINGS_FOR_PERSONA,
     REACTION_FALLBACK,
+    against_the_grain_profile,
     effective_ratings,
     find_divergent_ratings,
     generate_persona,
@@ -310,6 +311,52 @@ def list_divergent_ratings(
         )
         for item in items
     ]
+
+
+class AgainstTheGrainResponse(BaseModel):
+    score: int
+    archetype: str
+    summary: str
+    total_compared: int
+    divergent_count: int
+    items: list[DivergentTitle]
+
+
+@router.get("/me/against-the-grain")
+def get_against_the_grain(
+    user: CurrentUser,
+    session: DbSession,
+    limit: int = Query(50, ge=1, le=100),
+    threshold: float = Query(1.5, ge=0.5, le=5.0),
+) -> AgainstTheGrainResponse:
+    """Return the user's Against-the-Grain score, taste archetype, and divergent films."""
+    profile = against_the_grain_profile(session, user.id, threshold=threshold, limit=limit)
+    return AgainstTheGrainResponse(
+        score=profile.score,
+        archetype=profile.archetype,
+        summary=profile.summary,
+        total_compared=profile.total_compared,
+        divergent_count=profile.divergent_count,
+        items=[
+            DivergentTitle(
+                tmdb_id=item.tmdb_id,
+                title=item.title,
+                original_title=item.original_title,
+                original_language=item.original_language,
+                year=item.year,
+                poster_path=item.poster_path,
+                user_rating=item.user_rating,
+                consensus_rating=item.consensus_rating,
+                vote_count=item.vote_count,
+                divergence=item.divergence,
+                reaction=item.reaction,
+                tags=item.tags,
+                note=item.note,
+                clash=item.clash,
+            )
+            for item in profile.items
+        ],
+    )
 
 
 class OutlierTitle(BaseModel):

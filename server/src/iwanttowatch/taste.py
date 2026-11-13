@@ -73,11 +73,15 @@ or more "- " if it is a poor or risky match (e.g. 1 plus and 3 minuses).
 "mise-en-scène", "pacing lag", "set pieces", or film-school terms). Write like a knowledgeable \
 friend recommending a film.
 - Never repeat genres or match reasons verbatim.
+- Focus caveats on real viewing hurdles and common audience criticisms of this specific film \
+(such as slow pacing, weak story/second half, flat characters, contrived twists, emotionally \
+heavy/bleak tone, jarring humor, or weak dialogue), and explicitly compare them against \
+what puts this user off in their summary and notes.
 - A long runtime is not automatically a negative if the film keeps the viewer engaged: \
 only cite length if the film genuinely drags, has slow filler, or tests patience. When \
-mentioning runtime, always express it in hours and minutes (e.g. 2h 15m), never raw minutes. \
-Focus caveats on real viewing hurdles (slow start, predictable twists, emotionally heavy/bleak \
-tone, jarring humor, or weak dialogue).
+mentioning runtime, always express it in hours and minutes (e.g. 2h 15m), never raw minutes.
+- Pay special attention to where they break from the crowd in their summary: if they tend \
+to love or hate traits that divide general audiences, weigh that heavily.
 - Mention at most one film title or name, taken only from the summary: never invent names.
 
 Also provide structured "themes and values" notes in four bullet points:
@@ -315,6 +319,27 @@ def taste_summary(session: Session, user_id: int, exclude: Collection[int] = ())
     lowest = [r for r in ranked[-5:] if r.rating <= average - 1.5]
     if lowest:
         lines.append("Lowest rated: " + "; ".join(film(r) for r in reversed(lowest)))
+    # Surface where this user strongly breaks from general audience consensus.
+    divergent_pos: list[tuple[float, str]] = []
+    divergent_neg: list[tuple[float, str]] = []
+    for r in rows:
+        cons = consensus_for(r.Title)
+        if cons is None:
+            continue
+        diff = r.rating - cons[0]
+        if diff >= 1.5:
+            divergent_pos.append((diff, f"{r.Title.title} ({r.rating:g} vs {cons[0]:.1f} avg)"))
+        elif diff <= -1.5:
+            divergent_neg.append((-diff, f"{r.Title.title} ({r.rating:g} vs {cons[0]:.1f} avg)"))
+    divergent_pos.sort(reverse=True)
+    divergent_neg.sort(reverse=True)
+    if divergent_pos or divergent_neg:
+        parts = []
+        if divergent_pos:
+            parts.append("loved vs crowd: " + ", ".join(s for _, s in divergent_pos[:3]))
+        if divergent_neg:
+            parts.append("disliked vs crowd: " + ", ".join(s for _, s in divergent_neg[:3]))
+        lines.append("Where they break from the crowd: " + "; ".join(parts))
     noted = session.execute(
         select(UserTitle.reaction, UserTitle.note, Title.title, Title.year)
         .join(Title, Title.tmdb_id == UserTitle.tmdb_id)
@@ -526,15 +551,15 @@ def explain_match(
     return fit
 
 
-CLASH_SYSTEM = """You analyze why one person's opinion of a film strongly conflicts \
-with the general audience consensus. You get a summary of their movie taste, their \
-rating, reaction, tags, and note on the film, and the film's details with its \
-consensus score. In two or three short sentences (under 90 words), explain the conflict: \
-(1) what resonated with or divided the general audience, (2) where this person's view \
-sharply diverged based on their tags, notes, or reaction, and (3) why this disagreement fits \
-their overall taste profile. Be concrete, insightful, and validating: speak to them as \
-"you". Plain text only: no markdown headings, no bullet points, no intro or outro, no \
-quotes around the answer."""
+CLASH_SYSTEM = """You uncover the deeper taste pattern behind why one person's rating of a \
+film strongly conflicts with the general audience consensus. You get their taste summary, \
+their other divergent ratings, and this film's details with its consensus score. Do NOT \
+simply repeat their own tags or notes back to them — they already know why they liked or \
+disliked it. Instead, in two short sentences (under 75 words), pinpoint: (1) the specific \
+flaw or quality that divides general audiences from this viewer on this film, and (2) how \
+this connects to a broader pattern in their taste (comparing with their other divergent or \
+top-rated films). Be concrete, insightful, and speak to them as "you". Plain text only: no \
+markdown headings, no bullet points, no intro or outro, no quotes around the answer."""
 
 
 def consensus_for(title: Title) -> tuple[float, int] | None:
@@ -647,6 +672,114 @@ def find_divergent_ratings(
     ]
 
 
+@dataclass(frozen=True)
+class AgainstTheGrainProfile:
+    score: int
+    archetype: str
+    summary: str
+    total_compared: int
+    divergent_count: int
+    items: list[DivergentItem]
+
+
+def against_the_grain_profile(
+    session: Session,
+    user_id: int,
+    *,
+    threshold: float = 1.5,
+    limit: int = 50,
+) -> AgainstTheGrainProfile:
+    """Compute the user's Against-the-Grain score, taste archetype, and divergent films."""
+    effective = effective_ratings(user_id)
+    rows = session.execute(
+        select(effective, Title).join(Title, Title.tmdb_id == effective.c.tmdb_id)
+    ).all()
+
+    total_compared = 0
+    divergent_total = 0
+    pos_count = 0
+    neg_count = 0
+    real_story_hits = 0
+    tag_counter: Counter[str] = Counter()
+    genre_counter: Counter[str] = Counter()
+
+    for r in rows:
+        t: Title = r.Title
+        cons = consensus_for(t)
+        if cons is None:
+            continue
+        user_rating = (
+            float(r.rating)
+            if r.rating is not None
+            else (REACTION_FALLBACK.get(r.reaction, 7.5) if r.reaction else None)
+        )
+        if user_rating is None:
+            continue
+        total_compared += 1
+        diff = user_rating - cons[0]
+        if abs(diff) >= threshold:
+            divergent_total += 1
+            if diff > 0:
+                pos_count += 1
+            else:
+                neg_count += 1
+        if user_rating >= 7.5:
+            kws = {k.lower() for k in (t.keywords or [])}
+            if kws & {"based on true story", "based on a true story", "biography", "true story"}:
+                real_story_hits += 1
+            for g in t.genres or []:
+                genre_counter[g] += 1
+        for tag in r.tags or []:
+            tag_counter[tag] += 1
+
+    items = find_divergent_ratings(session, user_id, threshold=threshold, limit=limit)
+    score = round((divergent_total / total_compared) * 100) if total_compared > 0 else 0
+
+    if total_compared < 5:
+        archetype = "Movie Explorer"
+        summary = "Rate more films to unlock your contrarian taste profile."
+    elif real_story_hits >= 5 and real_story_hits / max(total_compared, 1) >= 0.15:
+        archetype = "Real Story Lover"
+        summary = (
+            "You gravitate strongly toward true events, biographies, "
+            "and grounded real-world stories."
+        )
+    elif score >= 35 and neg_count > pos_count * 1.4:
+        archetype = "Contrarian Critic"
+        summary = (
+            f"You break from the crowd on {score}% of films, "
+            "holding high standards even for crowd favorites."
+        )
+    elif score >= 35 and pos_count > neg_count * 1.4:
+        archetype = "Hidden Gem Hunter"
+        summary = (
+            f"You disagree with consensus on {score}% of films, "
+            "often championing underrated picks others overlook."
+        )
+    elif score >= 30:
+        archetype = "Maverick Cinephile"
+        summary = (
+            f"Independent taste: {score}% of your ratings diverge sharply from mainstream scores."
+        )
+    elif score >= 15:
+        archetype = "Selective Movie Enthusiast"
+        summary = (
+            f"Mostly aligned with consensus, with strong personal convictions on {score}% of films."
+        )
+    else:
+        archetype = "Crowd-Aligned Viewer"
+        summary = "Your ratings closely track mainstream audience consensus."
+
+    return AgainstTheGrainProfile(
+        score=score,
+        archetype=archetype,
+        summary=summary,
+        total_compared=total_compared,
+        divergent_count=divergent_total,
+        items=items,
+    )
+
+
 def explain_clash(
     session: Session,
     user_id: int,
@@ -701,6 +834,17 @@ def explain_clash(
             lines.append("Starring " + ", ".join(cast[:4]))
     if title.overview:
         lines.append(f"Overview: {title.overview}")
+    other_divergent = [
+        d for d in find_divergent_ratings(session, user_id, limit=6) if d.tmdb_id != title.tmdb_id
+    ][:4]
+    if other_divergent:
+        lines.append(
+            "Other films where they broke from consensus: "
+            + "; ".join(
+                f"{d.title} (you: {d.user_rating:g}, crowd: {d.consensus_rating:.1f})"
+                for d in other_divergent
+            )
+        )
 
     raw_text = llm.generate(CLASH_SYSTEM, "\n".join(lines)).strip().strip('"“”').strip()
     if not raw_text:

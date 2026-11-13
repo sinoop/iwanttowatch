@@ -769,6 +769,47 @@ function isRemakeNegative(value: string): boolean {
   return false
 }
 
+function ThemeFeatureChips({
+  chips,
+}: {
+  chips: Array<{ kind: 'real_story' | 'remake'; label: string; detail: string }>
+}) {
+  const [expanded, setExpanded] = useState<'real_story' | 'remake' | null>(null)
+  if (chips.length === 0) return null
+  const active = chips.find((c) => c.kind === expanded)
+
+  return (
+    <div className="mb-2.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {chips.map((chip) => {
+          const isOpen = expanded === chip.kind
+          return (
+            <button
+              key={chip.kind}
+              type="button"
+              onClick={() => setExpanded(isOpen ? null : chip.kind)}
+              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                chip.kind === 'real_story'
+                  ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25'
+                  : 'border-amber-500/35 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25'
+              }`}
+            >
+              <span>{chip.kind === 'real_story' ? '📖' : '🔁'}</span>
+              <span>{chip.label}</span>
+              <span className="text-[10px] opacity-70">{isOpen ? '▲' : '▼'}</span>
+            </button>
+          )
+        })}
+      </div>
+      {active && (
+        <p className="mt-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-xs text-white/75">
+          {active.detail}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function renderThemesNote(
   note: string,
   onSelectFilm?: (title: string) => void,
@@ -780,6 +821,7 @@ function renderThemesNote(
     .filter(Boolean)
   const isBulletList = lines.some((l) => /^[•\-*]\s+/.test(l))
   if (isBulletList) {
+    const chips: Array<{ kind: 'real_story' | 'remake'; label: string; detail: string }> = []
     const items = lines
       .map((line, idx) => {
         const content = line.replace(/^[•\-*]\s+/, '')
@@ -789,10 +831,16 @@ function renderThemesNote(
         const label = rawLabel.endsWith(':') ? rawLabel : `${rawLabel}:`
         const value = match[2].trim()
         const lower = rawLabel.toLowerCase().replace(/:$/, '')
-        if ((lower.includes('real story') || lower.includes('true story')) && isRealStoryNegative(value)) {
+        if (lower.includes('real story') || lower.includes('true story')) {
+          if (!isRealStoryNegative(value)) {
+            chips.push({ kind: 'real_story', label: 'Real story', detail: value })
+          }
           return null
         }
-        if (lower.includes('remake') && isRemakeNegative(value)) {
+        if (lower.includes('remake')) {
+          if (!isRemakeNegative(value)) {
+            chips.push({ kind: 'remake', label: 'Remake', detail: value })
+          }
           return null
         }
         const isOtherFilms = lower.includes('other famous films')
@@ -800,27 +848,32 @@ function renderThemesNote(
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
 
-    if (items.length === 0) return null
+    if (items.length === 0 && chips.length === 0) return null
 
     return (
-      <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-white/70">
-        {items.map((item) => (
-          <li key={item.key}>
-            {'raw' in item ? (
-              item.raw
-            ) : (
-              <>
-                <span className="font-medium text-white/90">{item.label}</span>{' '}
-                {item.isOtherFilms && onSelectFilm ? (
-                  <OtherFilmsLinks text={item.value} onSelect={onSelectFilm} searchingTitle={searchingTitle} />
+      <div>
+        <ThemeFeatureChips chips={chips} />
+        {items.length > 0 && (
+          <ul className="list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-white/70">
+            {items.map((item) => (
+              <li key={item.key}>
+                {'raw' in item ? (
+                  item.raw
                 ) : (
-                  item.value
+                  <>
+                    <span className="font-medium text-white/90">{item.label}</span>{' '}
+                    {item.isOtherFilms && onSelectFilm ? (
+                      <OtherFilmsLinks text={item.value} onSelect={onSelectFilm} searchingTitle={searchingTitle} />
+                    ) : (
+                      item.value
+                    )}
+                  </>
                 )}
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     )
   }
   return <p className="text-sm leading-relaxed text-white/70 whitespace-pre-line">{note}</p>

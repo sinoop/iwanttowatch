@@ -147,6 +147,15 @@ def test_find_divergent_ratings(client: TestClient) -> None:
     assert data[0]["divergence"] == -5.4
     assert data[0]["clash"] is None
 
+    atg = client.get("/api/v1/me/against-the-grain")
+    assert atg.status_code == 200
+    atg_data = atg.json()
+    assert atg_data["divergent_count"] == 2
+    assert atg_data["total_compared"] == 3
+    assert atg_data["score"] == 67
+    assert atg_data["archetype"]
+    assert len(atg_data["items"]) == 2
+
 
 def test_explain_clash_logic(client: TestClient) -> None:
     setup_sample_movies(client)

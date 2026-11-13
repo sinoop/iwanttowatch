@@ -58,6 +58,8 @@ LANGUAGE_NORM_FILMS = 5
 # them halve it. Liking late-80s films says little about films from 1960.
 ERA_PENALTY = 0.15
 ERA_PENALTY_YEARS = 20
+REMAKE_PENALTY = 0.08
+DIVERGENT_WEIGHT_BOOST = 1.25
 ERA_WINDOW = 10
 ERA_LIKED_HALF = 3
 # Share of a film's match taken from the configured LLM's predicted rating, as a
@@ -327,32 +329,36 @@ def score(
     pool = [titles[i] for i in dict.fromkeys([*(label.tmdb_id for label in labels), *candidates])]
     vectors = Vectors(pool)
     quality = _quality(pool)
+    weighted_labels = _weight_divergent_labels(vectors, labels, quality)
     candidate_quality = quality[[vectors.rows[i] for i in candidates]]
     # Applied after the LLM's share is blended in, which knows nothing of either.
     adjust = (
         (_family_bonus(titles, candidates, family_picks) if child else 0.0)
         + _favorite_person_bonus(titles, candidates, favorite_people)
-        - _era_penalty(titles, labels, candidates, birth_year)
+        - _era_penalty(titles, weighted_labels, candidates, birth_year)
+        - _remake_penalty(titles, weighted_labels, candidates)
     )
     weight = np.array([AI_WEIGHT if i in ai else 0.0 for i in candidates])
     predicted = np.array([ai.get(i, 0.0) for i in candidates])
     family = (
         _family_reasons(titles, candidates, family_picks) if child else [[] for _ in candidates]
     )
-    if not labels:
+    if not weighted_labels:
         own = candidate_quality
         scores = np.clip((1 - weight) * own + weight * predicted + adjust, 0.01, 0.99)
         order = [int(i) for i in np.argsort(-scores, kind="stable")]
         return [Scored(candidates[i], float(scores[i]), family[i][:MAX_REASONS]) for i in order]
 
-    blend, (intercept, slope) = _choose_blend(vectors, labels, quality)
-    p = _predict(vectors, labels, candidates)
+    blend, (intercept, slope) = _choose_blend(vectors, weighted_labels, quality)
+    p = _predict(vectors, weighted_labels, candidates)
     blended = np.column_stack([p.neighbours, p.ridge, candidate_quality]) @ np.array(blend)
     own = intercept + slope * blended
     scores = np.clip((1 - weight) * own + weight * predicted + adjust, 0.01, 0.99)
     reasons = [
         [*family[i], *own][:MAX_REASONS]
-        for i, own in enumerate(_reasons(vectors, labels, titles, candidates, p, favorite_people))
+        for i, own in enumerate(
+            _reasons(vectors, weighted_labels, titles, candidates, p, favorite_people)
+        )
     ]
     order = _diversify(vectors, candidates, scores)
     return [Scored(candidates[i], float(scores[i]), reasons[i]) for i in order]
@@ -442,6 +448,63 @@ def _era_penalty(
         nearby = int(np.sum(np.abs(liked_years - year) <= ERA_WINDOW))
         age = min(1.0, (birth_year - year) / ERA_PENALTY_YEARS)
         out[n] = ERA_PENALTY * age * ERA_LIKED_HALF / (ERA_LIKED_HALF + nearby)
+    return out
+
+
+def _weight_divergent_labels(
+    vectors: Vectors, labels: Sequence[Label], quality: Floats
+) -> list[Label]:
+    """Give explicit ratings that diverge strongly from consensus a modest weight boost
+    so the user's distinctive taste signals shape recommendations more strongly."""
+    out: list[Label] = []
+    for label in labels:
+        if label.explicit and label.tmdb_id in vectors.rows:
+            q = float(quality[vectors.rows[label.tmdb_id]])
+            if abs(label.value - q) >= 0.25:
+                out.append(
+                    Label(
+                        tmdb_id=label.tmdb_id,
+                        value=label.value,
+                        weight=label.weight * DIVERGENT_WEIGHT_BOOST,
+                        explicit=label.explicit,
+                    )
+                )
+                continue
+        out.append(label)
+    return out
+
+
+def _remake_penalty(
+    titles: dict[int, Title], labels: Sequence[Label], candidates: Sequence[int]
+) -> Floats:
+    """Slightly penalize remakes of films the user has already watched unless the user
+    has shown a preference for remakes."""
+    seen_titles: dict[str, int | None] = {}
+    remake_scores: list[float] = []
+    for label in labels:
+        t = titles.get(label.tmdb_id)
+        if not t:
+            continue
+        for name in (t.title, t.original_title):
+            norm = " ".join(name.lower().split()) if name else ""
+            if norm:
+                seen_titles[norm] = t.year
+        kws = {k.lower() for k in (t.keywords or [])}
+        if label.explicit and "remake" in kws:
+            remake_scores.append(label.value)
+    if remake_scores and (sum(remake_scores) / len(remake_scores)) >= 0.75:
+        return np.zeros(len(candidates))
+
+    out = np.zeros(len(candidates))
+    for n, tmdb_id in enumerate(candidates):
+        t = titles[tmdb_id]
+        for name in (t.title, t.original_title):
+            norm = " ".join(name.lower().split()) if name else ""
+            if norm and norm in seen_titles:
+                seen_year = seen_titles[norm]
+                if seen_year is None or t.year is None or t.year != seen_year:
+                    out[n] = REMAKE_PENALTY
+                    break
     return out
 
 
