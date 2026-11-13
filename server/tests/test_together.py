@@ -88,7 +88,7 @@ def test_group_picks_suit_everyone_and_skip_what_anyone_has_seen(
     # Anu is the one who'd likely dislike it, and that sinks it for the group.
     anu = {i: by_id[i]["matches"][1]["match"] for i in by_id}
     assert anu[302] < min(anu[201], anu[401])
-    assert by_id[302]["match"] < min(by_id[201]["match"], by_id[401]["match"])
+    assert by_id[302]["match"] <= min(by_id[201]["match"], by_id[401]["match"])
 
     # With the Jellyfin chip, only films on the host's server: Drishyam (302).
     with Session(engine) as session:

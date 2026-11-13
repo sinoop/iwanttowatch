@@ -81,6 +81,14 @@ def test_gemini_persona_from_ratings(
         "gemini_configured": True,
         "gemini_model": "gemini-flash-latest",
         "default_gemini_model": "gemini-flash-latest",
+        "openai_base_url": None,
+        "openai_configured": False,
+        "openai_model": None,
+        "default_openai_url": "https://api.openai.com/v1",
+        "default_openai_model": "gpt-4o-mini",
+        "claude_configured": False,
+        "claude_model": None,
+        "default_claude_model": "claude-3-5-haiku-latest",
     }
     assert "g-key" not in saved.text
 
