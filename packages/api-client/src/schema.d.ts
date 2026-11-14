@@ -527,6 +527,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/catalog/search-ai": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search Catalog Ai Endpoint */
+        post: operations["search_catalog_ai_endpoint_api_v1_catalog_search_ai_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/persona": {
         parameters: {
             query?: never;
@@ -1957,6 +1974,8 @@ export interface components {
             year: number | null;
             /** Poster Path */
             poster_path: string | null;
+            /** Why */
+            why?: string | null;
         };
         /** CategoryStat */
         CategoryStat: {
@@ -3080,6 +3099,8 @@ export interface components {
             profile_path?: string | null;
             /** Known For Department */
             known_for_department?: string | null;
+            /** Why */
+            why?: string | null;
         };
         /** PersonCredit */
         PersonCredit: {
@@ -3583,6 +3604,11 @@ export interface components {
             feedback: number;
             /** Skipped */
             skipped: number;
+        };
+        /** SearchAiBody */
+        SearchAiBody: {
+            /** Query */
+            query: string;
         };
         /** SearchCatalogOut */
         SearchCatalogOut: {
@@ -4824,6 +4850,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchCatalogOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_catalog_ai_endpoint_api_v1_catalog_search_ai_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchAiBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

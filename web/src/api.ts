@@ -281,14 +281,22 @@ export function useReaction(tmdbId: number) {
   return { film: state.data, error: state.error, save, remove }
 }
 
-/** Rate a film in one click, without tags or a note, as from a card in a list. */
+/** Rate a film or mark as watched in one click, without tags or a note, as from a card in a list. */
 export function useQuickRate() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ tmdbId, reaction }: { tmdbId: number; reaction: Reaction }) => {
+    mutationFn: async ({
+      tmdbId,
+      reaction,
+      watched = true,
+    }: {
+      tmdbId: number
+      reaction?: Reaction | null
+      watched?: boolean
+    }) => {
       const { data, error } = await api.PUT('/api/v1/titles/{tmdb_id}/reaction', {
         params: { path: { tmdb_id: tmdbId } },
-        body: { reaction, watched: true, tags: [], note: '' },
+        body: { reaction: reaction ?? null, watched, tags: [], note: '' },
       })
       if (error) throw new Error(errorMessage(error))
       return data

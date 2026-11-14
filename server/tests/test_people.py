@@ -1,3 +1,7 @@
+import json
+from unittest.mock import MagicMock
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from test_imports import KEY
@@ -333,3 +337,51 @@ def test_person_filmography_match_and_imdb_enrichment(client: TestClient) -> Non
     assert interstellar["imdb_rating"] == 8.7
     assert interstellar["imdb_votes"] == 2_100_000
     assert interstellar["match"] == 91
+
+
+def test_catalog_search_ai(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+
+    # Fails with 409 if no LLM is configured
+    res_no_llm = client.post("/api/v1/catalog/search-ai", json={"query": "mystery thriller"})
+    assert res_no_llm.status_code == 409
+
+    # Empty query fails with 422
+    assert client.post("/api/v1/catalog/search-ai", json={"query": "  "}).status_code == 422
+
+    fake_llm = MagicMock()
+    fake_llm.generate.return_value = json.dumps(
+        {
+            "movies": [
+                {
+                    "title": "Drishyam",
+                    "year": 2013,
+                    "why": "A father covers up an accidental crime to save his family.",
+                }
+            ],
+            "people": [
+                {
+                    "name": "Christopher Nolan",
+                    "why": "Director known for mind-bending narrative puzzles.",
+                }
+            ],
+        }
+    )
+
+    monkeypatch.setattr(
+        "iwanttowatch.api.library.provider_from_settings",
+        lambda session, *args, **kwargs: fake_llm,
+    )
+
+    res = client.post("/api/v1/catalog/search-ai", json={"query": "intricate thriller"})
+    assert res.status_code == 200, res.text
+    data = res.json()
+
+    assert len(data["movies"]) >= 1
+    movie = next(m for m in data["movies"] if m["title"] == "Drishyam")
+    assert movie["why"] == "A father covers up an accidental crime to save his family."
+
+    assert len(data["people"]) == 1
+    person = data["people"][0]
+    assert person["name"] == "Christopher Nolan"
+    assert person["why"] == "Director known for mind-bending narrative puzzles."

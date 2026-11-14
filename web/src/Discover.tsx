@@ -1,7 +1,7 @@
-import type { AskAnswer, ChildProfile, FeedItem, FeedPage, FeedSort, InProgressItem, Me, RadarrShortlistStatus, RatingPromptItem, Reaction } from '@iwanttowatch/api-client'
+import type { ChildProfile, FeedItem, FeedPage, FeedSort, InProgressItem, Me, RadarrShortlistStatus, RatingPromptItem, Reaction } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Link } from 'react-router'
 import { api, errorMessage, facts, useChildren, useDismissRatingPrompt, useInProgress, useQuickRate, useRadarrBatchSync, useRadarrShortlist, useRatingPrompts, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
 import { QuickTags, ReactionIcon } from './RateDialog'
 import HeaderSearch from './Search'
@@ -17,9 +17,8 @@ const FEW_RATINGS = 15
 const TOAST_SECONDS = 10
 
 type Toast =
-  | { type: 'reaction'; item: FeedItem; reaction: Reaction }
+  | { type: 'reaction'; item: FeedItem; reaction: Reaction | 'watched' }
   | { type: 'feedback'; item: FeedItem; kind: 'snoozed' | 'dismissed' }
-type Answer = AskAnswer & { text: string }
 type ShortlistFilter = 'all' | 'only' | 'hide'
 
 export default function Discover({ me }: { me: Me }) {
@@ -40,7 +39,6 @@ export default function Discover({ me }: { me: Me }) {
   const setAgeLimit = (on: boolean) => setAgeLimitOffFor(on ? null : me.id)
   const [open, setOpen] = useState<number | null>(null)
   const [toast, setToast] = useState<Toast | null>(null)
-  const [answer, setAnswer] = useState<Answer | null>(null)
   const queryClient = useQueryClient()
   const refreshFeed = () => queryClient.invalidateQueries({ queryKey: ['feed'] })
 
@@ -108,8 +106,12 @@ export default function Discover({ me }: { me: Me }) {
     return () => clearTimeout(timer)
   }, [toast])
   const act = (item: FeedItem, kind: 'snoozed' | 'dismissed') => feedback.mutate({ item, kind })
-  const rateFilm = (item: FeedItem, reaction: Reaction) => {
-    quickRate.mutate({ tmdbId: item.tmdb_id, reaction })
+  const rateFilm = (item: FeedItem, reaction: Reaction | 'watched') => {
+    quickRate.mutate({
+      tmdbId: item.tmdb_id,
+      reaction: reaction === 'watched' ? null : reaction,
+      watched: true,
+    })
     setToast({ type: 'reaction', item, reaction })
   }
 
@@ -130,52 +132,18 @@ export default function Discover({ me }: { me: Me }) {
     hide_shortlisted: shortlistFilter === 'hide' || undefined,
     age_limit: me.max_certificate ? ageLimit : undefined,
   }
-  const [searchParams, setSearchParams] = useSearchParams()
-  const askParam = searchParams.get('ask')
-  const lastAskedRef = useRef<string | null>(null)
 
-  const ask = useMutation({
-    mutationKey: ['feed', 'ask'],
-    mutationFn: async (text: string) => {
-      const { data, error } = await api.POST('/api/v1/feed/ask', {
-        params: {
-          query: {
-            available_only: false,
-            content_type: 'all',
-            age_limit: me.max_certificate ? ageLimit : undefined,
-          },
-        },
-        body: { text },
-      })
-      if (error) throw new Error(errorMessage(error))
-      return { ...data, text }
-    },
-    onSuccess: setAnswer,
-  })
-  // While an answer is shown, the feed lists only the AI's picks, in the feed's order.
-  const only = answer?.picks.map((p) => p.tmdb_id)
   const feed = useInfiniteQuery({
-    queryKey: only?.length
-      ? ['feed', me.id, 'ask', answer?.text, only]
-      : ['feed', me.id, watchOn, language, genre, decade, yearMin, yearMax, contentType, certificate, shortlistFilter, sort, ageLimit],
+    queryKey: ['feed', me.id, watchOn, language, genre, decade, yearMin, yearMax, contentType, certificate, shortlistFilter, sort, ageLimit],
     queryFn: async ({ pageParam }) => {
       const { data, error } = await api.GET('/api/v1/feed', {
         params: {
-          query: only?.length
-            ? {
-                only,
-                available_only: false,
-                content_type: 'all',
-                age_limit: me.max_certificate ? ageLimit : undefined,
-                offset: pageParam,
-                limit: PAGE,
-              }
-            : {
-                ...filters,
-                sort: sort !== 'recommended' ? sort : undefined,
-                offset: pageParam,
-                limit: PAGE,
-              },
+          query: {
+            ...filters,
+            sort: sort !== 'recommended' ? sort : undefined,
+            offset: pageParam,
+            limit: PAGE,
+          },
         },
       })
       if (error) throw new Error(errorMessage(error))
@@ -195,51 +163,13 @@ export default function Discover({ me }: { me: Me }) {
   })
 
   const first = feed.data?.pages[0]
-  const nothingFits = answer?.picks.length === 0
-  const items = nothingFits ? [] : (feed.data?.pages.flatMap((p) => p.items) ?? [])
+  const items = feed.data?.pages.flatMap((p) => p.items) ?? []
   const tmdbMissing = settings.data && !settings.data.tmdb_configured
-  const whyFor = new Map(answer?.picks.map((p) => [p.tmdb_id, p.why]))
-
-  useEffect(() => {
-    const text = askParam?.trim()
-    if (!text || !first || first.status !== 'ready') return
-    if (lastAskedRef.current === text) return
-    lastAskedRef.current = text
-    ask.mutate(text)
-  }, [askParam, first, ask])
-
-  useEffect(() => {
-    const onAskAi = (e: Event) => {
-      const customEvent = e as CustomEvent<{ text: string }>
-      const text = customEvent.detail?.text?.trim()
-      if (text && first?.status === 'ready') {
-        lastAskedRef.current = text
-        ask.mutate(text)
-      }
-    }
-    window.addEventListener('iwanttowatch:ask-ai', onAskAi)
-    return () => window.removeEventListener('iwanttowatch:ask-ai', onAskAi)
-  }, [ask, first])
-
-  const handleClearAnswer = () => {
-    lastAskedRef.current = null
-    ask.reset()
-    setAnswer(null)
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev)
-      next.delete('ask')
-      return next
-    })
-    window.dispatchEvent(new CustomEvent('iwanttowatch:clear-ask-ai'))
-  }
 
   return (
     <>
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex-1">
-          <HeaderSearch className="w-full" />
-        </div>
-        {first && <RefreshButton page={first} language={language} genre={genre} contentType={contentType} />}
+      <div className="w-full">
+        <HeaderSearch className="w-full" />
       </div>
 
       {tmdbMissing ? (
@@ -259,35 +189,7 @@ export default function Discover({ me }: { me: Me }) {
         )
       )}
 
-      {ask.isPending && (
-        <div
-          role="status"
-          className="mt-6 flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs text-white/70"
-        >
-          <span className="size-3.5 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-accent" aria-hidden />
-          <span>The AI is choosing from the top of your feed…</span>
-        </div>
-      )}
-      {ask.error && (
-        <div className="mt-6">
-          <ErrorText>{ask.error.message}</ErrorText>
-        </div>
-      )}
-      {answer && !ask.isPending && (
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs text-white/55">
-          <span>
-            <span className="mr-1.5 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-strong">
-              AI-chosen
-            </span>
-            {answer.picks.length === 0
-              ? `Nothing fits “${answer.text}”.`
-              : `${answer.picks.length} ${answer.picks.length === 1 ? 'pick' : 'picks'} for “${answer.text}” from the top ${answer.considered} films in your feed, recommended first.`}
-          </span>
-          <Button variant="ghost" className="px-3 py-1 text-xs" onClick={handleClearAnswer}>
-            Back to the full feed
-          </Button>
-        </div>
-      )}
+
 
       {/* Prompts for movies recently finished on Jellyfin */}
       {ratingPrompts.data && ratingPrompts.data.length > 0 && (
@@ -361,7 +263,7 @@ export default function Discover({ me }: { me: Me }) {
         </div>
       )}
       {first && <BuildStatus page={first} empty={items.length === 0} />}
-      {first?.status === 'ready' && items.length === 0 && !answer && (
+      {first?.status === 'ready' && items.length === 0 && (
         <EmptyFeed
           emptyShortlist={shortlistFilter === 'only' && first.shortlist_count === 0}
           filtered={
@@ -395,7 +297,6 @@ export default function Discover({ me }: { me: Me }) {
               key={item.tmdb_id}
               item={item}
               childProfiles={me.is_child ? [] : (children.data ?? [])}
-              fit={whyFor.get(item.tmdb_id)}
               onOpen={() => setOpen(item.tmdb_id)}
               onRate={(reaction) => rateFilm(item, reaction)}
               onAct={(kind) => act(item, kind)}
@@ -411,16 +312,7 @@ export default function Discover({ me }: { me: Me }) {
           ))}
         </ul>
       )}
-      {answer && items.length === 0 && first && !feed.isFetching && (
-        <div className="mt-6 rounded-xl border border-dashed border-white/15 p-6 text-sm text-white/60">
-          {answer.considered === 0
-            ? 'There are no films to choose from with these filters.'
-            : nothingFits
-              ? `None of the top ${answer.considered} films in your feed fit that. Try asking more loosely, or choose Include unavailable to include films you can’t play now.`
-              : 'None of the AI’s picks match these filters.'}
-        </div>
-      )}
-      {feed.hasNextPage && !nothingFits && (
+      {feed.hasNextPage && (
         <div className="mt-6 flex justify-center">
           <Button variant="ghost" onClick={() => feed.fetchNextPage()} disabled={feed.isFetchingNextPage}>
             {feed.isFetchingNextPage ? 'Loading…' : `Show more (${(first?.total ?? 0) - items.length} left)`}
@@ -487,23 +379,43 @@ function RefreshButton({
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['feed'] }),
   })
   return (
-    <div className="flex items-center gap-3 text-xs text-white/45">
-      {page.rescoring ? (
-        <span role="status">Re-ranking with your feedback…</span>
-      ) : page.built_at && (
-        <span>
-          Updated{' '}
-          {new Date(page.built_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-        </span>
-      )}
-      <Button
-        variant="ghost"
-        className="border border-white/10 px-3 py-1.5"
+    <div className="flex items-center gap-2 text-xs text-white/45">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm font-medium text-white/80 hover:border-white/25 hover:text-white disabled:opacity-40 transition-colors cursor-pointer"
         onClick={() => refresh.mutate()}
         disabled={refresh.isPending || building(page)}
+        title={
+          page.built_at
+            ? `Updated ${new Date(page.built_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`
+            : undefined
+        }
       >
-        Refresh
-      </Button>
+        <svg
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          className={`size-3.5 ${refresh.isPending || building(page) ? 'animate-spin' : ''}`}
+          aria-hidden="true"
+        >
+          <path
+            d="M3.5 10a6.5 6.5 0 1 1 1.9 4.6M3.5 15V10h5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span>{refresh.isPending ? 'Refreshing…' : 'Refresh'}</span>
+      </button>
+      {page.rescoring ? (
+        <span role="status" className="text-xs text-accent-strong">
+          Re-ranking with your feedback…
+        </span>
+      ) : page.built_at ? (
+        <span className="hidden sm:inline text-xs text-white/40">
+          Updated {new Date(page.built_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -767,6 +679,9 @@ function Filters({
               <path d="m5 7.5 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
+
+          {/* Refresh button next to filter dropdowns */}
+          <RefreshButton page={page} language={language} genre={genre} contentType={contentType} />
         </div>
 
         {/* Right side: Radarr batch sync & Jellyfin playlist sync if shortlist only is selected */}
@@ -1121,7 +1036,7 @@ function FeedCard({
   // How the film fits the user's request, when it's one of the AI's picks.
   fit?: string
   onOpen: () => void
-  onRate: (reaction: Reaction) => void
+  onRate: (reaction: Reaction | 'watched') => void
   onAct: (kind: 'snoozed' | 'dismissed') => void
   onShortlist: () => void
   busy: boolean
@@ -1148,9 +1063,17 @@ function FeedCard({
         <div
           className="absolute bottom-2 left-2 z-10 flex items-center gap-0.5 rounded-full border border-white/15 bg-black/60 p-0.5 shadow-xl shadow-black/50 backdrop-blur-md"
           role="group"
-          aria-label={`Rate ${item.title}`}
+          aria-label={`Rate or mark ${item.title}`}
           onClick={(e) => e.stopPropagation()}
         >
+          <CardAction
+            label="Watched"
+            disabled={busy}
+            onClick={() => onRate('watched')}
+            className="text-white/70 hover:bg-white/15"
+          >
+            <ReactionIcon reaction="watched" className="size-4" />
+          </CardAction>
           <CardAction
             label="Didn’t like"
             disabled={busy}
@@ -1263,7 +1186,14 @@ function UndoToast({
   onMore: () => void
 }) {
   if (toast.type === 'reaction') {
-    const label = toast.reaction === 'loved' ? 'Loved' : toast.reaction === 'liked' ? 'Liked' : 'Didn’t like'
+    const label =
+      toast.reaction === 'watched'
+        ? 'Watched'
+        : toast.reaction === 'loved'
+          ? 'Loved'
+          : toast.reaction === 'liked'
+            ? 'Liked'
+            : 'Didn’t like'
     return (
       <div
         role="status"
@@ -1288,7 +1218,7 @@ function UndoToast({
             </Button>
           </div>
         </div>
-        <QuickTags tmdbId={toast.item.tmdb_id} />
+        {toast.reaction !== 'watched' && <QuickTags tmdbId={toast.item.tmdb_id} />}
       </div>
     )
   }

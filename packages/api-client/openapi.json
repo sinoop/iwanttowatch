@@ -1374,6 +1374,44 @@
         }
       }
     },
+    "/api/v1/catalog/search-ai": {
+      "post": {
+        "summary": "Search Catalog Ai Endpoint",
+        "operationId": "search_catalog_ai_endpoint_api_v1_catalog_search_ai_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchAiBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchCatalogOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me/persona": {
       "get": {
         "summary": "Read Persona",
@@ -5255,6 +5293,17 @@
               }
             ],
             "title": "Poster Path"
+          },
+          "why": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why"
           }
         },
         "type": "object",
@@ -8558,6 +8607,17 @@
               }
             ],
             "title": "Known For Department"
+          },
+          "why": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why"
           }
         },
         "type": "object",
@@ -10076,6 +10136,21 @@
           "skipped"
         ],
         "title": "RestoreSummary"
+      },
+      "SearchAiBody": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Query"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "SearchAiBody"
       },
       "SearchCatalogOut": {
         "properties": {

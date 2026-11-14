@@ -2,13 +2,13 @@ from collections import Counter
 from datetime import date, datetime
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import String, case, cast, func, or_, select
 
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.imports import Candidate
 from iwanttowatch.api.reactions import TagOption
-from iwanttowatch.catalog import search_catalog_all, search_movies
+from iwanttowatch.catalog import search_catalog_ai, search_catalog_all, search_movies
 from iwanttowatch.children import library_owners
 from iwanttowatch.feed import clear_user_rated_matches_cache, user_rated_matches
 from iwanttowatch.llm import LlmError, llm_order, provider_from_settings
@@ -506,11 +506,24 @@ class PersonCandidate(BaseModel):
     name: str
     profile_path: str | None = None
     known_for_department: str | None = None
+    why: str | None = None
 
 
 class SearchCatalogOut(BaseModel):
     movies: list[Candidate]
     people: list[PersonCandidate]
+
+
+class SearchAiBody(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
+
+    @field_validator("query")
+    @classmethod
+    def query_not_blank(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("query cannot be blank")
+        return s
 
 
 @router.get("/catalog/search-all", response_model=SearchCatalogOut)
@@ -529,6 +542,47 @@ def search_catalog_all_endpoint(
                 name=p["name"],
                 profile_path=p.get("profile_path"),
                 known_for_department=p.get("known_for_department"),
+            )
+            for p in results["people"]
+        ],
+    )
+
+
+@router.post("/catalog/search-ai", response_model=SearchCatalogOut)
+def search_catalog_ai_endpoint(
+    body: SearchAiBody,
+    user: CurrentUser,
+    session: DbSession,
+    tmdb: Tmdb,
+) -> SearchCatalogOut:
+    llm = provider_from_settings(session, "ask", user.id)
+    if llm is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Connect Ollama or Gemini in Settings first")
+    try:
+        results = search_catalog_ai(llm, tmdb, body.query)
+    except LlmError as error:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
+
+    return SearchCatalogOut(
+        movies=[
+            Candidate(
+                tmdb_id=c["tmdb_id"],
+                title=c["title"],
+                original_title=c["original_title"],
+                original_language=c["original_language"],
+                year=c.get("year"),
+                poster_path=c.get("poster_path"),
+                why=c.get("why"),
+            )
+            for c in results["movies"]
+        ],
+        people=[
+            PersonCandidate(
+                id=p["id"],
+                name=p["name"],
+                profile_path=p.get("profile_path"),
+                known_for_department=p.get("known_for_department"),
+                why=p.get("why"),
             )
             for p in results["people"]
         ],

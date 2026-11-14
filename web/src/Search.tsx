@@ -1,6 +1,5 @@
-import { useIsMutating, useMutation } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router'
 import { api, errorMessage, useServerSettings } from './api'
 import PersonDialog from './PersonDialog'
 import TitleDialog from './TitleDialog'
@@ -95,31 +94,17 @@ export function FilmSearch({
 /** The unified search and Ask AI box. */
 export default function HeaderSearch({ className = '' }: { className?: string } = {}) {
   const settings = useServerSettings()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const [searchParams, setSearchParams] = useSearchParams()
 
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const askParam = searchParams.get('ask') ?? ''
-  const [prevAskParam, setPrevAskParam] = useState(askParam)
-  const [mode, setMode] = useState<'search' | 'ask'>(askParam ? 'ask' : 'search')
-  const [text, setText] = useState(askParam)
+  const [mode, setMode] = useState<'search' | 'ask'>('search')
+  const [text, setText] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [openTitle, setOpenTitle] = useState<number | null>(null)
   const [openPerson, setOpenPerson] = useState<number | null>(null)
 
-  if (askParam !== prevAskParam) {
-    setPrevAskParam(askParam)
-    if (askParam) {
-      setText(askParam)
-      setMode('ask')
-    }
-  }
-
   const llmConfigured = (settings.data?.llm.order.length ?? 0) > 0
-  const isAsking = useIsMutating({ mutationKey: ['feed', 'ask'] }) > 0
 
   const search = useMutation({
     mutationFn: async (queryText?: string) => {
@@ -135,16 +120,21 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
     },
   })
 
-  // Listen for clear events from Discover
-  useEffect(() => {
-    const handleClear = () => {
-      if (mode === 'ask') {
-        setText('')
+  const ask = useMutation({
+    mutationFn: async (queryText?: string) => {
+      const q = (queryText ?? text).trim()
+      const { data, error } = await api.POST('/api/v1/catalog/search-ai', {
+        body: { query: q },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return {
+        movies: data.movies.slice(0, 10),
+        people: data.people.slice(0, 6),
       }
-    }
-    window.addEventListener('iwanttowatch:clear-ask-ai', handleClear)
-    return () => window.removeEventListener('iwanttowatch:clear-ask-ai', handleClear)
-  }, [mode])
+    },
+  })
+
+  const active = mode === 'ask' ? ask : search
 
   // Close search dropdown on click outside or Escape
   useEffect(() => {
@@ -165,34 +155,32 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
     }
   }, [dropdownOpen])
 
-  if (!settings.data?.tmdb_configured) return null
+  const handleClose = () => {
+    setDropdownOpen(false)
+    search.reset()
+    ask.reset()
+  }
 
   const handleSearchSubmit = (queryText?: string) => {
     const q = (queryText ?? text).trim()
     if (!q) return
     setMode('search')
     setDropdownOpen(true)
+    ask.reset()
     search.mutate(q)
   }
 
   const handleAskSubmit = (queryText?: string) => {
-    const query = (queryText ?? text).trim()
-    if (!query || !llmConfigured || isAsking) return
+    const q = (queryText ?? text).trim()
+    if (!q || !llmConfigured || ask.isPending) return
     setMode('ask')
-    setDropdownOpen(false)
+    setDropdownOpen(true)
     search.reset()
-
-    if (location.pathname === '/') {
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev)
-        next.set('ask', query)
-        return next
-      })
-      window.dispatchEvent(new CustomEvent('iwanttowatch:ask-ai', { detail: { text: query } }))
-    } else {
-      navigate(`/?ask=${encodeURIComponent(query)}`)
-    }
+    ask.mutate(q)
   }
+
+
+  if (!settings.data?.tmdb_configured) return null
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -276,13 +264,13 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
           </button>
           <button
             type={mode === 'ask' ? 'submit' : 'button'}
-            disabled={!llmConfigured || isAsking}
+            disabled={!llmConfigured || ask.isPending}
             onClick={handleAskClick}
             aria-pressed={mode === 'ask'}
             title={
               !llmConfigured
                 ? 'Configure an AI provider in Settings to use Ask AI'
-                : isAsking
+                : ask.isPending
                   ? 'Asking AI…'
                   : 'Ask AI'
             }
@@ -292,52 +280,67 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
                 : 'text-white/60 hover:text-white hover:bg-white/10'
             }`}
           >
-            {isAsking ? 'Asking…' : 'Ask AI'}
+            {ask.isPending ? 'Asking…' : 'Ask AI'}
           </button>
         </div>
       </form>
 
-      {dropdownOpen && mode === 'search' && (
+      {dropdownOpen && (
         <div
           className={`absolute top-full left-0 z-50 mt-2 rounded-xl border border-white/15 bg-[#11141b] p-3 text-white shadow-2xl shadow-black/80 backdrop-blur-md ${
             className ? 'right-0' : 'right-0 sm:right-auto sm:w-[28rem] md:w-[32rem]'
           }`}
         >
-          {search.isPending && (
+          {active.isPending && (
             <div className="flex items-center gap-2 py-3 text-xs text-white/60">
               <span className="size-3.5 animate-spin rounded-full border-2 border-white/20 border-t-accent" aria-hidden />
-              <span>Searching TMDb…</span>
+              <span>
+                {mode === 'ask' ? 'Asking AI to find movies & people…' : 'Searching TMDb…'}
+              </span>
             </div>
           )}
-          {search.error && (
+          {active.error && (
             <div className="py-2">
-              <ErrorText>{search.error.message}</ErrorText>
+              <ErrorText>{active.error.message}</ErrorText>
             </div>
           )}
-          {search.data && !search.isPending && (() => {
-            const hasPeople = search.data.people.length > 0
-            const hasMovies = search.data.movies.length > 0
+          {active.data && !active.isPending && (() => {
+            const hasPeople = active.data.people.length > 0
+            const hasMovies = active.data.movies.length > 0
             const hasResults = hasPeople || hasMovies
 
             return (
               <div>
                 <div className="mb-2.5 flex items-center justify-between gap-3 text-xs">
-                  <span className="text-white/60">
-                    {hasResults
-                      ? hasPeople && hasMovies
+                  <span className="text-white/60 flex items-center gap-1.5 min-w-0">
+                    {mode === 'ask' ? (
+                      hasResults ? (
+                        <>
+                          <span className="inline-flex shrink-0 items-center gap-1 rounded bg-accent/15 px-1.5 py-0.5 text-[11px] font-medium text-accent">
+                            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="size-3">
+                              <path d="M12 2L14.4 9.6L22 12L14.4 14.4L12 22L9.6 14.4L2 12L9.6 9.6L12 2Z" />
+                            </svg>
+                            AI picks
+                          </span>
+                          <span className="truncate">for “{text.trim()}”</span>
+                        </>
+                      ) : (
+                        'No films or people found by the AI.'
+                      )
+                    ) : hasResults ? (
+                      hasPeople && hasMovies
                         ? 'Pick a person or film to view details'
                         : hasPeople
                           ? 'Pick a person to view filmography'
                           : 'Pick a film to see your match'
-                      : 'No films or people found.'}
+                    ) : (
+                      'No films or people found.'
+                    )}
                   </span>
                   <Button
                     variant="ghost"
-                    className="px-2 py-0.5 text-xs text-white/50 hover:text-white"
-                    onClick={() => {
-                      setDropdownOpen(false)
-                      search.reset()
-                    }}
+                    className="shrink-0 px-2 py-0.5 text-xs text-white/50 hover:text-white"
+                    onClick={handleClose}
                   >
                     Close
                   </Button>
@@ -349,8 +352,8 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
                       Actors &amp; Crew
                     </div>
                     <ul className="flex gap-3 overflow-x-auto pb-1" aria-label="People search results">
-                      {search.data.people.map((p) => (
-                        <li key={p.id} className="w-20 shrink-0">
+                      {active.data.people.map((p) => (
+                        <li key={p.id} className="w-24 shrink-0">
                           <button
                             type="button"
                             onClick={() => {
@@ -375,12 +378,12 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
                             <p className="mt-1.5 truncate text-xs font-medium text-white group-hover:text-accent">
                               {p.name}
                             </p>
-                            <p className="truncate text-[10px] text-white/45">
-                              {p.known_for_department === 'Acting'
+                            <p className="line-clamp-2 text-[10px] text-white/45">
+                              {p.why || (p.known_for_department === 'Acting'
                                 ? 'Actor'
                                 : p.known_for_department === 'Directing'
                                   ? 'Director'
-                                  : p.known_for_department || 'Artist'}
+                                  : p.known_for_department || 'Artist')}
                             </p>
                           </button>
                         </li>
@@ -397,8 +400,8 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
                       </div>
                     )}
                     <ul className="flex gap-3 overflow-x-auto pb-1" aria-label="Movie search results">
-                      {search.data.movies.map((c) => (
-                        <li key={c.tmdb_id} className="w-24 shrink-0">
+                      {active.data.movies.map((c) => (
+                        <li key={c.tmdb_id} className="w-28 shrink-0">
                           <button
                             type="button"
                             onClick={() => {
@@ -412,6 +415,11 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
                             <p className="truncate text-xs text-white/45">
                               {[c.year, languageName.of(c.original_language)].filter(Boolean).join(' · ')}
                             </p>
+                            {c.why && (
+                              <p className="mt-0.5 line-clamp-2 text-[10px] leading-tight text-accent/80 italic">
+                                {c.why}
+                              </p>
+                            )}
                           </button>
                         </li>
                       ))}

@@ -248,6 +248,7 @@ Completed milestones (Phases 0–5d, 5f, 5g, 7, and completed Phase 6/Mobile v1 
 - [x] **Popularity sort in Actor/Director "All filmography" (#8):** Sort `PersonCredit` filmography by `popularity` / `vote_count` descending by default instead of newest-first (so iconic films appear at the top rather than unreleased projects or obscure cameos), with an optional sort toggle (`Popular` / `Newest` / `Top Rated`) (2026-11-13).
 - [x] **Year-range filter (#3):** Extend the existing `decade` filter on Discover and My Taste (`api/feed.py`, `api/library.py`, `Discover.tsx`, `Taste.tsx`) to support arbitrary `year_min` and `year_max` bounds alongside quick decade presets (2026-11-13).
 - [x] **HTTPS & Tailscale support (#4, #5):** Document and provide compose/proxy examples for Tailscale (host or sidecar, zero app changes) and `tailscale serve` / Caddy reverse proxy for automatic HTTPS certificates, and verify CORS / `X-Forwarded-Proto` / mobile HTTPS MagicDNS compatibility (2026-11-13).
+- [x] **Inline Ask AI search dropdown & card Watched action:** Replace feed-takeover Ask AI with natural-language catalog search in the unified header dropdown (resolving AI picks against TMDb for movies and people with brief contextual explanations), make Discover search bar full width, move feed Refresh button next to filter toolbar, and add Watched button alongside Liked/Disliked/Loved on poster cards (2026-11-13).
 
 #### Batch 2 — Core UX & Mobile
 

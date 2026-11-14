@@ -1,5 +1,6 @@
 """Movie metadata from TMDb, and matching titles from other sources to TMDb IDs."""
 
+import json
 import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from iwanttowatch.children import UNRATED, certificate_rank
 from iwanttowatch.db import utcnow
+from iwanttowatch.llm import LlmError, LlmProvider
 from iwanttowatch.models import Title
 from iwanttowatch.tmdb import TmdbClient, TmdbNotFound
 
@@ -225,6 +227,104 @@ def search_catalog_all(tmdb: TmdbClient, query: str, year: int | None = None) ->
     return {
         "movies": combined_movies,
         "people": people,
+    }
+
+
+AI_SEARCH_SYSTEM = """You help a movie lover search a film catalog using natural language.
+Given a user query (which might be an actor in a role, a vague plot description,
+a genre/mood request, a quote, or a theme), identify:
+1. "movies": Specific real films that fit the request, best matches first (up to 8).
+   Include title, approximate release year, and a brief 1-sentence explanation of how it fits
+   (e.g. character name, role, or relevance).
+2. "people": Relevant real actors, directors, or crew members directly asked for or key
+   to the query (up to 4). Include their full name and a brief 1-sentence role/relevance.
+
+Answer with ONLY valid JSON, no markdown formatting:
+{
+  "movies": [
+    {"title": "...", "year": 2019, "why": "..."}
+  ],
+  "people": [
+    {"name": "...", "why": "..."}
+  ]
+}"""
+
+
+def search_catalog_ai(llm: LlmProvider, tmdb: TmdbClient, query: str) -> dict[str, Any]:
+    """Search films and people using natural language via LLM, resolving against TMDb."""
+    text = llm.generate(AI_SEARCH_SYSTEM, f"Query: {query.strip()}", json_reply=True)
+    try:
+        data = json.loads(text[text.index("{") : text.rindex("}") + 1])
+    except (ValueError, IndexError) as error:
+        raise LlmError("The LLM's answer wasn't JSON") from error
+
+    raw_movies = data.get("movies") if isinstance(data, dict) else []
+    raw_people = data.get("people") if isinstance(data, dict) else []
+
+    def lookup_person(p: dict[str, Any]) -> dict[str, Any] | None:
+        if not isinstance(p, dict) or not p.get("name"):
+            return None
+        name = str(p["name"]).strip()
+        why = str(p.get("why") or "").strip()
+        candidates = search_people(tmdb, name)
+        if candidates:
+            top = dict(candidates[0])
+            top["why"] = why
+            return top
+        return None
+
+    def lookup_movie(m: dict[str, Any]) -> dict[str, Any] | None:
+        if not isinstance(m, dict) or not m.get("title"):
+            return None
+        title = str(m["title"]).strip()
+        year = m.get("year")
+        if not isinstance(year, int) or year < 1880 or year > 2100:
+            year = None
+        why = str(m.get("why") or "").strip()
+        candidates = search_movies(tmdb, title, year=year) if year else []
+        if not candidates:
+            candidates = search_movies(tmdb, title)
+        if candidates:
+            top = dict(candidates[0])
+            top["why"] = why
+            return top
+        return None
+
+    with ThreadPoolExecutor(PARALLEL_REQUESTS) as pool:
+        people_futures = [
+            pool.submit(lookup_person, p)
+            for p in (raw_people[:4] if isinstance(raw_people, list) else [])
+        ]
+        movie_futures = [
+            pool.submit(lookup_movie, m)
+            for m in (raw_movies[:8] if isinstance(raw_movies, list) else [])
+        ]
+        resolved_people: list[dict[str, Any]] = []
+        seen_p: set[int] = set()
+        for f in people_futures:
+            res = f.result()
+            if res and res["id"] not in seen_p:
+                seen_p.add(res["id"])
+                resolved_people.append(res)
+
+        resolved_movies: list[dict[str, Any]] = []
+        seen_m: set[int] = set()
+        for f in movie_futures:
+            res = f.result()
+            if res and res["tmdb_id"] not in seen_m:
+                seen_m.add(res["tmdb_id"])
+                resolved_movies.append(res)
+
+    if not resolved_movies:
+        for p in resolved_people:
+            for k in p.get("known_for", []):
+                if k["tmdb_id"] not in seen_m:
+                    seen_m.add(k["tmdb_id"])
+                    resolved_movies.append(dict(k))
+
+    return {
+        "movies": resolved_movies,
+        "people": resolved_people,
     }
 
 

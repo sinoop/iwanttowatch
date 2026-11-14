@@ -20,6 +20,7 @@ class Candidate(BaseModel):
     original_language: str
     year: int | None
     poster_path: str | None
+    why: str | None = None
 
 
 class ImportCounts(BaseModel):
