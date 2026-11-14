@@ -1,7 +1,18 @@
 import type { ChildProfile, Me, Reaction, TitleDetail } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { api, errorMessage, facts, ratingToReaction, useAssignToChild, useChildren, useServerSettings, useShortlist } from './api'
+import {
+  api,
+  errorMessage,
+  facts,
+  fetchTitleDetail,
+  ratingToReaction,
+  type TitlePreview,
+  useAssignToChild,
+  useChildren,
+  useServerSettings,
+  useShortlist,
+} from './api'
 import { RatingHeaderDock, ReactionBadge, SentimentTagsCard } from './RateDialog'
 import { JellyfinLogo, JustWatchCredit, ProviderLogo } from './Streaming'
 import { Button, ErrorText, Poster } from './ui'
@@ -117,6 +128,7 @@ function StreamingDock({
       return data
     },
     onSuccess: (data) => {
+      queryClient.setQueryData(['title-radarr', film.tmdb_id], data)
       queryClient.setQueryData<TitleDetail>(['title', film.tmdb_id], (current) =>
         current ? { ...current, radarr: data } : current,
       )
@@ -251,6 +263,83 @@ function StreamingDock({
   )
 }
 
+function TitleSkeleton({
+  preview,
+  onBack,
+}: {
+  preview?: TitlePreview
+  onBack?: () => void
+}) {
+  return (
+    <div className="flex max-h-[calc(100dvh-2rem)] flex-1 flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-white/10 bg-[#11141b] p-4 sm:p-5">
+        {onBack && (
+          <Button
+            variant="ghost"
+            onClick={onBack}
+            className="mb-3 px-2 py-0.5 text-xs text-white/70 hover:text-white"
+          >
+            ← Back
+          </Button>
+        )}
+        <div className="flex items-start justify-between gap-3 sm:gap-4">
+          <div className="flex min-w-0 gap-3 sm:gap-4">
+            <div className="w-16 shrink-0 sm:w-20">
+              {preview ? (
+                <Poster path={preview.poster_path ?? null} title={preview.title} />
+              ) : (
+                <div className="aspect-[2/3] w-full animate-pulse rounded-lg bg-white/10" />
+              )}
+            </div>
+            <div className="min-w-0">
+              {preview ? (
+                <>
+                  <h2 className="line-clamp-2 text-base font-bold leading-tight text-white sm:text-xl">
+                    {preview.title}
+                  </h2>
+                  {preview.year && <p className="mt-1 text-xs text-white/55 sm:text-sm">{preview.year}</p>}
+                  {(preview.match !== null && preview.match !== undefined) || preview.imdb ? (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                      {preview.match !== null && preview.match !== undefined && (
+                        <MatchBadge match={preview.match} />
+                      )}
+                      {preview.imdb && <ImdbBadge imdb={preview.imdb} showVotes />}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <div className="space-y-2.5 pt-1">
+                  <div className="h-5 w-48 animate-pulse rounded bg-white/10" />
+                  <div className="h-3.5 w-28 animate-pulse rounded bg-white/10" />
+                  <div className="h-5 w-24 animate-pulse rounded-full bg-white/10" />
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <div className="h-7 w-24 animate-pulse rounded-full bg-white/10" />
+            <div className="h-7 w-28 animate-pulse rounded-full bg-white/10" />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
+        <div className="space-y-2">
+          <div className="h-3.5 w-full animate-pulse rounded bg-white/10" />
+          <div className="h-3.5 w-11/12 animate-pulse rounded bg-white/10" />
+          <div className="h-3.5 w-3/4 animate-pulse rounded bg-white/10" />
+        </div>
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          <div className="h-6 w-16 animate-pulse rounded-full bg-white/10" />
+          <div className="h-6 w-20 animate-pulse rounded-full bg-white/10" />
+          <div className="h-6 w-14 animate-pulse rounded-full bg-white/10" />
+        </div>
+        <div className="h-12 w-full animate-pulse rounded-xl bg-white/5" />
+      </div>
+    </div>
+  )
+}
+
 function Details({
   tmdbId,
   onClose,
@@ -273,11 +362,20 @@ function Details({
   const [whereToWatchOpen, setWhereToWatchOpen] = useState(false)
   const title = useQuery({
     queryKey: ['title', tmdbId],
+    queryFn: () => fetchTitleDetail(tmdbId),
+    staleTime: 60_000,
+  })
+  const radarrQuery = useQuery({
+    queryKey: ['title-radarr', tmdbId],
     queryFn: async () => {
-      const { data, error } = await api.GET('/api/v1/titles/{tmdb_id}', { params: { path: { tmdb_id: tmdbId } } })
+      const { data, error } = await api.GET('/api/v1/titles/{tmdb_id}/radarr', {
+        params: { path: { tmdb_id: tmdbId } },
+      })
       if (error) throw new Error(errorMessage(error))
       return data
     },
+    enabled: !me?.is_child,
+    staleTime: 30_000,
   })
   if (title.error) {
     return (
@@ -289,8 +387,10 @@ function Details({
       </div>
     )
   }
-  const film = title.data
-  if (!film) return <p className="p-6 text-sm text-white/50">Loading…</p>
+  const preview = queryClient.getQueryData<TitlePreview>(['title-preview', tmdbId])
+  if (!title.data) return <TitleSkeleton preview={preview} onBack={onBack} />
+  const film: TitleDetail =
+    radarrQuery.data?.configured ? { ...title.data, radarr: radarrQuery.data } : title.data
 
   return (
     <div className="flex max-h-[calc(100dvh-2rem)] flex-1 flex-col overflow-hidden">
@@ -914,6 +1014,7 @@ function WhereToWatch({
       return data
     },
     onSuccess: (data) => {
+      queryClient.setQueryData(['title-radarr', film.tmdb_id], data)
       queryClient.setQueryData<TitleDetail>(['title', film.tmdb_id], (current) =>
         current ? { ...current, radarr: data } : current,
       )

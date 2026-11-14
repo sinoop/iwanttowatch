@@ -1,4 +1,7 @@
+import logging
+import time
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from typing import Annotated, Literal, cast
 
@@ -6,7 +9,8 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from iwanttowatch import radarr
+from iwanttowatch import availability as availability_mod
+from iwanttowatch import catalog, radarr
 from iwanttowatch.api.deps import AdultUser, CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.library import LanguageCount
 from iwanttowatch.api.reactions import SOURCE as APP_SOURCE
@@ -69,6 +73,7 @@ from iwanttowatch.taste import (
 )
 from iwanttowatch.tmdb import client_from_settings
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1")
 
 FeedStatus = Literal["none", "queued", "building", "ready", "failed"]
@@ -607,17 +612,30 @@ class TitleDetail(BaseModel):
 
 
 def _match_and_reasons(
-    session: DbSession, user: User, title: Title, watched: bool
+    session: DbSession,
+    user: User,
+    title: Title,
+    watched: bool,
+    timings: dict[str, float] | None = None,
 ) -> tuple[int | None, list[str]]:
     rec = session.get(Recommendation, (user.id, title.tmdb_id))
     match, reasons = (round(rec.score * 100), rec.reasons) if rec else (None, [])
+    if timings is not None:
+        timings["match_rescored"] = 0.0
     if rec is None and not watched:
+        if timings is not None:
+            timings["match_rescored"] = 1.0
         # Not in the feed, such as a film the user searched for: score it with the
         # feed's films, so its match means the same, without adding it to the feed.
         scored = next(
             (
                 s
-                for s in score_films(session, user, [*feed_films(session, user), title.tmdb_id])
+                for s in score_films(
+                    session,
+                    user,
+                    [*feed_films(session, user), title.tmdb_id],
+                    only_candidates=[title.tmdb_id],
+                )
                 if s.tmdb_id == title.tmdb_id
             ),
             None,
@@ -628,9 +646,20 @@ def _match_and_reasons(
     return (match, reasons)
 
 
-def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> TitleDetail:
+def _title_detail(
+    session: DbSession,
+    user: User,
+    tmdb: Tmdb,
+    title: Title,
+    *,
+    include_radarr: bool = True,
+    timings: dict[str, float] | None = None,
+) -> TitleDetail:
     owners = library_owners(session, user)
+    t_avail = time.perf_counter() if timings is not None else 0.0
     offers = availability(session, tmdb, [title.tmdb_id], user.region).get(title.tmdb_id)
+    if timings is not None:
+        timings["availability_ms"] = (time.perf_counter() - t_avail) * 1000
     item_id = session.scalar(
         select(LibraryItem.item_id).where(
             LibraryItem.user_id.in_(owners), LibraryItem.tmdb_id == title.tmdb_id
@@ -650,7 +679,22 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
         select(effective.c.rating, effective.c.reaction).where(effective.c.tmdb_id == title.tmdb_id)
     ).first()
     watched = rated is not None or title.tmdb_id in seen(session, user.id)
-    match, reasons = _match_and_reasons(session, user, title, watched)
+    t_match = time.perf_counter() if timings is not None else 0.0
+    match, reasons = _match_and_reasons(session, user, title, watched, timings=timings)
+    if timings is not None:
+        timings["match_ms"] = (time.perf_counter() - t_match) * 1000
+
+    radarr_status: RadarrMovieStatus | None = None
+    if include_radarr:
+        t_radarr = time.perf_counter() if timings is not None else 0.0
+        radarr_info = radarr.movie_status(session, title.tmdb_id)
+        if timings is not None:
+            timings["radarr_ms"] = (time.perf_counter() - t_radarr) * 1000
+        if radarr_info.get("configured"):
+            radarr_status = RadarrMovieStatus(**radarr_info)
+    elif timings is not None:
+        timings["radarr_ms"] = 0.0
+
     return TitleDetail(
         tmdb_id=title.tmdb_id,
         title=title.title,
@@ -701,9 +745,7 @@ def _title_detail(session: DbSession, user: User, tmdb: Tmdb, title: Title) -> T
         clash=clashed.text
         if (clashed := session.get(OpinionClash, (user.id, title.tmdb_id)))
         else None,
-        radarr=RadarrMovieStatus(**radarr_info)
-        if (radarr_info := radarr.movie_status(session, title.tmdb_id)).get("configured")
-        else None,
+        radarr=radarr_status,
     )
 
 
@@ -735,12 +777,94 @@ def batch_request_shortlist_radarr(
 
 @router.get("/titles/{tmdb_id}")
 def read_title(
-    tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
+    tmdb_id: int,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+    tmdb: Tmdb,
+    include_radarr: bool = True,
 ) -> TitleDetail:
-    title = load_title(session, request, tmdb_id)
+    from iwanttowatch.api.settings import DEBUG_PROFILING_SETTING
+    from iwanttowatch.tmdb import TmdbError
+
+    debug = (
+        bool(getattr(request.app.state, "debug", False))
+        or get_setting(session, DEBUG_PROFILING_SETTING) == "on"
+    )
+    timings: dict[str, float] | None = {} if debug else None
+    t_total = time.perf_counter() if debug else 0.0
+
+    # When both metadata and regional availability are uncached, fetch both from TMDb in parallel.
+    existing_title = session.get(Title, tmdb_id)
+    existing_avail = session.get(Availability, (tmdb_id, user.region))
+    if existing_title is None and (
+        existing_avail is None or availability_mod.is_stale(existing_avail)
+    ):
+        t_par = time.perf_counter() if debug else 0.0
+        with ThreadPoolExecutor(2) as pool:
+            title_fut = pool.submit(catalog.fetch_title_details, tmdb, tmdb_id)
+            avail_fut = pool.submit(availability_mod._fetch, tmdb, tmdb_id, user.region)
+            try:
+                details = title_fut.result()
+            except TmdbError as error:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Movie not found on TMDb") from error
+            avail_result = avail_fut.result()
+        catalog.store_title_details(session, None, tmdb_id, details)
+        availability_mod.upsert_availability(session, tmdb_id, user.region, avail_result)
+        session.commit()
+        if timings is not None:
+            timings["parallel_tmdb_ms"] = (time.perf_counter() - t_par) * 1000
+
+    t_load = time.perf_counter() if debug else 0.0
+    title = load_title(session, request, tmdb_id, timings=timings)
+    if timings is not None:
+        timings["load_title_ms"] = (time.perf_counter() - t_load) * 1000
     if user.is_child:
         ensure_themes_note_quietly(session, title, user.id)
-    return _title_detail(session, user, tmdb, title)
+    detail = _title_detail(
+        session, user, tmdb, title, include_radarr=include_radarr, timings=timings
+    )
+    if timings is not None:
+        total_ms = (time.perf_counter() - t_total) * 1000
+        match_mode = "rescore" if timings.get("match_rescored") else "cached"
+        log.info(
+            "PROFILE GET /api/v1/titles/%s total=%.1fms parallel_tmdb=%.1fms load=%.1fms "
+            "(tmdb=%.1fms imdb=%.1fms) avail=%.1fms match=%.1fms(%s) radarr=%.1fms",
+            tmdb_id,
+            total_ms,
+            timings.get("parallel_tmdb_ms", 0.0),
+            timings.get("load_title_ms", 0.0),
+            timings.get("tmdb_fetch_ms", 0.0),
+            timings.get("imdb_ms", 0.0),
+            timings.get("availability_ms", 0.0),
+            timings.get("match_ms", 0.0),
+            match_mode,
+            timings.get("radarr_ms", 0.0),
+        )
+    return detail
+
+
+@router.get("/titles/{tmdb_id}/radarr")
+def read_title_radarr(
+    tmdb_id: int, user: AdultUser, session: DbSession, request: Request
+) -> RadarrMovieStatus:
+    """Query Radarr for this movie's current download/monitoring status."""
+    from iwanttowatch.api.settings import DEBUG_PROFILING_SETTING
+
+    debug = (
+        bool(getattr(request.app.state, "debug", False))
+        or get_setting(session, DEBUG_PROFILING_SETTING) == "on"
+    )
+    t0 = time.perf_counter() if debug else 0.0
+    info = radarr.movie_status(session, tmdb_id)
+    if debug:
+        log.info(
+            "PROFILE GET /api/v1/titles/%s/radarr total=%.1fms configured=%s",
+            tmdb_id,
+            (time.perf_counter() - t0) * 1000,
+            info.get("configured", False),
+        )
+    return RadarrMovieStatus(**info)
 
 
 @router.post("/titles/{tmdb_id}/themes")

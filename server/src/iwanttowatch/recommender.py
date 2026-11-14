@@ -319,49 +319,69 @@ def score(
     child: bool = False,
     family_picks: Collection[int] = (),
     favorite_people: Collection[int] = (),
+    only_candidates: Collection[int] | None = None,
 ) -> list[Scored]:
     """Score candidates for a user, most promising first, diversified at the top. `ai`
-    holds the LLM's predictions as percentiles of the user's ratings."""
+    holds the LLM's predictions as percentiles of the user's ratings.
+
+    When `only_candidates` is given, `candidates` still defines the full scoring pool
+    (IDF vocabulary and language quality percentiles), while predictions, reasons, and
+    adjustments are computed only for `only_candidates` without full-feed diversification.
+    """
     labels = [label for label in labels if label.tmdb_id in titles]
     candidates = [i for i in dict.fromkeys(candidates) if i in titles]
     if not candidates:
         return []
     pool = [titles[i] for i in dict.fromkeys([*(label.tmdb_id for label in labels), *candidates])]
+    target_set = set(only_candidates) if only_candidates is not None else None
+    scored_candidates = (
+        [i for i in candidates if i in target_set] if target_set is not None else candidates
+    )
+    if not scored_candidates:
+        return []
     vectors = Vectors(pool)
     quality = _quality(pool)
     weighted_labels = _weight_divergent_labels(vectors, labels, quality)
-    candidate_quality = quality[[vectors.rows[i] for i in candidates]]
+    candidate_quality = quality[[vectors.rows[i] for i in scored_candidates]]
     # Applied after the LLM's share is blended in, which knows nothing of either.
     adjust = (
-        (_family_bonus(titles, candidates, family_picks) if child else 0.0)
-        + _favorite_person_bonus(titles, candidates, favorite_people)
-        - _era_penalty(titles, weighted_labels, candidates, birth_year)
-        - _remake_penalty(titles, weighted_labels, candidates)
+        (_family_bonus(titles, scored_candidates, family_picks) if child else 0.0)
+        + _favorite_person_bonus(titles, scored_candidates, favorite_people)
+        - _era_penalty(titles, weighted_labels, scored_candidates, birth_year)
+        - _remake_penalty(titles, weighted_labels, scored_candidates)
     )
-    weight = np.array([AI_WEIGHT if i in ai else 0.0 for i in candidates])
-    predicted = np.array([ai.get(i, 0.0) for i in candidates])
+    weight = np.array([AI_WEIGHT if i in ai else 0.0 for i in scored_candidates])
+    predicted = np.array([ai.get(i, 0.0) for i in scored_candidates])
     family = (
-        _family_reasons(titles, candidates, family_picks) if child else [[] for _ in candidates]
+        _family_reasons(titles, scored_candidates, family_picks)
+        if child
+        else [[] for _ in scored_candidates]
     )
     if not weighted_labels:
         own = candidate_quality
         scores = np.clip((1 - weight) * own + weight * predicted + adjust, 0.01, 0.99)
         order = [int(i) for i in np.argsort(-scores, kind="stable")]
-        return [Scored(candidates[i], float(scores[i]), family[i][:MAX_REASONS]) for i in order]
+        return [
+            Scored(scored_candidates[i], float(scores[i]), family[i][:MAX_REASONS]) for i in order
+        ]
 
     blend, (intercept, slope) = _choose_blend(vectors, weighted_labels, quality)
-    p = _predict(vectors, weighted_labels, candidates)
+    p = _predict(vectors, weighted_labels, scored_candidates)
     blended = np.column_stack([p.neighbours, p.ridge, candidate_quality]) @ np.array(blend)
     own = intercept + slope * blended
     scores = np.clip((1 - weight) * own + weight * predicted + adjust, 0.01, 0.99)
     reasons = [
         [*family[i], *own][:MAX_REASONS]
         for i, own in enumerate(
-            _reasons(vectors, weighted_labels, titles, candidates, p, favorite_people)
+            _reasons(vectors, weighted_labels, titles, scored_candidates, p, favorite_people)
         )
     ]
-    order = _diversify(vectors, candidates, scores)
-    return [Scored(candidates[i], float(scores[i]), reasons[i]) for i in order]
+    order = (
+        list(range(len(scored_candidates)))
+        if target_set is not None and len(scored_candidates) <= 1
+        else _diversify(vectors, scored_candidates, scores)
+    )
+    return [Scored(scored_candidates[i], float(scores[i]), reasons[i]) for i in order]
 
 
 FAVORITE_PERSON_BONUS = 0.05

@@ -7,6 +7,9 @@ import { Button, ErrorText } from '../ui'
 export function SystemSettings({ settings }: { settings: ServerSettings }) {
   return (
     <div className="space-y-6">
+      <div id="profiling" className="scroll-mt-6">
+        <ProfilingSection enabled={settings.profiling_enabled ?? false} />
+      </div>
       <div id="mcp" className="scroll-mt-6">
         <McpSection enabled={settings.mcp_enabled} />
       </div>
@@ -14,6 +17,56 @@ export function SystemSettings({ settings }: { settings: ServerSettings }) {
         <ServerBackups />
       </div>
     </div>
+  )
+}
+
+function ProfilingSection({ enabled }: { enabled: boolean }) {
+  const queryClient = useQueryClient()
+  const toggle = useMutation({
+    mutationFn: async (next: boolean) => {
+      const { data, error } = await api.PUT('/api/v1/settings/profiling', {
+        body: { enabled: next },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['settings'], data)
+    },
+  })
+
+  return (
+    <section className="rounded-xl border border-white/10 p-5">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="font-semibold text-white">Performance profiling</h2>
+        <span
+          className={`rounded-full px-2.5 py-0.5 text-xs ${
+            enabled ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/10 text-white/60'
+          }`}
+        >
+          {enabled ? 'On' : 'Off'}
+        </span>
+      </div>
+      <p className="mt-2 text-sm text-white/60">
+        Log per-step timing breakdowns (<code className="text-white/80">PROFILE GET /api/v1/titles/…</code>) to
+        server logs when opening movie details, so you can measure TMDb, IMDb, availability, taste
+        scoring, and Radarr latency. Off by default for production.
+      </p>
+      <div className="mt-4 flex gap-2">
+        <Button
+          variant={enabled ? 'ghost' : 'primary'}
+          onClick={() => toggle.mutate(!enabled)}
+          disabled={toggle.isPending}
+        >
+          {enabled ? 'Turn off' : 'Turn on'}
+        </Button>
+      </div>
+      {toggle.error && (
+        <div className="mt-3">
+          <ErrorText>{toggle.error.message}</ErrorText>
+        </div>
+      )}
+    </section>
   )
 }
 

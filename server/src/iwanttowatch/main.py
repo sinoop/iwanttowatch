@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -39,8 +40,20 @@ SESSION_MAX_AGE = 30 * 24 * 3600
 IMMUTABLE = "public, max-age=31536000, immutable"
 
 
+def ensure_debug_logging() -> None:
+    """Ensure iwanttowatch.* INFO logs (like profiling) are emitted."""
+    pkg_log = logging.getLogger("iwanttowatch")
+    pkg_log.setLevel(logging.INFO)
+    if not pkg_log.handlers and not logging.getLogger().handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+        pkg_log.addHandler(handler)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
+    if settings.debug:
+        ensure_debug_logging()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     engine = create_db_engine(settings.database_url)
     backup_dir = settings.backup_dir or settings.data_dir / "backups"
@@ -53,6 +66,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = engine
     app.state.tmdb_base_url = settings.tmdb_base_url
     app.state.data_dir = settings.data_dir
+    app.state.debug = settings.debug
     app.state.feed_worker = FeedWorker(engine, settings.tmdb_base_url, settings.data_dir)
     app.state.feed_worker.start()
     # A finished import changes the user's taste, so their feed is rebuilt.

@@ -872,7 +872,12 @@ def feed_films(session: Session, user: User) -> list[int]:
     )
 
 
-def score_films(session: Session, user: User, ids: list[int]) -> list[Scored]:
+def score_films(
+    session: Session,
+    user: User,
+    ids: list[int],
+    only_candidates: list[int] | None = None,
+) -> list[Scored]:
     """Score films the user hasn't seen as a rescore does. Scores depend on the films
     scored together, so score feed_films to match the feed."""
     family = family_tagged_films(session) if user.is_child else set()
@@ -895,6 +900,7 @@ def score_films(session: Session, user: User, ids: list[int]) -> list[Scored]:
         child=user.is_child,
         family_picks=family,
         favorite_people=fav_people,
+        only_candidates=only_candidates,
     )
 
 

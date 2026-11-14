@@ -512,6 +512,45 @@
         }
       }
     },
+    "/api/v1/settings/profiling": {
+      "put": {
+        "summary": "Set Profiling",
+        "description": "Toggle per-request timing logs for movie popup profiling.",
+        "operationId": "set_profiling_api_v1_settings_profiling_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfilingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings/mcp": {
       "post": {
         "summary": "Create Mcp Key",
@@ -2789,6 +2828,16 @@
               "type": "integer",
               "title": "Tmdb Id"
             }
+          },
+          {
+            "name": "include_radarr",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Include Radarr"
+            }
           }
         ],
         "responses": {
@@ -2798,6 +2847,84 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TitleDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/titles/{tmdb_id}/radarr": {
+      "get": {
+        "summary": "Read Title Radarr",
+        "description": "Query Radarr for this movie's current download/monitoring status.",
+        "operationId": "read_title_radarr_api_v1_titles__tmdb_id__radarr_get",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadarrMovieStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Download Via Radarr",
+        "description": "Queue a movie for download via Radarr and start an automatic search.",
+        "operationId": "download_via_radarr_api_v1_titles__tmdb_id__radarr_post",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RadarrMovieStatus"
                 }
               }
             }
@@ -2938,46 +3065,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TitleDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/titles/{tmdb_id}/radarr": {
-      "post": {
-        "summary": "Download Via Radarr",
-        "description": "Queue a movie for download via Radarr and start an automatic search.",
-        "operationId": "download_via_radarr_api_v1_titles__tmdb_id__radarr_post",
-        "parameters": [
-          {
-            "name": "tmdb_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "title": "Tmdb Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RadarrMovieStatus"
                 }
               }
             }
@@ -9061,6 +9148,19 @@
         "type": "object",
         "title": "ProfileUpdate"
       },
+      "ProfilingUpdate": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "ProfilingUpdate"
+      },
       "Provider": {
         "properties": {
           "provider_id": {
@@ -10268,6 +10368,11 @@
           "mcp_enabled": {
             "type": "boolean",
             "title": "Mcp Enabled"
+          },
+          "profiling_enabled": {
+            "type": "boolean",
+            "title": "Profiling Enabled",
+            "default": false
           },
           "llm": {
             "$ref": "#/components/schemas/LlmSettings"

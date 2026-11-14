@@ -396,3 +396,63 @@ def test_radarr_group_shortlist_sync(client: TestClient, fake_radarr: FakeRadarr
     assert group_insp.status_code == 200
     assert group_insp.json()["total_shortlisted"] == 1
     assert group_insp.json()["downloading_count"] == 1
+
+
+def test_title_radarr_decoupled_and_profiling_flag(
+    client: TestClient, fake_radarr: FakeRadarr, caplog: pytest.LogCaptureFixture
+) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    client.put(
+        "/api/v1/settings/radarr",
+        json={
+            "url": RADARR,
+            "api_key": API_KEY,
+            "root_folder_path": "/data/movies/english",
+        },
+    )
+
+    with caplog.at_level("INFO"):
+        res = client.get("/api/v1/titles/201?include_radarr=false")
+        assert res.status_code == 200
+        assert res.json()["radarr"] is None
+
+        radarr_res = client.get("/api/v1/titles/201/radarr")
+        assert radarr_res.status_code == 200
+        assert radarr_res.json()["configured"] is True
+        assert radarr_res.json()["status"] == "not_added"
+
+    assert not any("PROFILE GET /api/v1/titles/201" in r.message for r in caplog.records)
+
+    client.app.state.debug = True  # type: ignore[attr-defined]
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        res_dbg = client.get("/api/v1/titles/201?include_radarr=false")
+        assert res_dbg.status_code == 200
+        radarr_dbg = client.get("/api/v1/titles/201/radarr")
+        assert radarr_dbg.status_code == 200
+
+    messages = [r.message for r in caplog.records]
+    assert any("PROFILE GET /api/v1/titles/201 " in m and "load=" in m for m in messages)
+    assert any("PROFILE GET /api/v1/titles/201/radarr" in m for m in messages)
+
+    # Also verify runtime toggle via /api/v1/settings/profiling
+    client.app.state.debug = False  # type: ignore[attr-defined]
+    assert (
+        client.put("/api/v1/settings/profiling", json={"enabled": True}).json()["profiling_enabled"]
+        is True
+    )
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        assert client.get("/api/v1/titles/201?include_radarr=false").status_code == 200
+    assert any("PROFILE GET /api/v1/titles/201 " in r.message for r in caplog.records)
+
+    assert (
+        client.put("/api/v1/settings/profiling", json={"enabled": False}).json()[
+            "profiling_enabled"
+        ]
+        is False
+    )
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        assert client.get("/api/v1/titles/201?include_radarr=false").status_code == 200
+    assert not any("PROFILE GET /api/v1/titles/201 " in r.message for r in caplog.records)

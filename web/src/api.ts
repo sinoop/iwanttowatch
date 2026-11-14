@@ -1,4 +1,4 @@
-import { createApiClient, type Reaction, type TitleReaction } from '@iwanttowatch/api-client'
+import { createApiClient, type Reaction, type TitleDetail, type TitleReaction } from '@iwanttowatch/api-client'
 import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 
 export const api = createApiClient()
@@ -544,6 +544,24 @@ export function useRadarQueue() {
       queryClient.invalidateQueries({ queryKey: ['title'] })
     },
   })
+}
+
+/** Lightweight title metadata used as an instant placeholder while full details load. */
+export interface TitlePreview {
+  title: string
+  year?: number | null
+  poster_path?: string | null
+  match?: number | null
+  imdb?: TitleDetail['imdb']
+}
+
+/** Fetch full title details without blocking on Radarr status. */
+export async function fetchTitleDetail(tmdbId: number): Promise<TitleDetail> {
+  const { data, error } = await api.GET('/api/v1/titles/{tmdb_id}', {
+    params: { path: { tmdb_id: tmdbId }, query: { include_radarr: false } },
+  })
+  if (error) throw new Error(errorMessage(error))
+  return data
 }
 
 /** A person's biography, credits, and affinity. */

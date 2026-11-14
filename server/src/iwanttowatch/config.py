@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     backup_dir: Path | None = None
     # Overridable for proxies and local testing against a stub.
     tmdb_base_url: str = "https://api.themoviedb.org/3"
+    # Enable verbose profiling logs (IWANTTOWATCH_DEBUG=true).
+    debug: bool = False
 
     @property
     def database_url(self) -> str:

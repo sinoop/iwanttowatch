@@ -56,6 +56,27 @@ def regions(tmdb: TmdbClient) -> list[dict[str, str]]:
     )
 
 
+def upsert_availability(
+    session: Session,
+    tmdb_id: int,
+    region: str,
+    result: tuple[list[dict[str, Any]], str | None] | None,
+) -> None:
+    """Persist fetched watch-provider offers for a title in a region."""
+    if result is None:
+        return
+    offers, link = result
+    values = {"offers": offers, "link": link, "checked_at": utcnow()}
+    # An upsert, because a feed build and a page view may check the same title.
+    session.execute(
+        insert(Availability)
+        .values(tmdb_id=tmdb_id, region=region, **values)
+        .on_conflict_do_update(
+            index_elements=[Availability.tmdb_id, Availability.region], set_=values
+        )
+    )
+
+
 def availability(
     session: Session, tmdb: TmdbClient, tmdb_ids: list[int], region: str
 ) -> dict[int, Availability]:
@@ -72,18 +93,7 @@ def availability(
     with ThreadPoolExecutor(PARALLEL_REQUESTS) as pool:
         fetched = list(pool.map(lambda tmdb_id: _fetch(tmdb, tmdb_id, region), due))
     for tmdb_id, result in zip(due, fetched, strict=True):
-        if result is None:
-            continue  # Keep the last known offers.
-        offers, link = result
-        values = {"offers": offers, "link": link, "checked_at": utcnow()}
-        # An upsert, because a feed build and a page view may check the same title.
-        session.execute(
-            insert(Availability)
-            .values(tmdb_id=tmdb_id, region=region, **values)
-            .on_conflict_do_update(
-                index_elements=[Availability.tmdb_id, Availability.region], set_=values
-            )
-        )
+        upsert_availability(session, tmdb_id, region, result)
     session.commit()
     return {
         row.tmdb_id: row

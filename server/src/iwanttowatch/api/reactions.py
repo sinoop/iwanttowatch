@@ -1,6 +1,7 @@
 """Rating a film in iWantToWatch: Didn't like / Liked / Loved, plus up to three tags and
 an optional note."""
 
+import time
 from datetime import date
 from typing import Literal, cast
 
@@ -55,20 +56,37 @@ class ReactionUpdate(BaseModel):
     note: str = Field("", max_length=MAX_NOTE)
 
 
-def load_title(session: DbSession, request: Request, tmdb_id: int) -> Title:
+def load_title(
+    session: DbSession,
+    request: Request,
+    tmdb_id: int,
+    timings: dict[str, float] | None = None,
+) -> Title:
     """The title, fetched from TMDb if it isn't stored yet."""
     title = session.get(Title, tmdb_id)
     if title is not None:
-        imdb.ensure_title_rating(session, request.app.state.data_dir, title)
+        if timings is not None:
+            timings["tmdb_fetch_ms"] = 0.0
+            t0 = time.perf_counter()
+            imdb.ensure_title_rating(session, request.app.state.data_dir, title)
+            timings["imdb_ms"] = (time.perf_counter() - t0) * 1000
+        else:
+            imdb.ensure_title_rating(session, request.app.state.data_dir, title)
         return title
     tmdb = client_from_settings(session, request.app.state.engine, request.app.state.tmdb_base_url)
     if tmdb is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Add a TMDb API key in Settings first")
+    t_tmdb = time.perf_counter() if timings is not None else 0.0
     try:
         title = ensure_title(session, tmdb, tmdb_id)
     except TmdbError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Movie not found on TMDb") from error
+    if timings is not None:
+        timings["tmdb_fetch_ms"] = (time.perf_counter() - t_tmdb) * 1000
+    t_imdb = time.perf_counter() if timings is not None else 0.0
     imdb.ensure_title_rating(session, request.app.state.data_dir, title)
+    if timings is not None:
+        timings["imdb_ms"] = (time.perf_counter() - t_imdb) * 1000
     session.commit()
     return title
 

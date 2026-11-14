@@ -274,6 +274,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/profiling": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Profiling
+         * @description Toggle per-request timing logs for movie popup profiling.
+         */
+        put: operations["set_profiling_api_v1_settings_profiling_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/mcp": {
         parameters: {
             query?: never;
@@ -971,6 +991,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/titles/{tmdb_id}/radarr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Title Radarr
+         * @description Query Radarr for this movie's current download/monitoring status.
+         */
+        get: operations["read_title_radarr_api_v1_titles__tmdb_id__radarr_get"];
+        put?: never;
+        /**
+         * Download Via Radarr
+         * @description Queue a movie for download via Radarr and start an automatic search.
+         */
+        post: operations["download_via_radarr_api_v1_titles__tmdb_id__radarr_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/titles/{tmdb_id}/themes": {
         parameters: {
             query?: never;
@@ -1025,26 +1069,6 @@ export interface paths {
          * @description Ask the configured LLM to explain why the user's opinion conflicts with the audience.
          */
         post: operations["explain_title_clash_api_v1_titles__tmdb_id__clash_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/titles/{tmdb_id}/radarr": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Download Via Radarr
-         * @description Queue a movie for download via Radarr and start an automatic search.
-         */
-        post: operations["download_via_radarr_api_v1_titles__tmdb_id__radarr_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3228,6 +3252,11 @@ export interface components {
             /** Show Continue Watching */
             show_continue_watching?: boolean | null;
         };
+        /** ProfilingUpdate */
+        ProfilingUpdate: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /** Provider */
         Provider: {
             /** Provider Id */
@@ -3645,6 +3674,11 @@ export interface components {
             tmdb_configured: boolean;
             /** Mcp Enabled */
             mcp_enabled: boolean;
+            /**
+             * Profiling Enabled
+             * @default false
+             */
+            profiling_enabled: boolean;
             llm: components["schemas"]["LlmSettings"];
             jellyfin: components["schemas"]["JellyfinSettings"];
             imdb: components["schemas"]["ImdbSettings"];
@@ -4390,6 +4424,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ImdbUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_profiling_api_v1_settings_profiling_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfilingUpdate"];
             };
         };
         responses: {
@@ -5718,7 +5785,9 @@ export interface operations {
     };
     read_title_api_v1_titles__tmdb_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                include_radarr?: boolean;
+            };
             header?: never;
             path: {
                 tmdb_id: number;
@@ -5734,6 +5803,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TitleDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_title_radarr_api_v1_titles__tmdb_id__radarr_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RadarrMovieStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_via_radarr_api_v1_titles__tmdb_id__radarr_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RadarrMovieStatus"];
                 };
             };
             /** @description Validation Error */
@@ -5831,37 +5962,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TitleDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    download_via_radarr_api_v1_titles__tmdb_id__radarr_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                tmdb_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RadarrMovieStatus"];
                 };
             };
             /** @description Validation Error */

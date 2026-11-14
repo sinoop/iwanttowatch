@@ -24,14 +24,26 @@ DETAIL_APPENDS = "credits,keywords,translations,alternative_titles,release_dates
 PARALLEL_REQUESTS = 8
 
 
+def fetch_title_details(tmdb: TmdbClient, tmdb_id: int) -> dict[str, Any]:
+    """Fetch full TMDb movie details (without touching the DB session)."""
+    return _details(tmdb, tmdb_id)
+
+
+def store_title_details(
+    session: Session, title: Title | None, tmdb_id: int, details: dict[str, Any]
+) -> Title:
+    """Persist fetched TMDb movie details into the local Title table."""
+    stored = _store(session, title, tmdb_id, details)
+    session.flush()
+    return stored
+
+
 def ensure_title(session: Session, tmdb: TmdbClient, tmdb_id: int) -> Title:
     """Return the title, fetching or refreshing its metadata from TMDb when needed."""
     title = session.get(Title, tmdb_id)
     if title is not None and not _stale(title):
         return title
-    title = _store(session, title, tmdb_id, _details(tmdb, tmdb_id))
-    session.flush()
-    return title
+    return store_title_details(session, title, tmdb_id, _details(tmdb, tmdb_id))
 
 
 def ensure_titles(session: Session, tmdb: TmdbClient, tmdb_ids: list[int]) -> dict[int, Title]:

@@ -124,6 +124,8 @@ class ServerSettings(BaseModel):
     tmdb_configured: bool
     # Whether an admin created a key for the read-only debugging MCP server at /mcp.
     mcp_enabled: bool
+    # Whether per-request timing logs are enabled for movie popup profiling.
+    profiling_enabled: bool = False
     llm: LlmSettings
     jellyfin: JellyfinSettings
     imdb: ImdbSettings
@@ -290,12 +292,16 @@ def _radarr_out(session: Session, is_admin: bool) -> RadarrSettings:
     )
 
 
+DEBUG_PROFILING_SETTING = "debug_profiling"
+
+
 def _settings_out(session: Session, is_admin: bool) -> ServerSettings:
     # Secrets are never returned, only whether they are set.
     return ServerSettings(
         version=__version__,
         tmdb_configured=get_setting(session, API_KEY_SETTING) is not None,
         mcp_enabled=get_setting(session, mcp.KEY_SETTING) is not None,
+        profiling_enabled=get_setting(session, DEBUG_PROFILING_SETTING) == "on",
         jellyfin=_jellyfin_out(session, is_admin),
         imdb=_imdb_out(session),
         radarr=_radarr_out(session, is_admin),
@@ -535,6 +541,24 @@ def set_imdb(
         imdb.forget_ratings(session, request.app.state.data_dir)
         for user_id in users:
             worker.rescore_soon(user_id)
+    return _settings_out(session, True)
+
+
+class ProfilingUpdate(BaseModel):
+    enabled: bool
+
+
+@router.put("/profiling")
+def set_profiling(body: ProfilingUpdate, _admin: AdminUser, session: DbSession) -> ServerSettings:
+    """Toggle per-request timing logs for movie popup profiling."""
+    from iwanttowatch.main import ensure_debug_logging
+
+    if body.enabled:
+        ensure_debug_logging()
+        set_setting(session, DEBUG_PROFILING_SETTING, "on")
+    else:
+        set_setting(session, DEBUG_PROFILING_SETTING, None)
+    session.commit()
     return _settings_out(session, True)
 
 

@@ -1,6 +1,7 @@
 import type { Reaction } from '@iwanttowatch/api-client'
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { ratingToReaction, useFavoritePerson, usePerson } from './api'
+import { fetchTitleDetail, ratingToReaction, type TitlePreview, useFavoritePerson, usePerson } from './api'
 import { ReactionBadge } from './RateDialog'
 import { ImdbBadge, MatchBadge } from './TitleDialog'
 import { segmentedBadgeClass, segmentedTabClass } from './tabs'
@@ -30,6 +31,8 @@ interface PersonDialogProps {
 
 export default function PersonDialog({ personId, onClose, onSelectFilm }: PersonDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null)
+  const queryClient = useQueryClient()
+  const prefetchTimer = useRef<number | null>(null)
   const personQuery = usePerson(personId)
   const favoriteMutation = useFavoritePerson()
   const [prevPersonId, setPrevPersonId] = useState<number | null>(personId)
@@ -82,6 +85,33 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
           }
           return (b.vote_average ?? -1) - (a.vote_average ?? -1) || (b.vote_count ?? 0) - (a.vote_count ?? 0)
         })
+
+  const prefetchFilm = (tmdbId: number) => {
+    void queryClient.prefetchQuery({
+      queryKey: ['title', tmdbId],
+      queryFn: () => fetchTitleDetail(tmdbId),
+      staleTime: 60_000,
+    })
+  }
+
+  const schedulePrefetch = (tmdbId: number) => {
+    if (prefetchTimer.current !== null) {
+      window.clearTimeout(prefetchTimer.current)
+    }
+    prefetchTimer.current = window.setTimeout(() => {
+      prefetchTimer.current = null
+      prefetchFilm(tmdbId)
+    }, 120)
+  }
+
+  const cancelPrefetch = () => {
+    if (prefetchTimer.current !== null) {
+      window.clearTimeout(prefetchTimer.current)
+      prefetchTimer.current = null
+    }
+  }
+
+  useEffect(() => () => cancelPrefetch(), [])
 
   const toggleFavorite = () => {
     if (!person) return
@@ -312,7 +342,21 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                   <button
                     key={film.tmdb_id}
                     type="button"
+                    onMouseEnter={() => schedulePrefetch(film.tmdb_id)}
+                    onMouseLeave={cancelPrefetch}
+                    onFocus={() => prefetchFilm(film.tmdb_id)}
                     onClick={() => {
+                      cancelPrefetch()
+                      queryClient.setQueryData<TitlePreview>(['title-preview', film.tmdb_id], {
+                        title: film.title,
+                        year: film.year,
+                        poster_path: film.poster_path,
+                        match: film.match,
+                        imdb:
+                          film.imdb_rating !== null && film.imdb_rating !== undefined
+                            ? { id: '', rating: film.imdb_rating, votes: film.imdb_votes ?? 0 }
+                            : null,
+                      })
                       if (onSelectFilm) {
                         onSelectFilm(film.tmdb_id)
                       }
