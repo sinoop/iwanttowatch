@@ -1940,6 +1940,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/integrations/home-assistant/titles/{tmdb_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Home Assistant Title Detail
+         * @description Full movie details (genres, runtime, cast, match reasons, availability, Radarr).
+         */
+        get: operations["home_assistant_title_detail_api_v1_integrations_home_assistant_titles__tmdb_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/home-assistant/titles/{tmdb_id}/reaction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Home Assistant Set Reaction
+         * @description Rate or mark a movie watched from Home Assistant.
+         */
+        put: operations["home_assistant_set_reaction_api_v1_integrations_home_assistant_titles__tmdb_id__reaction_put"];
+        post?: never;
+        /**
+         * Home Assistant Clear Reaction
+         * @description Clear a movie's rating/watched status from Home Assistant.
+         */
+        delete: operations["home_assistant_clear_reaction_api_v1_integrations_home_assistant_titles__tmdb_id__reaction_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/home-assistant/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Home Assistant Ask
+         * @description Natural-language Ask AI movie search for Home Assistant.
+         */
+        post: operations["home_assistant_ask_api_v1_integrations_home_assistant_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2582,6 +2646,47 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HomeAssistantAskMovie */
+        HomeAssistantAskMovie: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Year */
+            year?: number | null;
+            /** Match */
+            match?: number | null;
+            /** Imdb Rating */
+            imdb_rating?: number | null;
+            /** Poster Url */
+            poster_url?: string | null;
+            /** Overview */
+            overview?: string | null;
+            /**
+             * In Jellyfin
+             * @default false
+             */
+            in_jellyfin: boolean;
+            /**
+             * In Shortlist
+             * @default false
+             */
+            in_shortlist: boolean;
+            /**
+             * Streaming Services
+             * @default []
+             */
+            streaming_services: string[];
+            /** Why */
+            why: string;
+        };
+        /** HomeAssistantAskResponse */
+        HomeAssistantAskResponse: {
+            /** Picks */
+            picks: components["schemas"]["HomeAssistantAskMovie"][];
+            /** Considered */
+            considered: number;
+        };
         /** HomeAssistantMovie */
         HomeAssistantMovie: {
             /** Tmdb Id */
@@ -2628,6 +2733,11 @@ export interface components {
              * @default false
              */
             radarr_configured: boolean;
+            /**
+             * Llm Configured
+             * @default false
+             */
+            llm_configured: boolean;
             /** High Rated Recommendations */
             high_rated_recommendations: components["schemas"]["HomeAssistantMovie"][];
             /** Shortlisted */
@@ -7620,6 +7730,143 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RadarrMovieStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    home_assistant_title_detail_api_v1_integrations_home_assistant_titles__tmdb_id__get: {
+        parameters: {
+            query?: {
+                username?: string | null;
+            };
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    home_assistant_set_reaction_api_v1_integrations_home_assistant_titles__tmdb_id__reaction_put: {
+        parameters: {
+            query?: {
+                username?: string | null;
+            };
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReactionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TitleReaction"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    home_assistant_clear_reaction_api_v1_integrations_home_assistant_titles__tmdb_id__reaction_delete: {
+        parameters: {
+            query?: {
+                username?: string | null;
+            };
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    home_assistant_ask_api_v1_integrations_home_assistant_ask_post: {
+        parameters: {
+            query?: {
+                username?: string | null;
+                available_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HomeAssistantAskResponse"];
                 };
             };
             /** @description Validation Error */

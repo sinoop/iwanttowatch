@@ -8,11 +8,24 @@ from sqlalchemy import select
 
 from iwanttowatch import radarr
 from iwanttowatch.api.deps import DbSession, Tmdb
-from iwanttowatch.api.feed import RadarrMovieStatus
+from iwanttowatch.api.feed import (
+    AskBody,
+    RadarrMovieStatus,
+    TitleDetail,
+    _title_detail,
+    ask_feed,
+)
 from iwanttowatch.api.mcp import KEY_SETTING as MCP_KEY_SETTING
-from iwanttowatch.api.reactions import load_title
+from iwanttowatch.api.reactions import (
+    ReactionUpdate,
+    TitleReaction,
+    clear_reaction,
+    load_title,
+    set_reaction,
+)
 from iwanttowatch.availability import availability
 from iwanttowatch.catalog import search_movies
+from iwanttowatch.llm import provider_from_settings
 from iwanttowatch.models import (
     Availability,
     LibraryItem,
@@ -41,10 +54,20 @@ class HomeAssistantMovie(BaseModel):
     streaming_services: list[str] = []
 
 
+class HomeAssistantAskMovie(HomeAssistantMovie):
+    why: str
+
+
+class HomeAssistantAskResponse(BaseModel):
+    picks: list[HomeAssistantAskMovie]
+    considered: int
+
+
 class HomeAssistantPayload(BaseModel):
     user: str
     generated_at: datetime
     radarr_configured: bool = False
+    llm_configured: bool = False
     high_rated_recommendations: list[HomeAssistantMovie]
     shortlisted: list[HomeAssistantMovie]
 
@@ -187,6 +210,7 @@ def home_assistant_feed(
         user=user.display_name,
         generated_at=datetime.now(UTC),
         radarr_configured=bool(radarr_url and radarr_key),
+        llm_configured=provider_from_settings(session, "ask", user.id) is not None,
         high_rated_recommendations=[
             _build_movie(title, score, jellyfin_ids, shortlist_ids, services_by_tmdb)
             for title, score in rec_rows
@@ -334,3 +358,90 @@ def home_assistant_request_radarr(
     except radarr.RadarrError as error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Radarr error: {error}") from error
     return RadarrMovieStatus(**radarr.movie_status(session, tmdb_id))
+
+
+@router.get("/integrations/home-assistant/titles/{tmdb_id}")
+def home_assistant_title_detail(
+    tmdb_id: int,
+    request: Request,
+    session: DbSession,
+    tmdb: Tmdb,
+    username: str | None = Query(None),
+) -> TitleDetail:
+    """Full movie details (genres, runtime, cast, match reasons, availability, Radarr)."""
+    user = _resolve_user(request, session, username)
+    title = load_title(session, request, tmdb_id)
+    return _title_detail(session, user, tmdb, title)
+
+
+@router.put("/integrations/home-assistant/titles/{tmdb_id}/reaction")
+def home_assistant_set_reaction(
+    tmdb_id: int,
+    body: ReactionUpdate,
+    request: Request,
+    session: DbSession,
+    username: str | None = Query(None),
+) -> TitleReaction:
+    """Rate or mark a movie watched from Home Assistant."""
+    user = _resolve_user(request, session, username)
+    return set_reaction(tmdb_id, body, user, session, request)
+
+
+@router.delete(
+    "/integrations/home-assistant/titles/{tmdb_id}/reaction",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def home_assistant_clear_reaction(
+    tmdb_id: int,
+    request: Request,
+    session: DbSession,
+    username: str | None = Query(None),
+) -> Response:
+    """Clear a movie's rating/watched status from Home Assistant."""
+    user = _resolve_user(request, session, username)
+    return clear_reaction(tmdb_id, user, session, request)
+
+
+@router.post("/integrations/home-assistant/ask")
+def home_assistant_ask(
+    body: AskBody,
+    request: Request,
+    session: DbSession,
+    username: str | None = Query(None),
+    available_only: bool = Query(False),
+) -> HomeAssistantAskResponse:
+    """Natural-language Ask AI movie search for Home Assistant."""
+    user = _resolve_user(request, session, username)
+    answer = ask_feed(body, user, session, request, available_only=available_only)
+    if not answer.picks:
+        return HomeAssistantAskResponse(picks=[], considered=answer.considered)
+
+    tmdb_ids = [p.tmdb_id for p in answer.picks]
+    titles_by_id = {
+        t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(tmdb_ids)))
+    }
+    scores_by_id = {
+        tid: score
+        for tid, score in session.execute(
+            select(Recommendation.tmdb_id, Recommendation.score).where(
+                Recommendation.user_id == user.id,
+                Recommendation.tmdb_id.in_(tmdb_ids),
+            )
+        ).all()
+    }
+    jellyfin_ids, shortlist_ids, services_by_tmdb = _load_context(session, user, tmdb_ids)
+
+    enriched: list[HomeAssistantAskMovie] = []
+    for pick in answer.picks:
+        title = titles_by_id.get(pick.tmdb_id)
+        if title is None:
+            continue
+        movie = _build_movie(
+            title,
+            scores_by_id.get(pick.tmdb_id),
+            jellyfin_ids,
+            shortlist_ids,
+            services_by_tmdb,
+        )
+        enriched.append(HomeAssistantAskMovie(**movie.model_dump(), why=pick.why))
+    return HomeAssistantAskResponse(picks=enriched, considered=answer.considered)

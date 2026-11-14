@@ -235,3 +235,77 @@ def test_home_assistant_search_shortlist_and_radarr(
     assert req_res.json()["monitored"] is True
     assert req_res.json()["status"] == "monitored"
     assert queued[0]["tmdb_id"] == 401
+
+
+def test_home_assistant_detail_reaction_and_ask(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        set_setting(session, MCP_KEY_SETTING, hashlib.sha256(b"ha-secret-key").hexdigest())
+        set_setting(session, TMDB_KEY_SETTING, "test-tmdb-key")
+        session.add(
+            Title(
+                tmdb_id=501,
+                title="Manichitrathazhu",
+                original_title="Manichitrathazhu",
+                original_language="ml",
+                year=1993,
+                runtime=169,
+                poster_path="/mani.jpg",
+                imdb_rating=8.8,
+                overview="A psychological mystery in an ancestral home.",
+                genres=["Mystery", "Horror", "Comedy"],
+            )
+        )
+        session.flush()
+        session.add(Recommendation(user_id=1, tmdb_id=501, score=0.95, rank=1, reasons=[]))
+        session.commit()
+
+    headers = {"Authorization": "Bearer ha-secret-key"}
+
+    monkeypatch.setattr(integrations, "availability", lambda *_args, **_kwargs: {})
+    detail_res = client.get("/api/v1/integrations/home-assistant/titles/501", headers=headers)
+    assert detail_res.status_code == 200, detail_res.text
+    detail = detail_res.json()
+    assert detail["title"] == "Manichitrathazhu"
+    assert detail["runtime"] == 169
+    assert detail["genres"] == ["Mystery", "Horror", "Comedy"]
+
+    # Set reaction (loved) and clear it
+    react_res = client.put(
+        "/api/v1/integrations/home-assistant/titles/501/reaction",
+        headers=headers,
+        json={"reaction": "loved", "watched": True, "tags": []},
+    )
+    assert react_res.status_code == 200, react_res.text
+    assert react_res.json()["reaction"] == "loved"
+    assert react_res.json()["watched"] is True
+
+    clear_res = client.delete(
+        "/api/v1/integrations/home-assistant/titles/501/reaction",
+        headers=headers,
+    )
+    assert clear_res.status_code == 204
+
+    # Ask AI
+    from iwanttowatch.api.feed import AskAnswer, AskPick
+
+    monkeypatch.setattr(
+        integrations,
+        "ask_feed",
+        lambda *_args, **_kwargs: AskAnswer(
+            picks=[AskPick(tmdb_id=501, why="Classic Malayalam mystery")],
+            considered=1,
+        ),
+    )
+    ask_res = client.post(
+        "/api/v1/integrations/home-assistant/ask",
+        headers=headers,
+        json={"text": "classic mystery"},
+    )
+    assert ask_res.status_code == 200, ask_res.text
+    ask_data = ask_res.json()
+    assert ask_data["considered"] == 1
+    assert len(ask_data["picks"]) == 1
+    assert ask_data["picks"][0]["tmdb_id"] == 501
+    assert ask_data["picks"][0]["why"] == "Classic Malayalam mystery"

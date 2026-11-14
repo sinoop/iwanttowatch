@@ -5320,6 +5320,242 @@
           }
         }
       }
+    },
+    "/api/v1/integrations/home-assistant/titles/{tmdb_id}": {
+      "get": {
+        "summary": "Home Assistant Title Detail",
+        "description": "Full movie details (genres, runtime, cast, match reasons, availability, Radarr).",
+        "operationId": "home_assistant_title_detail_api_v1_integrations_home_assistant_titles__tmdb_id__get",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Username"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TitleDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/home-assistant/titles/{tmdb_id}/reaction": {
+      "put": {
+        "summary": "Home Assistant Set Reaction",
+        "description": "Rate or mark a movie watched from Home Assistant.",
+        "operationId": "home_assistant_set_reaction_api_v1_integrations_home_assistant_titles__tmdb_id__reaction_put",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Username"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TitleReaction"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Home Assistant Clear Reaction",
+        "description": "Clear a movie's rating/watched status from Home Assistant.",
+        "operationId": "home_assistant_clear_reaction_api_v1_integrations_home_assistant_titles__tmdb_id__reaction_delete",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Username"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integrations/home-assistant/ask": {
+      "post": {
+        "summary": "Home Assistant Ask",
+        "description": "Natural-language Ask AI movie search for Home Assistant.",
+        "operationId": "home_assistant_ask_api_v1_integrations_home_assistant_ask_post",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Username"
+            }
+          },
+          {
+            "name": "available_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Available Only"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeAssistantAskResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7241,6 +7477,123 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HomeAssistantAskMovie": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match"
+          },
+          "imdb_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imdb Rating"
+          },
+          "poster_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Url"
+          },
+          "overview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overview"
+          },
+          "in_jellyfin": {
+            "type": "boolean",
+            "title": "In Jellyfin",
+            "default": false
+          },
+          "in_shortlist": {
+            "type": "boolean",
+            "title": "In Shortlist",
+            "default": false
+          },
+          "streaming_services": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Streaming Services",
+            "default": []
+          },
+          "why": {
+            "type": "string",
+            "title": "Why"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "why"
+        ],
+        "title": "HomeAssistantAskMovie"
+      },
+      "HomeAssistantAskResponse": {
+        "properties": {
+          "picks": {
+            "items": {
+              "$ref": "#/components/schemas/HomeAssistantAskMovie"
+            },
+            "type": "array",
+            "title": "Picks"
+          },
+          "considered": {
+            "type": "integer",
+            "title": "Considered"
+          }
+        },
+        "type": "object",
+        "required": [
+          "picks",
+          "considered"
+        ],
+        "title": "HomeAssistantAskResponse"
+      },
       "HomeAssistantMovie": {
         "properties": {
           "tmdb_id": {
@@ -7346,6 +7699,11 @@
           "radarr_configured": {
             "type": "boolean",
             "title": "Radarr Configured",
+            "default": false
+          },
+          "llm_configured": {
+            "type": "boolean",
+            "title": "Llm Configured",
             "default": false
           },
           "high_rated_recommendations": {
