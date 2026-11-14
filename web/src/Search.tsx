@@ -122,9 +122,10 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
   const isAsking = useIsMutating({ mutationKey: ['feed', 'ask'] }) > 0
 
   const search = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (queryText?: string) => {
+      const q = (queryText ?? text).trim()
       const { data, error } = await api.GET('/api/v1/catalog/search-all', {
-        params: { query: { query: text.trim() } },
+        params: { query: { query: q } },
       })
       if (error) throw new Error(errorMessage(error))
       return {
@@ -166,15 +167,18 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
 
   if (!settings.data?.tmdb_configured) return null
 
-  const handleSearchSubmit = () => {
-    if (!text.trim()) return
+  const handleSearchSubmit = (queryText?: string) => {
+    const q = (queryText ?? text).trim()
+    if (!q) return
+    setMode('search')
     setDropdownOpen(true)
-    search.mutate()
+    search.mutate(q)
   }
 
-  const handleAskSubmit = () => {
-    const query = text.trim()
+  const handleAskSubmit = (queryText?: string) => {
+    const query = (queryText ?? text).trim()
     if (!query || !llmConfigured || isAsking) return
+    setMode('ask')
     setDropdownOpen(false)
     search.reset()
 
@@ -199,16 +203,34 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
     }
   }
 
-  const handleToggleMode = (targetMode: 'search' | 'ask') => {
-    if (mode === targetMode) return
-    if (targetMode === 'ask' && !llmConfigured) return
-    setMode(targetMode)
-    setDropdownOpen(false)
-    inputRef.current?.focus()
+  const handleSearchClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setMode('search')
+    if (text.trim()) {
+      handleSearchSubmit()
+    } else {
+      setDropdownOpen(false)
+      inputRef.current?.focus()
+    }
+  }
+
+  const handleAskClick = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (!llmConfigured) return
+    setMode('ask')
+    if (text.trim()) {
+      handleAskSubmit()
+    } else {
+      setDropdownOpen(false)
+      inputRef.current?.focus()
+    }
   }
 
   return (
-    <div ref={containerRef} className={className || 'relative order-2 w-full sm:order-none sm:ml-auto sm:w-72 md:w-80 lg:w-96'}>
+    <div
+      ref={containerRef}
+      className={`relative ${className || 'order-2 w-full sm:order-none sm:ml-auto sm:w-72 md:w-80 lg:w-96'}`}
+    >
       <form onSubmit={handleSubmit} role="search" className="relative flex items-center">
         <label htmlFor="header-search" className="sr-only">
           {mode === 'search' ? 'Search films, actors, or directors' : 'Ask AI for recommendations'}
@@ -241,7 +263,7 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
         <div className="absolute right-1 flex items-center rounded-md border border-white/10 bg-white/[0.04] p-0.5 text-xs">
           <button
             type={mode === 'search' ? 'submit' : 'button'}
-            onClick={() => handleToggleMode('search')}
+            onClick={handleSearchClick}
             aria-pressed={mode === 'search'}
             title="Search films and actors"
             className={`rounded px-2.5 py-1 font-semibold transition-all ${
@@ -255,7 +277,7 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
           <button
             type={mode === 'ask' ? 'submit' : 'button'}
             disabled={!llmConfigured || isAsking}
-            onClick={() => handleToggleMode('ask')}
+            onClick={handleAskClick}
             aria-pressed={mode === 'ask'}
             title={
               !llmConfigured

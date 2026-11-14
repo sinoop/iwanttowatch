@@ -137,7 +137,16 @@ export default function Discover({ me }: { me: Me }) {
   const ask = useMutation({
     mutationKey: ['feed', 'ask'],
     mutationFn: async (text: string) => {
-      const { data, error } = await api.POST('/api/v1/feed/ask', { params: { query: filters }, body: { text } })
+      const { data, error } = await api.POST('/api/v1/feed/ask', {
+        params: {
+          query: {
+            available_only: false,
+            content_type: 'all',
+            age_limit: me.max_certificate ? ageLimit : undefined,
+          },
+        },
+        body: { text },
+      })
       if (error) throw new Error(errorMessage(error))
       return { ...data, text }
     },
@@ -146,17 +155,27 @@ export default function Discover({ me }: { me: Me }) {
   // While an answer is shown, the feed lists only the AI's picks, in the feed's order.
   const only = answer?.picks.map((p) => p.tmdb_id)
   const feed = useInfiniteQuery({
-    queryKey: ['feed', me.id, watchOn, language, genre, decade, yearMin, yearMax, contentType, certificate, shortlistFilter, sort, ageLimit, only],
+    queryKey: only?.length
+      ? ['feed', me.id, 'ask', answer?.text, only]
+      : ['feed', me.id, watchOn, language, genre, decade, yearMin, yearMax, contentType, certificate, shortlistFilter, sort, ageLimit],
     queryFn: async ({ pageParam }) => {
       const { data, error } = await api.GET('/api/v1/feed', {
         params: {
-          query: {
-            ...filters,
-            sort: sort !== 'recommended' ? sort : undefined,
-            only: only?.length ? only : undefined,
-            offset: pageParam,
-            limit: PAGE,
-          },
+          query: only?.length
+            ? {
+                only,
+                available_only: false,
+                content_type: 'all',
+                age_limit: me.max_certificate ? ageLimit : undefined,
+                offset: pageParam,
+                limit: PAGE,
+              }
+            : {
+                ...filters,
+                sort: sort !== 'recommended' ? sort : undefined,
+                offset: pageParam,
+                limit: PAGE,
+              },
         },
       })
       if (error) throw new Error(errorMessage(error))
