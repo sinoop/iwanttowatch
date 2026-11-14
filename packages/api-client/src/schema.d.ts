@@ -1872,6 +1872,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/integrations/home-assistant/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Home Assistant Search
+         * @description Search TMDb for movies and enrich with match scores, shortlist, and availability.
+         */
+        get: operations["home_assistant_search_api_v1_integrations_home_assistant_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/home-assistant/titles/{tmdb_id}/shortlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Home Assistant Add Shortlist
+         * @description Add a movie to the user's shortlist from Home Assistant.
+         */
+        put: operations["home_assistant_add_shortlist_api_v1_integrations_home_assistant_titles__tmdb_id__shortlist_put"];
+        post?: never;
+        /**
+         * Home Assistant Remove Shortlist
+         * @description Remove a movie from the user's shortlist from Home Assistant.
+         */
+        delete: operations["home_assistant_remove_shortlist_api_v1_integrations_home_assistant_titles__tmdb_id__shortlist_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/home-assistant/titles/{tmdb_id}/radarr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Home Assistant Radarr Status
+         * @description Check whether a movie is already in Radarr.
+         */
+        get: operations["home_assistant_radarr_status_api_v1_integrations_home_assistant_titles__tmdb_id__radarr_get"];
+        put?: never;
+        /**
+         * Home Assistant Request Radarr
+         * @description Queue a movie in Radarr from Home Assistant.
+         */
+        post: operations["home_assistant_request_radarr_api_v1_integrations_home_assistant_titles__tmdb_id__radarr_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2528,11 +2596,18 @@ export interface components {
             imdb_rating?: number | null;
             /** Poster Url */
             poster_url?: string | null;
+            /** Overview */
+            overview?: string | null;
             /**
              * In Jellyfin
              * @default false
              */
             in_jellyfin: boolean;
+            /**
+             * In Shortlist
+             * @default false
+             */
+            in_shortlist: boolean;
             /**
              * Streaming Services
              * @default []
@@ -2548,6 +2623,11 @@ export interface components {
              * Format: date-time
              */
             generated_at: string;
+            /**
+             * Radarr Configured
+             * @default false
+             */
+            radarr_configured: boolean;
             /** High Rated Recommendations */
             high_rated_recommendations: components["schemas"]["HomeAssistantMovie"][];
             /** Shortlisted */
@@ -7378,6 +7458,168 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HomeAssistantPayload"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    home_assistant_search_api_v1_integrations_home_assistant_search_get: {
+        parameters: {
+            query: {
+                query: string;
+                year?: number | null;
+                username?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HomeAssistantMovie"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    home_assistant_add_shortlist_api_v1_integrations_home_assistant_titles__tmdb_id__shortlist_put: {
+        parameters: {
+            query?: {
+                username?: string | null;
+            };
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    home_assistant_remove_shortlist_api_v1_integrations_home_assistant_titles__tmdb_id__shortlist_delete: {
+        parameters: {
+            query?: {
+                username?: string | null;
+            };
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    home_assistant_radarr_status_api_v1_integrations_home_assistant_titles__tmdb_id__radarr_get: {
+        parameters: {
+            query?: {
+                username?: string | null;
+            };
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RadarrMovieStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    home_assistant_request_radarr_api_v1_integrations_home_assistant_titles__tmdb_id__radarr_post: {
+        parameters: {
+            query?: {
+                username?: string | null;
+            };
+            header?: never;
+            path: {
+                tmdb_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RadarrMovieStatus"];
                 };
             };
             /** @description Validation Error */
