@@ -5,6 +5,7 @@ import { api, errorMessage, facts, ratingToReaction, useAssignToChild, useChildr
 import { RatingHeaderDock, ReactionBadge, SentimentTagsCard } from './RateDialog'
 import { JellyfinLogo, JustWatchCredit, ProviderLogo } from './Streaming'
 import { Button, ErrorText, Poster } from './ui'
+import { TagIcon } from './TagIcon'
 import PersonDialog from './PersonDialog'
 
 /** A film's details: why it was suggested, who made it, and where to watch it. */
@@ -794,7 +795,7 @@ function ThemeFeatureChips({
                   : 'border-amber-500/35 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25'
               }`}
             >
-              <span>{chip.kind === 'real_story' ? '📖' : '🔁'}</span>
+              <TagIcon tagId={chip.kind} />
               <span>{chip.label}</span>
               <span className="text-[10px] opacity-70">{isOpen ? '▲' : '▼'}</span>
             </button>

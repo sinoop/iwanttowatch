@@ -9,6 +9,20 @@ const TAG_ICONS: Record<string, ReactNode> = {
       <path d="M6 10h10" />
     </>
   ),
+  real_story: (
+    <>
+      <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+      <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+    </>
+  ),
+  remake: (
+    <>
+      <path d="m17 2 4 4-4 4" />
+      <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
+      <path d="m7 22-4-4 4-4" />
+      <path d="M21 13v1a4 4 0 0 1-4 4H3" />
+    </>
+  ),
   great_acting: (
     <>
       <path d="M2 10s3-3 5-3 5 3 5 3v2s-3 3-5 3-5-3-5-3v-2Z" />
