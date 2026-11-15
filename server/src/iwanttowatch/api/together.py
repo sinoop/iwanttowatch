@@ -2,7 +2,7 @@
 
 import json
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, UploadFile, status
@@ -117,6 +117,8 @@ class GroupItem(BaseModel):
     original_title: str
     original_language: str
     year: int | None
+    release_date: date | None = None
+    status: str | None = None
     runtime: int | None
     certificate: str | None = None
     poster_path: str | None
@@ -283,6 +285,8 @@ def together_picks(
                 original_title=title.original_title,
                 original_language=title.original_language,
                 year=title.year,
+                release_date=title.release_date,
+                status=title.status,
                 runtime=title.runtime,
                 certificate=(title.certifications or {}).get(user.region),
                 poster_path=title.poster_path,

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import {
   errorMessage,
+  formatReleaseDate,
   useRadarMissing,
   useRadarQueue,
   useRadarTheatrical,
@@ -417,7 +418,10 @@ export function AcquisitionRadarSettings() {
                       </div>
 
                       <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-white/50">
-                        {item.year && <span>{item.year}</span>}
+                        {(item.release_date || item.year) && (
+                          <span>{formatReleaseDate(item.release_date, item.year)}</span>
+                        )}
+                        {item.status && <span>· {item.status}</span>}
                         {item.original_language && (
                           <span className="uppercase">{item.original_language}</span>
                         )}

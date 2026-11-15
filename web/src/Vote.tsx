@@ -1,7 +1,7 @@
 import type { Ballot, BallotFilm } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { api, errorMessage } from './api'
+import { api, errorMessage, formatReleaseDate } from './api'
 import { WatchBadges } from './Streaming'
 import { Button, ErrorText, Field, Poster } from './ui'
 
@@ -131,7 +131,8 @@ function Join({ token, expiresAt, onJoined }: { token: string; expiresAt: string
 
 function FilmVote({ film, choice, onVote }: { film: BallotFilm; choice: Choice | undefined; onVote: (choice: Choice) => void }) {
   const details = [
-    film.year,
+    formatReleaseDate(film.release_date, film.year),
+    film.status,
     film.runtime ? `${Math.floor(film.runtime / 60)}h ${film.runtime % 60}m` : null,
     film.genres.slice(0, 2).join(', ') || null,
   ].filter(Boolean)

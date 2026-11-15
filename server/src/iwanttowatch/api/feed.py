@@ -88,6 +88,8 @@ class FeedItem(BaseModel):
     original_title: str
     original_language: str
     year: int | None
+    release_date: date | None = None
+    status: str | None = None
     runtime: int | None
     # Film certificate in the user's region, e.g. "U/A 7+" or "PG".
     certificate: str | None = None
@@ -296,6 +298,8 @@ def read_feed(
                 original_title=title.original_title,
                 original_language=title.original_language,
                 year=title.year,
+                release_date=title.release_date,
+                status=title.status,
                 runtime=title.runtime,
                 certificate=(title.certifications or {}).get(user.region),
                 poster_path=title.poster_path,
@@ -579,6 +583,8 @@ class TitleDetail(BaseModel):
     original_title: str
     original_language: str
     year: int | None
+    release_date: date | None = None
+    status: str | None = None
     runtime: int | None
     # Film certificate in the user's region, e.g. "U/A 7+" or "PG".
     certificate: str | None = None
@@ -701,6 +707,8 @@ def _title_detail(
         original_title=title.original_title,
         original_language=title.original_language,
         year=title.year,
+        release_date=title.release_date,
+        status=title.status,
         runtime=title.runtime,
         certificate=(title.certifications or {}).get(user.region),
         poster_path=title.poster_path,

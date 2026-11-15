@@ -2091,6 +2091,10 @@ export interface components {
             original_title: string;
             /** Year */
             year: number | null;
+            /** Release Date */
+            release_date?: string | null;
+            /** Status */
+            status?: string | null;
             /** Runtime */
             runtime: number | null;
             /** Genres */
@@ -2495,6 +2499,10 @@ export interface components {
             original_language: string;
             /** Year */
             year: number | null;
+            /** Release Date */
+            release_date?: string | null;
+            /** Status */
+            status?: string | null;
             /** Runtime */
             runtime: number | null;
             /** Certificate */
@@ -2582,6 +2590,10 @@ export interface components {
             original_language: string;
             /** Year */
             year: number | null;
+            /** Release Date */
+            release_date?: string | null;
+            /** Status */
+            status?: string | null;
             /** Runtime */
             runtime: number | null;
             /** Certificate */
@@ -3468,6 +3480,10 @@ export interface components {
             original_language: string;
             /** Year */
             year: number | null;
+            /** Release Date */
+            release_date?: string | null;
+            /** Status */
+            status?: string | null;
             /** Runtime */
             runtime: number | null;
             /** Poster Path */
@@ -4039,6 +4055,10 @@ export interface components {
             original_language: string;
             /** Year */
             year: number | null;
+            /** Release Date */
+            release_date?: string | null;
+            /** Status */
+            status?: string | null;
             /** Runtime */
             runtime: number | null;
             /** Certificate */

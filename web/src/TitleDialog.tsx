@@ -6,6 +6,7 @@ import {
   errorMessage,
   facts,
   fetchTitleDetail,
+  formatReleaseDate,
   ratingToReaction,
   type TitlePreview,
   useAssignToChild,
@@ -297,7 +298,13 @@ function TitleSkeleton({
                   <h2 className="line-clamp-2 text-base font-bold leading-tight text-white sm:text-xl">
                     {preview.title}
                   </h2>
-                  {preview.year && <p className="mt-1 text-xs text-white/55 sm:text-sm">{preview.year}</p>}
+                  {(preview.release_date || preview.year || preview.status) && (
+                    <p className="mt-1 text-xs text-white/55 sm:text-sm">
+                      {[formatReleaseDate(preview.release_date, preview.year), preview.status]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  )}
                   {(preview.match !== null && preview.match !== undefined) || preview.imdb ? (
                     <div className="mt-2.5 flex flex-wrap items-center gap-2">
                       {preview.match !== null && preview.match !== undefined && (

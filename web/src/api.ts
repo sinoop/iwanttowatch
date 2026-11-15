@@ -325,16 +325,37 @@ export function useAvailability(tmdbIds: number[]) {
 }
 
 const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
+const releaseDateFormat = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeZone: 'UTC',
+})
 
-/** Year, certificate, language, and running time. */
+/** Format an ISO YYYY-MM-DD release date, falling back to year when absent. */
+export function formatReleaseDate(
+  releaseDate?: string | null,
+  year?: number | null,
+): string | number | null {
+  if (releaseDate) {
+    const parsed = new Date(`${releaseDate}T00:00:00Z`)
+    if (!Number.isNaN(parsed.getTime())) {
+      return releaseDateFormat.format(parsed)
+    }
+  }
+  return year ?? null
+}
+
+/** Release date (or year), status, certificate, language, and running time. */
 export function facts(film: {
   year: number | null
+  release_date?: string | null
+  status?: string | null
   certificate?: string | null
   original_language: string
   runtime: number | null
 }) {
   return [
-    film.year,
+    formatReleaseDate(film.release_date, film.year),
+    film.status,
     film.certificate,
     languageName.of(film.original_language),
     film.runtime ? `${Math.floor(film.runtime / 60)}h ${film.runtime % 60}m` : null,
@@ -550,6 +571,8 @@ export function useRadarQueue() {
 export interface TitlePreview {
   title: string
   year?: number | null
+  release_date?: string | null
+  status?: string | null
   poster_path?: string | null
   match?: number | null
   imdb?: TitleDetail['imdb']

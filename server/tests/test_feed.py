@@ -931,3 +931,27 @@ def test_feed_filters_by_decade(client: TestClient) -> None:
 
     page_min_only = feed(client, available_only=False, year_min=2000)
     assert {i["tmdb_id"] for i in page_min_only["items"]} == {803, 804}
+
+
+def test_title_release_date_and_status(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        test_imports,
+        "_details",
+        lambda tmdb_id: {
+            **base_details(tmdb_id),
+            **({"release_date": "2019-02-07", "status": "Released"} if tmdb_id == 201 else {}),
+        },
+    )
+    assert client.put("/api/v1/settings/tmdb", json={"api_key": KEY}).status_code == 200
+    client.put("/api/v1/titles/101/reaction", json={"reaction": "loved"})
+    feed(client)
+    idle(client)
+
+    detail = client.get("/api/v1/titles/201").json()
+    assert detail["release_date"] == "2019-02-07"
+    assert detail["status"] == "Released"
+
+    page = feed(client, available_only=False)
+    by_id = {i["tmdb_id"]: i for i in page["items"]}
+    assert by_id[201]["release_date"] == "2019-02-07"
+    assert by_id[201]["status"] == "Released"

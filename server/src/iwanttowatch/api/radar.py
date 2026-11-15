@@ -1,5 +1,7 @@
 """Acquisition Radar API: inspect missing from streaming and theatrical releases."""
 
+from datetime import date
+
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
@@ -21,6 +23,8 @@ class RadarItem(BaseModel):
     original_title: str
     original_language: str
     year: int | None
+    release_date: date | None = None
+    status: str | None = None
     runtime: int | None
     poster_path: str | None
     genres: list[str]

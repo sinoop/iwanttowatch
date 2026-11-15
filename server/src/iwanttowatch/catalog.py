@@ -115,6 +115,7 @@ def _title_fields(d: dict[str, Any]) -> dict[str, Any]:
         "origin_countries": d.get("origin_country")
         or [c["iso_3166_1"] for c in d.get("production_countries", [])],
         "release_date": release,
+        "status": d.get("status") or None,
         "year": release.year if release else None,
         "runtime": d.get("runtime") or None,
         "overview": d.get("overview") or "",

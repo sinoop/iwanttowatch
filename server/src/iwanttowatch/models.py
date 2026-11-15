@@ -103,6 +103,7 @@ class Title(Base):
     spoken_languages: Mapped[list[str]] = mapped_column(JSON, default=list)
     origin_countries: Mapped[list[str]] = mapped_column(JSON, default=list)
     release_date: Mapped[date | None]
+    status: Mapped[str | None] = mapped_column(String(32))
     year: Mapped[int | None]
     runtime: Mapped[int | None]
     overview: Mapped[str] = mapped_column(Text, default="")

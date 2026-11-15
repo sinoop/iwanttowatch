@@ -9,7 +9,7 @@ expires.
 import secrets
 import time
 from collections import defaultdict, deque
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
@@ -106,6 +106,8 @@ class BallotFilm(BaseModel):
     title: str
     original_title: str
     year: int | None
+    release_date: date | None = None
+    status: str | None = None
     runtime: int | None
     genres: list[str]
     poster_path: str | None
@@ -315,6 +317,8 @@ def read_ballot(
                 title=titles[i].title,
                 original_title=titles[i].original_title,
                 year=titles[i].year,
+                release_date=titles[i].release_date,
+                status=titles[i].status,
                 runtime=titles[i].runtime,
                 genres=titles[i].genres,
                 poster_path=titles[i].poster_path,
