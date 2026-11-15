@@ -17,11 +17,12 @@ import queue
 import threading
 from collections.abc import Collection, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, timedelta
+from datetime import UTC, date, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
 from sqlalchemy import Engine, delete, func, or_, select
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.orm import Session
 
 from iwanttowatch import imdb
@@ -39,6 +40,8 @@ from iwanttowatch.models import (
     LibraryItem,
     OutlierReview,
     Recommendation,
+    ScopedFeedBuild,
+    ScopedFeedItem,
     ShortlistItem,
     Title,
     User,
@@ -527,21 +530,165 @@ def candidates(
     return list(ordered)[:MAX_CANDIDATES]
 
 
+SCOPED_DISCOVER_CACHE = timedelta(hours=6)
+SCOPED_DISCOVER_PAGES = 2
+
+
+def theatrical_candidates(
+    session: Session, tmdb: TmdbClient, user: User, *, force_refresh: bool = False
+) -> list[int]:
+    """Gather unseen, non-library theatrical releases in the user's region."""
+    target_region = (user.region or "US").upper()
+    cache_ttl = timedelta(0) if force_refresh else SCOPED_DISCOVER_CACHE
+    owners = library_owners(session, user)
+    in_library = set(
+        session.scalars(select(LibraryItem.tmdb_id).where(LibraryItem.user_id.in_(owners)))
+    )
+    user_seen = seen(session, user.id)
+    found: list[int] = []
+
+    for page in range(1, SCOPED_DISCOVER_PAGES + 1):
+        try:
+            now_playing = tmdb.get(
+                "/movie/now_playing",
+                {"region": target_region, "page": page},
+                cache_for=cache_ttl,
+            )
+            for item in now_playing.get("results", []):
+                if "id" in item:
+                    found.append(int(item["id"]))
+            if not now_playing.get("results") or page >= now_playing.get("total_pages", page):
+                break
+        except TmdbError as err:
+            log.warning("Could not fetch TMDb now_playing for %s: %s", target_region, err)
+            break
+
+    doc_id = str(genre_id(tmdb, DOCUMENTARY_GENRE) or 99)
+    today = date.today()
+    start_date = (today - timedelta(days=90)).isoformat()
+    end_date = (today + timedelta(days=21)).isoformat()
+    for page in range(1, SCOPED_DISCOVER_PAGES + 1):
+        try:
+            discover_data = tmdb.get(
+                "/discover/movie",
+                {
+                    "region": target_region,
+                    "with_release_type": "2|3",
+                    "primary_release_date.gte": start_date,
+                    "primary_release_date.lte": end_date,
+                    "sort_by": "popularity.desc",
+                    "without_genres": doc_id,
+                    "include_adult": "false",
+                    "page": page,
+                },
+                cache_for=cache_ttl,
+            )
+            for item in discover_data.get("results", []):
+                if "id" in item:
+                    found.append(int(item["id"]))
+            if not discover_data.get("results") or page >= discover_data.get("total_pages", page):
+                break
+        except TmdbError as err:
+            log.warning("Could not fetch TMDb theatrical discover for %s: %s", target_region, err)
+            break
+
+    unique = [tid for tid in dict.fromkeys(found) if tid not in user_seen and tid not in in_library]
+    return unique[:MAX_CANDIDATES]
+
+
+def recently_added_candidates(
+    session: Session, tmdb: TmdbClient, user: User, *, force_refresh: bool = False
+) -> list[int]:
+    """Gather unseen films recently released to streaming in the user's region."""
+    days = max(1, min(30, getattr(user, "recently_added_days", 7) or 7))
+    today = date.today()
+    start_date = (today - timedelta(days=days)).isoformat()
+    end_date = today.isoformat()
+    target_region = (user.region or "US").upper()
+    cache_ttl = timedelta(0) if force_refresh else SCOPED_DISCOVER_CACHE
+    providers = user.subscriptions
+
+    doc_id = str(genre_id(tmdb, DOCUMENTARY_GENRE) or 99)
+    base_params: dict[str, Any] = {
+        "region": target_region,
+        "watch_region": target_region,
+        "with_watch_monetization_types": "flatrate|free|ads",
+        "sort_by": "popularity.desc",
+        "without_genres": doc_id,
+        "include_adult": "false",
+    }
+    if providers:
+        base_params["with_watch_providers"] = "|".join(str(p) for p in providers)
+
+    found: list[int] = []
+    for page in range(1, SCOPED_DISCOVER_PAGES + 1):
+        try:
+            data = tmdb.get(
+                "/discover/movie",
+                {
+                    **base_params,
+                    "with_release_type": "4|5|6",
+                    "release_date.gte": start_date,
+                    "release_date.lte": end_date,
+                    "page": page,
+                },
+                cache_for=cache_ttl,
+            )
+            for item in data.get("results", []):
+                if "id" in item:
+                    found.append(int(item["id"]))
+            if not data.get("results") or page >= data.get("total_pages", page):
+                break
+        except TmdbError as err:
+            log.warning("Could not fetch TMDb recently added streaming discover: %s", err)
+            break
+
+    if len(found) < 5:
+        for page in range(1, SCOPED_DISCOVER_PAGES + 1):
+            try:
+                alt_data = tmdb.get(
+                    "/discover/movie",
+                    {
+                        **base_params,
+                        "primary_release_date.gte": start_date,
+                        "primary_release_date.lte": end_date,
+                        "page": page,
+                    },
+                    cache_for=cache_ttl,
+                )
+                for item in alt_data.get("results", []):
+                    if "id" in item:
+                        found.append(int(item["id"]))
+                if not alt_data.get("results") or page >= alt_data.get("total_pages", page):
+                    break
+            except TmdbError as err:
+                log.warning("Could not fetch TMDb primary_release_date discover: %s", err)
+                break
+
+    user_seen = seen(session, user.id)
+    unique = [tid for tid in dict.fromkeys(found) if tid not in user_seen]
+    return unique[:MAX_CANDIDATES]
+
+
 def ai_review(
     session: Session,
     tmdb: TmdbClient,
     user: User,
     scored: Sequence[Scored],
     titles: dict[int, Title],
+    *,
+    add_suggestions: bool = True,
+    replace_all: bool = True,
 ) -> None:
     """Ask the configured LLM to predict the user's rating for the top of their feed,
-    playable films first, and to add a few films of its own; store what it says.
+    playable films first, and optionally add a few films of its own; store what it says.
 
     Without an LLM nothing is stored. When it fails, the last build's review is kept.
     """
     llm = provider_from_settings(session, "suggestions", user.id)
     if llm is None:
-        session.execute(delete(AiPick).where(AiPick.user_id == user.id))
+        if replace_all:
+            session.execute(delete(AiPick).where(AiPick.user_id == user.id))
         return
     playable = _playable(session, user, [s.tmdb_id for s in scored])
     top = sorted(
@@ -557,20 +704,24 @@ def ai_review(
         log.warning("Couldn't get the AI's review for user %s", user.id, exc_info=True)
         return
     if review is None:
-        session.execute(delete(AiPick).where(AiPick.user_id == user.id))
+        if replace_all:
+            session.execute(delete(AiPick).where(AiPick.user_id == user.id))
         return
 
-    def match(title: str, year: int | None) -> int | None:
-        try:
-            return find_by_title(tmdb, title, year)[0]
-        except TmdbNotFound:
-            return None
+    added: dict[int, Any] = {}
+    if add_suggestions and review.additions:
 
-    with ThreadPoolExecutor(PARALLEL_REQUESTS) as pool:
-        found = pool.map(
-            match, [a.title for a in review.additions], [a.year for a in review.additions]
-        )
-        added = {i: a for i, a in zip(found, review.additions, strict=True) if i is not None}
+        def match(title: str, year: int | None) -> int | None:
+            try:
+                return find_by_title(tmdb, title, year)[0]
+            except TmdbNotFound:
+                return None
+
+        with ThreadPoolExecutor(PARALLEL_REQUESTS) as pool:
+            found = pool.map(
+                match, [a.title for a in review.additions], [a.year for a in review.additions]
+            )
+            added = {i: a for i, a in zip(found, review.additions, strict=True) if i is not None}
     picks = {i: AiPick(user_id=user.id, tmdb_id=i, why=r.why, rating=r.rating, added=False)
              for i, r in review.ratings.items()}  # fmt: skip
     for tmdb_id, addition in added.items():
@@ -581,10 +732,27 @@ def ai_review(
     # TMDb lookups write its cache on another connection, so write here only after them.
     ensure_titles(session, tmdb, list(picks))
     for tmdb_id, film in review.ratings.items():
-        if film.moods is not None:
+        if film.moods is not None and tmdb_id in titles:
             titles[tmdb_id].ai_moods = film.moods
-    session.execute(delete(AiPick).where(AiPick.user_id == user.id))
-    session.add_all(picks.values())
+    if replace_all:
+        session.execute(delete(AiPick).where(AiPick.user_id == user.id))
+        session.add_all(picks.values())
+    else:
+        for pick in picks.values():
+            session.execute(
+                insert(AiPick)
+                .values(
+                    user_id=pick.user_id,
+                    tmdb_id=pick.tmdb_id,
+                    why=pick.why,
+                    rating=pick.rating,
+                    added=False,
+                )
+                .on_conflict_do_update(
+                    index_elements=[AiPick.user_id, AiPick.tmdb_id],
+                    set_={"why": pick.why, "rating": pick.rating},
+                )
+            )
 
 
 def tag_feed_moods(
@@ -843,6 +1011,113 @@ def build_feed(
         session.commit()
 
 
+def build_scoped_feed(
+    engine: Engine,
+    tmdb_base_url: str,
+    data_dir: Path,
+    user_id: int,
+    scope: str,
+    *,
+    force_refresh: bool = False,
+) -> None:
+    """Build a scoped discovery feed ("theatrical" or "recently_added") with taste scoring
+    and AI review/ordering, without modifying the user's main Recommendation feed."""
+    with Session(engine) as session:
+        user = session.get(User, user_id)
+        if user is None:
+            return
+        state = session.get(ScopedFeedBuild, (user_id, scope)) or ScopedFeedBuild(
+            user_id=user_id, scope=scope, status="queued"
+        )
+        session.add(state)
+
+        def step(text: str) -> None:
+            state.status, state.step, state.error = "building", text, None
+            session.commit()
+
+        tmdb = client_from_settings(session, engine, tmdb_base_url)
+        if tmdb is None:
+            state.status, state.step = "failed", None
+            state.error = "Add a TMDb API key in Settings first"
+            session.commit()
+            return
+        try:
+            if user.is_child and refresh_limit(user, tmdb):
+                session.commit()
+            step("Finding films")
+            labels = user_labels(session, user_id)
+            if scope == "theatrical":
+                ids = theatrical_candidates(session, tmdb, user, force_refresh=force_refresh)
+            else:
+                ids = recently_added_candidates(session, tmdb, user, force_refresh=force_refresh)
+
+            step(f"Reading details of {len(ids)} films")
+            titles = ensure_titles(session, tmdb, [*(label.tmdb_id for label in labels), *ids])
+            session.commit()
+            ids = [i for i in ids if i in titles and not is_non_movie(titles[i])]
+            if imdb.enabled(session):
+                step("Reading IMDb ratings")
+                imdb.update_ratings(session, data_dir)
+
+            if scope == "recently_added":
+                step("Checking where they stream")
+                places = availability(session, tmdb, ids, user.region)
+                streamable: list[int] = []
+                for tid in ids:
+                    row = places.get(tid)
+                    if row is None:
+                        continue
+                    if user.subscriptions:
+                        if watchable(row.offers, user.subscriptions):
+                            streamable.append(tid)
+                    elif any(o["kind"] in ("flatrate", "free", "ads") for o in row.offers):
+                        streamable.append(tid)
+                ids = streamable
+
+            step("Matching them to your taste")
+            family = family_tagged_films(session) if user.is_child else set()
+
+            def rank(rank_ids: list[int]) -> Sequence[Scored]:
+                picks = stored_picks(session, user_id)
+                fav_people = set(
+                    session.scalars(
+                        select(FavoritePerson.person_id).where(FavoritePerson.user_id == user_id)
+                    )
+                )
+                scored = score(
+                    titles,
+                    labels,
+                    rank_ids,
+                    user.birth_year,
+                    ai_percentiles(session, user_id, picks),
+                    child=user.is_child,
+                    family_picks=family,
+                    favorite_people=fav_people,
+                )
+                _store_scoped(session, user_id, scope, scored, picks)
+                return scored
+
+            scored = rank(ids)
+            if llm_order(session) and scored:
+                step("Asking the AI to review your picks")
+                ai_review(
+                    session, tmdb, user, scored, titles, add_suggestions=False, replace_all=False
+                )
+                session.commit()
+                step("Asking the AI for mood tags")
+                tag_feed_moods(session, user, scored, titles)
+                session.commit()
+                rank(ids)
+        except TmdbError as error:
+            session.rollback()
+            state.status, state.step = "failed", None
+            state.error = f"{error}. Try again in a few minutes."
+            session.commit()
+            return
+        state.status, state.step, state.error, state.built_at = "ready", None, None, utcnow()
+        session.commit()
+
+
 def rescore_feed(engine: Engine, user_id: int) -> None:
     """Score the feed's films again with the user's latest ratings and feedback."""
     with Session(engine) as session:
@@ -963,6 +1238,31 @@ def _store(
     )
 
 
+def _store_scoped(
+    session: Session,
+    user_id: int,
+    scope: str,
+    scored: Sequence[Scored],
+    picks: dict[int, AiPick],
+) -> None:
+    session.execute(
+        delete(ScopedFeedItem).where(
+            ScopedFeedItem.user_id == user_id, ScopedFeedItem.scope == scope
+        )
+    )
+    session.add_all(
+        ScopedFeedItem(
+            user_id=user_id,
+            scope=scope,
+            tmdb_id=s.tmdb_id,
+            score=s.score,
+            rank=rank,
+            reasons=feed_reasons(s, picks),
+        )
+        for rank, s in enumerate(scored)
+    )
+
+
 def feed_reasons(scored: Scored, picks: dict[int, AiPick]) -> list[str]:
     """Why a film suits the user: the LLM's reason first, as it speaks to what the user
     said about films."""
@@ -997,8 +1297,15 @@ class FeedWorker:
             unfinished = session.scalars(
                 select(FeedBuild.user_id).where(FeedBuild.status.in_(["queued", "building"]))
             ).all()
+            unfinished_scoped = session.execute(
+                select(ScopedFeedBuild.user_id, ScopedFeedBuild.scope).where(
+                    ScopedFeedBuild.status.in_(["queued", "building"])
+                )
+            ).all()
         for user_id in unfinished:
-            self._queue.put(("build", user_id, None, None, None))
+            self._queue.put(("build", user_id, None, None, None, "main", False))
+        for user_id, scope in unfinished_scoped:
+            self._queue.put(("build", user_id, None, None, None, scope, False))
         threading.Thread(target=self._loop, name="feed", daemon=True).start()
 
     def request(
@@ -1007,10 +1314,19 @@ class FeedWorker:
         language: str | None = None,
         genre: str | None = None,
         content_type: str | None = None,
+        scope: str = "main",
+        force_refresh: bool = False,
     ) -> None:
-        """Rebuild the user's feed from scratch, fetching fresh candidates."""
+        """Rebuild the user's feed (or scoped filter) from scratch, fetching fresh candidates."""
         with Session(self._engine) as session:
-            state = session.get(FeedBuild, user_id) or FeedBuild(user_id=user_id, status="")
+            if scope == "main":
+                state: FeedBuild | ScopedFeedBuild = session.get(FeedBuild, user_id) or FeedBuild(
+                    user_id=user_id, status=""
+                )
+            else:
+                state = session.get(ScopedFeedBuild, (user_id, scope)) or ScopedFeedBuild(
+                    user_id=user_id, scope=scope, status=""
+                )
             if state.status == "queued":
                 return
             # A build already running started from older data, so queue another.
@@ -1018,7 +1334,7 @@ class FeedWorker:
                 state.status, state.error = "queued", None
                 session.add(state)
                 session.commit()
-        self._queue.put(("build", user_id, language, genre, content_type))
+        self._queue.put(("build", user_id, language, genre, content_type, scope, force_refresh))
 
     def rescore_soon(self, user_id: int) -> None:
         """Rescore the user's feed once they stop rating and giving feedback for a moment."""
@@ -1061,26 +1377,42 @@ class FeedWorker:
                 self._queue_old_feeds()
                 continue
             job, user_id = item[0], item[1]
+            scope = item[5] if len(item) > 5 else "main"
             try:
                 if job == "build":
                     language = item[2] if len(item) > 2 else None
                     genre = item[3] if len(item) > 3 else None
                     content_type = item[4] if len(item) > 4 else None
-                    build_feed(
-                        self._engine,
-                        self._tmdb_base_url,
-                        self._data_dir,
-                        user_id,
-                        language=language,
-                        genre=genre,
-                        content_type=content_type,
-                    )
+                    force_refresh = bool(item[6]) if len(item) > 6 else False
+                    if scope == "main":
+                        build_feed(
+                            self._engine,
+                            self._tmdb_base_url,
+                            self._data_dir,
+                            user_id,
+                            language=language,
+                            genre=genre,
+                            content_type=content_type,
+                        )
+                    else:
+                        build_scoped_feed(
+                            self._engine,
+                            self._tmdb_base_url,
+                            self._data_dir,
+                            user_id,
+                            scope,
+                            force_refresh=force_refresh,
+                        )
                 else:
                     self._rescore(user_id)
             except Exception:
                 log.exception("Updating the feed of user %s crashed", user_id)
                 with Session(self._engine) as session:
-                    state = session.get(FeedBuild, user_id)
+                    state: FeedBuild | ScopedFeedBuild | None = (
+                        session.get(FeedBuild, user_id)
+                        if scope == "main"
+                        else session.get(ScopedFeedBuild, (user_id, scope))
+                    )
                     if state is not None:
                         state.status, state.step = "failed", None
                         state.error = "Unexpected error; see the server log"

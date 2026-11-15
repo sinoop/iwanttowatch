@@ -127,6 +127,8 @@ def update_profile(
         user.default_content_type = body.default_content_type
     if body.show_continue_watching is not None:
         user.show_continue_watching = body.show_continue_watching
+    if body.recently_added_days is not None:
+        user.recently_added_days = body.recently_added_days
     session.commit()
     request.app.state.feed_worker.rescore_soon(user.id)
     return Me.model_validate(user)

@@ -3206,6 +3206,11 @@ export interface components {
              * @default movies
              */
             default_content_type: string;
+            /**
+             * Recently Added Days
+             * @default 7
+             */
+            recently_added_days: number;
         };
         /** MemberMatch */
         MemberMatch: {
@@ -3482,6 +3487,8 @@ export interface components {
             default_content_type?: string | null;
             /** Show Continue Watching */
             show_continue_watching?: boolean | null;
+            /** Recently Added Days */
+            recently_added_days?: number | null;
         };
         /** ProfilingUpdate */
         ProfilingUpdate: {
@@ -5790,6 +5797,7 @@ export interface operations {
                 available_only?: boolean;
                 unavailable_only?: boolean;
                 theatrical?: boolean;
+                recently_added?: boolean;
                 platforms?: string[];
                 language?: string | null;
                 genre?: string | null;
@@ -5885,6 +5893,8 @@ export interface operations {
                 language?: string | null;
                 genre?: string | null;
                 content_type?: string | null;
+                theatrical?: boolean;
+                recently_added?: boolean;
             };
             header?: never;
             path?: never;

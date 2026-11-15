@@ -36,6 +36,8 @@ class User(Base):
     default_content_type: Mapped[str] = mapped_column(
         String(32), default="movies", server_default="movies"
     )
+    # Lookback window in days for the "Recently Added to Streaming" filter (1–30, default 7).
+    recently_added_days: Mapped[int] = mapped_column(default=7, server_default="7")
     # Show rent and buy options in movie details (off by default).
     show_rent_buy: Mapped[bool] = mapped_column(default=False)
     # Show "Continue Watching on Jellyfin" in-progress shelf on Discover (off by default).
@@ -417,6 +419,36 @@ class FeedBuild(Base):
     step: Mapped[str | None]
     error: Mapped[str | None]
     built_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ScopedFeedBuild(Base):
+    """Progress of building a scoped discovery filter ("theatrical" or "recently_added")."""
+
+    __tablename__ = "scoped_feed_builds"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    scope: Mapped[str] = mapped_column(String(32), primary_key=True)
+    status: Mapped[str] = mapped_column(String(16))
+    step: Mapped[str | None]
+    error: Mapped[str | None]
+    built_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ScopedFeedItem(Base):
+    """A scored (and optionally AI-reviewed) film in a scoped discovery filter."""
+
+    __tablename__ = "scoped_feed_items"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    scope: Mapped[str] = mapped_column(String(32), primary_key=True)
+    tmdb_id: Mapped[int] = mapped_column(ForeignKey("titles.tmdb_id"), primary_key=True)
+    score: Mapped[float]
+    rank: Mapped[int]
+    reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
 
 
 class ApiCache(Base):

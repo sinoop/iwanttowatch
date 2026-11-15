@@ -365,13 +365,18 @@ export function facts(film: {
 /** Where films must be playable: anywhere the user can watch, on chosen platforms
  * ("jellyfin" or TMDb provider IDs), everything including films on none of them,
  * in theatres, or only films unavailable to the user. */
-export type WatchOn = 'anywhere' | 'everything' | 'unavailable' | 'theatrical' | string[]
+export type WatchOn = 'anywhere' | 'everything' | 'unavailable' | 'theatrical' | 'recently_added' | string[]
 
 export function watchOnQuery(watchOn: WatchOn) {
   return {
-    available_only: watchOn !== 'everything' && watchOn !== 'unavailable' && watchOn !== 'theatrical',
+    available_only:
+      watchOn !== 'everything' &&
+      watchOn !== 'unavailable' &&
+      watchOn !== 'theatrical' &&
+      watchOn !== 'recently_added',
     unavailable_only: watchOn === 'unavailable' || undefined,
     theatrical: watchOn === 'theatrical' || undefined,
+    recently_added: watchOn === 'recently_added' || undefined,
     platforms: Array.isArray(watchOn) ? watchOn : undefined,
   }
 }

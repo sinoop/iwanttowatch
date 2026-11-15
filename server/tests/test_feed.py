@@ -961,6 +961,9 @@ def test_feed_theatrical_filter(client: TestClient) -> None:
     client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
     res = client.get("/api/v1/feed?theatrical=true")
     assert res.status_code == 200
+    idle(client)
+    res = client.get("/api/v1/feed?theatrical=true")
+    assert res.status_code == 200
     data = res.json()
     assert data["status"] == "ready"
     assert data["total"] > 0
@@ -969,6 +972,14 @@ def test_feed_theatrical_filter(client: TestClient) -> None:
     assert item["availability"]["in_theaters"] is True
     assert "match" in item
 
+    # Refreshing theatrical feed keeps status ready and works with filters
+    refresh_res = client.post("/api/v1/feed/refresh?theatrical=true")
+    assert refresh_res.status_code == 202
+    idle(client)
+    res_after = client.get("/api/v1/feed?theatrical=true")
+    assert res_after.json()["status"] == "ready"
+    assert res_after.json()["total"] > 0
+
     # Filter theatrical items by genre
     res_drama = client.get("/api/v1/feed?theatrical=true&genre=Drama")
     assert res_drama.status_code == 200
@@ -976,3 +987,37 @@ def test_feed_theatrical_filter(client: TestClient) -> None:
     assert drama_data["total"] > 0
     for it in drama_data["items"]:
         assert "Drama" in it["genres"]
+
+
+def test_feed_recently_added_filter_and_profile_days(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(test_imports.WATCH, 201, {"IN": {"flatrate": [test_imports.NETFLIX]}})
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    client.put("/api/v1/me/streaming", json={"region": "IN", "subscriptions": [8]})
+    idle(client)
+
+    # Profile setting for recently_added_days
+    prof = client.put("/api/v1/me/profile", json={"recently_added_days": 14})
+    assert prof.status_code == 200
+    assert prof.json()["recently_added_days"] == 14
+    assert client.put("/api/v1/me/profile", json={"recently_added_days": 0}).status_code == 422
+
+    # First request queues scoped build for recently_added
+    res = client.get("/api/v1/feed?recently_added=true")
+    assert res.status_code == 200
+    idle(client)
+
+    res = client.get("/api/v1/feed?recently_added=true")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ready"
+    assert data["total"] > 0
+    assert "match" in data["items"][0]
+
+    # Refreshing recently_added does not wipe out the main feed
+    refresh_res = client.post("/api/v1/feed/refresh?recently_added=true")
+    assert refresh_res.status_code == 202
+    idle(client)
+    main_page = feed(client)
+    assert main_page["status"] == "ready"

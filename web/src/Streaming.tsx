@@ -315,13 +315,15 @@ export function PlatformFilter({
       ? 'Available to me'
       : value === 'theatrical'
         ? 'In Theatres'
-        : value === 'unavailable'
-          ? 'Only unavailable to me'
-          : value === 'everything'
-            ? 'Include unavailable'
-            : activePlatforms.length === 1
-              ? activePlatforms[0].name
-              : `${activePlatforms.length} platforms`
+        : value === 'recently_added'
+          ? 'Recently added to streaming'
+          : value === 'unavailable'
+            ? 'Only unavailable to me'
+            : value === 'everything'
+              ? 'Include unavailable'
+              : activePlatforms.length === 1
+                ? activePlatforms[0].name
+                : `${activePlatforms.length} platforms`
 
   return (
     <div ref={menuRef} className="relative">
@@ -332,7 +334,11 @@ export function PlatformFilter({
         aria-label={`Where to watch: ${label}`}
         onClick={() => setOpen((v) => !v)}
         className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none ${
-          Array.isArray(value) || value === 'everything' || value === 'unavailable' || value === 'theatrical'
+          Array.isArray(value) ||
+          value === 'everything' ||
+          value === 'unavailable' ||
+          value === 'theatrical' ||
+          value === 'recently_added'
             ? 'border-accent/60 bg-accent/10 text-accent-strong'
             : 'border-white/10 bg-black/30 text-white/80 hover:border-white/25 hover:text-white'
         }`}
@@ -350,6 +356,7 @@ export function PlatformFilter({
           </span>
         )}
         {value === 'theatrical' && <span>🎬</span>}
+        {value === 'recently_added' && <span>✨</span>}
         <span>{label}</span>
         <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden className="size-4 text-white/50">
           <path
@@ -391,6 +398,21 @@ export function PlatformFilter({
               <span>In Theatres</span>
             </span>
             {value === 'theatrical' && <span aria-hidden>✓</span>}
+          </button>
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={value === 'recently_added'}
+            onClick={() => onChange('recently_added')}
+            className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+              value === 'recently_added' ? 'bg-accent/15 text-accent-strong' : 'text-white/75 hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              <span>✨</span>
+              <span>Recently added to streaming</span>
+            </span>
+            {value === 'recently_added' && <span aria-hidden>✓</span>}
           </button>
           <button
             type="button"

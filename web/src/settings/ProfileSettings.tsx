@@ -14,6 +14,9 @@ export function ProfileSettings({ me }: { me: Me }) {
       <div id="content-filter" className="scroll-mt-6">
         <DefaultContentFilter me={me} />
       </div>
+      <div id="recently-added-days" className="scroll-mt-6">
+        <RecentlyAddedDays me={me} />
+      </div>
       <div id="birth-year" className="scroll-mt-6">
         <BirthYear me={me} />
       </div>
@@ -371,6 +374,57 @@ function ContinueWatchingPreference({ me }: { me: Me }) {
           />
           <div className="h-6 w-11 rounded-full bg-white/10 peer-checked:bg-accent peer-focus:ring-2 peer-focus:ring-accent/40 after:absolute after:top-0.5 after:left-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white" />
         </label>
+      </div>
+      {save.error && (
+        <div className="mt-3">
+          <ErrorText>{save.error.message}</ErrorText>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function RecentlyAddedDays({ me }: { me: Me }) {
+  const queryClient = useQueryClient()
+  const [days, setDays] = useState(me.recently_added_days ?? 7)
+  const save = useMutation({
+    mutationFn: async (recently_added_days: number) => {
+      const { data, error } = await api.PUT('/api/v1/me/profile', { body: { recently_added_days } })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['me'], data)
+      setDays(data.recently_added_days ?? 7)
+      queryClient.invalidateQueries({ queryKey: ['feed'] })
+    },
+  })
+
+  return (
+    <section className="rounded-xl border border-white/10 p-5">
+      <h2 className="font-semibold text-white">Recently added to streaming window</h2>
+      <p className="mt-2 text-sm text-white/60">
+        How many days back the “Recently added to streaming” filter on Discover looks for new digital releases.
+        Refresh that filter on Discover after changing this to rebuild the list.
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <select
+          value={days}
+          onChange={(e) => {
+            const val = Number(e.target.value)
+            setDays(val)
+            save.mutate(val)
+          }}
+          disabled={save.isPending}
+          className="rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30"
+        >
+          <option value={3}>Past 3 days</option>
+          <option value={7}>Past 7 days (default)</option>
+          <option value={14}>Past 14 days</option>
+          <option value={30}>Past 30 days</option>
+        </select>
+        {save.isPending && <span className="text-xs text-white/50">Saving…</span>}
+        {save.isSuccess && <span className="text-xs text-emerald-300">Saved.</span>}
       </div>
       {save.error && (
         <div className="mt-3">

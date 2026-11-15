@@ -28,6 +28,8 @@ class Me(BaseModel):
     max_certificate: str | None = None
     # Default content type in Discovery: "movies", "standup", "concerts", "all".
     default_content_type: str = "movies"
+    # Lookback window in days for the "Recently Added to Streaming" filter (1–30).
+    recently_added_days: int = 7
 
 
 # Optional; films from before it count a little against the user's matches.
@@ -38,6 +40,7 @@ class ProfileUpdate(BaseModel):
     birth_year: BirthYear | None = None
     default_content_type: str | None = None
     show_continue_watching: bool | None = None
+    recently_added_days: Annotated[int, Field(ge=1, le=30)] | None = None
 
 
 class SetupStatus(BaseModel):

@@ -2129,6 +2129,16 @@
             }
           },
           {
+            "name": "recently_added",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Recently Added"
+            }
+          },
+          {
             "name": "platforms",
             "in": "query",
             "required": false,
@@ -2630,6 +2640,26 @@
                 }
               ],
               "title": "Content Type"
+            }
+          },
+          {
+            "name": "theatrical",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Theatrical"
+            }
+          },
+          {
+            "name": "recently_added",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Recently Added"
             }
           }
         ],
@@ -9095,6 +9125,11 @@
             "type": "string",
             "title": "Default Content Type",
             "default": "movies"
+          },
+          "recently_added_days": {
+            "type": "integer",
+            "title": "Recently Added Days",
+            "default": 7
           }
         },
         "type": "object",
@@ -9978,6 +10013,19 @@
               }
             ],
             "title": "Show Continue Watching"
+          },
+          "recently_added_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 30.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recently Added Days"
           }
         },
         "type": "object",
