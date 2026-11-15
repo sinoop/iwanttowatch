@@ -9,6 +9,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert
 
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
+from iwanttowatch.api.streaming import Offer
 from iwanttowatch.children import library_owners
 from iwanttowatch.db import utcnow
 from iwanttowatch.feed import seen
@@ -40,6 +41,7 @@ class PersonCredit(BaseModel):
     watched: bool = False
     in_library: bool = False
     streaming_services: list[str] = Field(default_factory=list)
+    streaming_offers: list[Offer] = Field(default_factory=list)
 
 
 class PersonAffinity(BaseModel):
@@ -354,6 +356,7 @@ def get_person(
     )
 
     avail_map: dict[int, list[str]] = {}
+    offers_map: dict[int, list[Offer]] = {}
     if movie_ids and user.subscriptions:
         subs = set(user.subscriptions)
         for av in session.scalars(
@@ -361,13 +364,25 @@ def get_person(
                 Availability.tmdb_id.in_(movie_ids), Availability.region == user.region
             )
         ):
-            active_names = [
-                o["name"]
-                for o in av.offers
-                if o.get("provider_id") in subs and o.get("kind") in ("flatrate", "free", "ads")
-            ]
-            if active_names:
-                avail_map[av.tmdb_id] = list(dict.fromkeys(active_names))
+            by_provider: dict[int, Offer] = {}
+            for o in av.offers:
+                pid = o.get("provider_id")
+                if (
+                    isinstance(pid, int)
+                    and pid in subs
+                    and o.get("kind") in ("flatrate", "free", "ads")
+                    and pid not in by_provider
+                ):
+                    by_provider[pid] = Offer(
+                        provider_id=pid,
+                        name=o["name"],
+                        logo_path=o.get("logo_path"),
+                        kind=o["kind"],
+                    )
+            if by_provider:
+                offers_list = list(by_provider.values())
+                offers_map[av.tmdb_id] = offers_list
+                avail_map[av.tmdb_id] = list(dict.fromkeys(o.name for o in offers_list))
 
     imdb_map: dict[int, tuple[float | None, int | None]] = {}
     match_map: dict[int, int] = {}
@@ -415,6 +430,7 @@ def get_person(
                 watched=is_watched,
                 in_library=is_in_library,
                 streaming_services=services,
+                streaming_offers=offers_map.get(mid, []),
             )
         )
 

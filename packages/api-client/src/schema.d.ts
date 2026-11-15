@@ -3377,6 +3377,8 @@ export interface components {
             in_library: boolean;
             /** Streaming Services */
             streaming_services?: string[];
+            /** Streaming Offers */
+            streaming_offers?: components["schemas"]["Offer"][];
         };
         /** PersonDetail */
         PersonDetail: {

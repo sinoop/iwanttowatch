@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { fetchTitleDetail, ratingToReaction, type TitlePreview, useFavoritePerson, usePerson } from './api'
 import { ReactionBadge } from './RateDialog'
+import { JellyfinLogo, ProviderLogo } from './Streaming'
 import { ImdbBadge, MatchBadge } from './TitleDialog'
 import { segmentedBadgeClass, segmentedTabClass } from './tabs'
 import { Button, ErrorText, Poster, SegmentedCapsule } from './ui'
@@ -68,7 +69,9 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
   const hasDirected = allFilms.some((f) => f.job === 'Director')
   const hasActed = allFilms.some((f) => Boolean(f.character) || !f.job)
   const isDualRole = hasDirected && hasActed
-  const availableFilms = allFilms.filter((f) => f.in_library || (f.streaming_services?.length ?? 0) > 0)
+  const availableFilms = allFilms.filter(
+    (f) => f.in_library || (f.streaming_offers?.length ?? f.streaming_services?.length ?? 0) > 0,
+  )
   const tabFilms = tab === 'available' ? availableFilms : allFilms
   const baseFilms =
     !isDualRole || roleFilter === 'all'
@@ -410,16 +413,19 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                             </span>
                           ) : null}
                           {film.in_library && (
-                            <span className="rounded bg-indigo-500/20 px-1.5 py-0.2 text-[10px] font-semibold text-indigo-300">
-                              On Jellyfin
+                            <span title="On Jellyfin" className="inline-flex items-center">
+                              <JellyfinLogo className="size-4.5" />
+                              <span className="sr-only">On Jellyfin</span>
                             </span>
                           )}
-                          {film.streaming_services?.map((svc) => (
+                          {film.streaming_offers?.map((offer) => (
                             <span
-                              key={svc}
-                              className="rounded bg-emerald-500/15 px-1.5 py-0.2 text-[10px] font-medium text-emerald-300"
+                              key={offer.provider_id}
+                              title={`On ${offer.name}${offer.kind === 'flatrate' ? '' : ' (free)'}`}
+                              className="inline-flex items-center"
                             >
-                              On {svc}
+                              <ProviderLogo path={offer.logo_path} name={offer.name} className="size-4.5" />
+                              <span className="sr-only">On {offer.name}</span>
                             </span>
                           ))}
                         </div>

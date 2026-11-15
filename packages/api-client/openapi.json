@@ -9624,6 +9624,13 @@
             },
             "type": "array",
             "title": "Streaming Services"
+          },
+          "streaming_offers": {
+            "items": {
+              "$ref": "#/components/schemas/Offer"
+            },
+            "type": "array",
+            "title": "Streaming Offers"
           }
         },
         "type": "object",

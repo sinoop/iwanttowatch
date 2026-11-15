@@ -78,7 +78,14 @@ def test_person_details_affinity_and_filmography(client: TestClient) -> None:
             Availability(
                 tmdb_id=157336,
                 region="IN",
-                offers=[{"provider_id": 8, "name": "Netflix", "kind": "flatrate"}],
+                offers=[
+                    {
+                        "provider_id": 8,
+                        "name": "Netflix",
+                        "logo_path": "/netflix.jpg",
+                        "kind": "flatrate",
+                    }
+                ],
             )
         )
         session.commit()
@@ -107,6 +114,14 @@ def test_person_details_affinity_and_filmography(client: TestClient) -> None:
     assert films[157336]["user_reaction"] == "loved"
     assert films[157336]["watched"] is True
     assert films[157336]["streaming_services"] == ["Netflix"]
+    assert films[157336]["streaming_offers"] == [
+        {
+            "provider_id": 8,
+            "name": "Netflix",
+            "logo_path": "/netflix.jpg",
+            "kind": "flatrate",
+        }
+    ]
     # Inception
     assert films[27205]["user_rating"] == 8.0
     assert films[27205]["user_reaction"] == "liked"
