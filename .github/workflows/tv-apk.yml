@@ -1,0 +1,79 @@
+name: Build TV Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'tv/**'
+      - '.github/workflows/tv-apk.yml'
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-tv-apk:
+    name: Build TV Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck TV app
+        run: pnpm typecheck:tv
+
+      - name: Accept Android SDK licenses
+        run: |
+          yes | sdkmanager --licenses 2>/dev/null || true
+
+      - name: Generate native Android project
+        run: |
+          cd tv
+          pnpm expo prebuild --platform android --clean
+
+      - name: Build Release APK
+        run: |
+          cd tv/android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Rename APK for clarity
+        run: |
+          cd tv/android/app/build/outputs/apk/release
+          cp app-release.apk iWantToWatch-TV.apk 2>/dev/null || cp *-release*.apk iWantToWatch-TV.apk 2>/dev/null || true
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iWantToWatch-TV-Android-APK
+          path: tv/android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+      - name: Attach APK to GitHub Release
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" tv/android/app/build/outputs/apk/release/iWantToWatch-TV.apk --clobber
