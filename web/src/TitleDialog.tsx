@@ -870,6 +870,18 @@ function isRemakeNegative(value: string): boolean {
   return false
 }
 
+function isOtherFilmsNegative(value: string): boolean {
+  const v = value.trim().toLowerCase().replace(/^[.,;:\s]+|[.,;:\s]+$/g, '')
+  if (!v) return true
+  if (v === 'no' || v === 'none' || v === 'n/a' || v === 'na' || v === 'false' || v === 'unknown') return true
+  if (/^none\b/i.test(v)) return true
+  if (/^no\s+(other|famous|notable|known|major|films|movies)\b/i.test(v)) return true
+  if (/^no\s*\(/i.test(v)) return true
+  if (/^not\s+(applicable|available|known)\b/i.test(v)) return true
+  if (/^nothing\b/i.test(v)) return true
+  return false
+}
+
 function ThemeFeatureChips({
   chips,
 }: {
@@ -945,6 +957,9 @@ function renderThemesNote(
           return null
         }
         const isOtherFilms = lower.includes('other famous films')
+        if (isOtherFilms && isOtherFilmsNegative(value)) {
+          return null
+        }
         return { key: idx, label, value, isOtherFilms }
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)

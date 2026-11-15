@@ -25,13 +25,13 @@ these questions in order:
 - Is this based on a real story ? (answer under 15 words, or "No")
 - Is this a remake of any of the films I watched already or any other popular movies from \
 another language ? (answer under 15 words, or "No")
-- What are the famous other films by the same director / writer (answer under 20 words)
+- What are the famous other films by the same director / writer (answer under 20 words, or "No")
 
 Format the four bullet points as:
 - Values: <maximum of 3 or 4 keywords>
 - Real story: <answer under 15 words, or "No">
 - Remake: <answer under 15 words, or "No">
-- Other famous films: <answer under 20 words>
+- Other famous films: <answer under 20 words, or "No">
 
 Be factual, concise, and specific. Plain text only: exactly four bullet points starting \
 with "- ", no markdown headings, no intro or outro."""

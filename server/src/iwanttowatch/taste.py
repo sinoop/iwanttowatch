@@ -90,7 +90,7 @@ Also provide structured "themes and values" notes in four bullet points:
 - Remake: <is this a remake of any of the films they watched already or any popular movies \
 from another language? answer under 15 words, or "No">
 - Other famous films: <famous other films by the same director or writer, as a comma-separated \
-list under 20 words>
+list under 20 words, or "No">
 
 Format your entire reply as:
 + <strength>
