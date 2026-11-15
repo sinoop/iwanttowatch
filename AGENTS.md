@@ -10,7 +10,7 @@ Self-hosted movie recommender: Python API server, React web app, shared generate
 
 ## Git worktree workflow
 
-Every change must be made in its own git worktree inside `.git_worktrees/<task-name>`, never in the main checkout. Keep the main checkout on `main` so multiple people or agents can work in parallel without colliding.
+Every change must be made in its own git worktree inside `.git_worktrees/<task-name>`, never in the main checkout. Keep the main checkout on `main` so multiple people or agents can work in parallel without colliding. Always complete the full workflow before finishing a task—commit the changes in the worktree, squash-merge them into `main`, and clean up the worktree and branch (unless the user explicitly asks to keep them on a separate branch).
 
 1. **Create a worktree for each task** before touching any file:
    ```sh
@@ -29,7 +29,7 @@ Every change must be made in its own git worktree inside `.git_worktrees/<task-n
    ```sh
    git diff main..<task-name>
    ```
-5. **Land on `main`** via a squashed pull request or squash-merge from the main checkout (`git checkout main`, `git pull --rebase origin main`, `git merge --squash <task-name>`, `git commit -m "short description"`, `git push origin main`).
+5. **Land on `main`** via a squashed pull request or squash-merge from the main checkout (`git checkout main`, `git merge --squash <task-name>`, `git commit -m "short description"`). Push to `origin main` if working with a remote or requested by the user.
 6. **Clean up** after the change lands on `main`:
    ```sh
    git worktree remove .git_worktrees/<task-name>
