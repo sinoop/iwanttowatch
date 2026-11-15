@@ -277,7 +277,8 @@ Completed milestones (Phases 0–5d, 5f, 5g, 7, and completed Phase 6/Mobile v1 
 
 Detailed analysis and trade-offs are documented in [`docs/multi-device-architecture.md`](multi-device-architecture.md).
 
-- [ ] **Phase 2 — TV 10-Foot Client & Casting:** Android TV and Apple TV client connecting directly to the Docker server with D-pad navigation; mobile app acts as a Cast/AirPlay target for standalone users.
+- [x] **Phase 2a — Android TV 10-Foot Client (`tv/`):** Dedicated Expo Android TV / Google TV client (`tv/`) with Leanback launcher config, D-pad navigation, Discover, Shortlist, Watch Together, quick feedback, and direct service launching (Jellyfin, Netflix, Prime Video, Disney+/JioHotstar, Apple TV+, etc.) (2026-11-14).
+- [ ] **Phase 2b — Apple TV (tvOS) & Casting:** tvOS build target and mobile Cast/AirPlay receiver integration.
 - [ ] **Phase 3 — Desktop Standalone App (Windows / macOS):** Packaged local Python runtime + SQLite database (Tauri / PyInstaller) allowing zero-Docker local operation or connection to a remote server.
 - [ ] **Phase 4 — Standalone Mobile Engine (Local-First):** Lightweight client-side candidate gathering and ported scoring algorithm (TS/WASM) for standalone phone use without a server, with one-click export/migration to a self-hosted Docker instance.
 

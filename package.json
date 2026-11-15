@@ -10,6 +10,9 @@
     "dev:mobile": "pnpm --filter mobile start",
     "typecheck:mobile": "pnpm --filter mobile typecheck",
     "build:mobile:apk": "pnpm --filter mobile build:apk",
+    "dev:tv": "pnpm --filter tv start",
+    "typecheck:tv": "pnpm --filter tv typecheck",
+    "build:tv:apk": "pnpm --filter tv build:apk",
     "gen:api": "cd server && uv run iwanttowatch openapi > ../packages/api-client/openapi.json && cd .. && pnpm --filter @iwanttowatch/api-client generate"
   }
 }
