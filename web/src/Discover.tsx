@@ -1,8 +1,8 @@
-import type { ChildProfile, FeedItem, FeedPage, FeedSort, InProgressItem, Me, RadarrShortlistStatus, RatingPromptItem, Reaction } from '@iwanttowatch/api-client'
+import type { ChildProfile, FeedItem, FeedPage, FeedSort, InProgressItem, Me, RadarrShortlistStatus, RatingPromptItem, Reaction, RecentlyAddedItem } from '@iwanttowatch/api-client'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link } from 'react-router'
-import { api, errorMessage, facts, useChildren, useDismissRatingPrompt, useInProgress, useQuickRate, useRadarrBatchSync, useRadarrShortlist, useRatingPrompts, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
+import { Link, useSearchParams } from 'react-router'
+import { api, errorMessage, facts, useChildren, useDismissRatingPrompt, useInProgress, useQuickRate, useRadarrBatchSync, useRadarrShortlist, useRatingPrompts, useRecentlyAddedStreaming, useServerSettings, useShortlist, watchOnQuery, type WatchOn } from './api'
 import { QuickTags, ReactionIcon } from './RateDialog'
 import HeaderSearch from './Search'
 import { JellyfinLogo, PlatformFilter, WatchBadges } from './Streaming'
@@ -24,7 +24,23 @@ type ShortlistFilter = 'all' | 'only' | 'hide'
 export default function Discover({ me }: { me: Me }) {
   const settings = useServerSettings()
   const children = useChildren(!me.is_child)
-  const [watchOn, setWatchOn] = useState<WatchOn>('anywhere')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialWatchOn: WatchOn = searchParams.get('theatrical') === 'true' ? 'theatrical' : 'anywhere'
+  const [watchOn, setWatchOn] = useState<WatchOn>(initialWatchOn)
+  const [hideRecentlyAdded, setHideRecentlyAdded] = useState(false)
+  const recentStreaming = useRecentlyAddedStreaming(7, !me.is_child)
+
+  const handleWatchOn = (val: WatchOn) => {
+    setWatchOn(val)
+    if (val === 'theatrical') {
+      searchParams.set('theatrical', 'true')
+      setSearchParams(searchParams, { replace: true })
+    } else if (searchParams.has('theatrical')) {
+      searchParams.delete('theatrical')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }
+
   const [contentType, setContentType] = useState<string>(me.default_content_type ?? 'movies')
   const [language, setLanguage] = useState<string | null>(null)
   const [genre, setGenre] = useState<string | null>(null)
@@ -214,6 +230,16 @@ export default function Discover({ me }: { me: Me }) {
         />
       )}
 
+      {/* Recently added to streaming services in past 7 days */}
+      {!hideRecentlyAdded && recentStreaming.data && recentStreaming.data.items.length > 0 && (
+        <RecentlyAddedShelf
+          items={recentStreaming.data.items}
+          days={recentStreaming.data.days}
+          onOpen={(tmdbId) => setOpen(tmdbId)}
+          onHide={() => setHideRecentlyAdded(true)}
+        />
+      )}
+
       {first && (
         <Filters
           page={first}
@@ -221,7 +247,7 @@ export default function Discover({ me }: { me: Me }) {
           ageLimit={ageLimit}
           onAgeLimit={setAgeLimit}
           watchOn={watchOn}
-          onWatchOn={setWatchOn}
+          onWatchOn={handleWatchOn}
           contentType={contentType}
           onContentType={setContentType}
           defaultContentType={me.default_content_type ?? 'movies'}
@@ -267,6 +293,7 @@ export default function Discover({ me }: { me: Me }) {
         <EmptyFeed
           emptyShortlist={shortlistFilter === 'only' && first.shortlist_count === 0}
           filtered={
+            watchOn === 'theatrical' ||
             language !== null ||
             genre !== null ||
             decade !== null ||
@@ -276,8 +303,9 @@ export default function Discover({ me }: { me: Me }) {
             shortlistFilter === 'hide'
           }
           watchOn={watchOn}
-          onWatchOn={setWatchOn}
+          onWatchOn={handleWatchOn}
           onClearFilters={() => {
+            handleWatchOn('anywhere')
             setLanguage(null)
             setGenre(null)
             setDecade(null)
@@ -599,9 +627,18 @@ function Filters({
     })
   }
 
+  if (watchOn === 'theatrical') {
+    activeChips.push({
+      id: 'theatrical',
+      label: '🎬 In Theatres',
+      onRemove: () => onWatchOn('anywhere'),
+    })
+  }
+
   const secondaryActiveCount = activeChips.filter((c) => c.id !== 'genre').length
 
   const clearAllFilters = () => {
+    onWatchOn('anywhere')
     onGenre(null)
     onDecade(null)
     onYearRange(null, null)
@@ -619,6 +656,22 @@ function Filters({
         <div className="flex flex-wrap items-center gap-2">
           {/* Where to watch */}
           <PlatformFilter platforms={page.platforms} value={watchOn} onChange={onWatchOn} />
+
+          {/* In Theatres Filter */}
+          <button
+            type="button"
+            aria-pressed={watchOn === 'theatrical'}
+            onClick={() => onWatchOn(watchOn === 'theatrical' ? 'anywhere' : 'theatrical')}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors cursor-pointer ${
+              watchOn === 'theatrical'
+                ? 'border-accent/60 bg-accent/15 text-accent-strong shadow-xs'
+                : 'border-white/10 bg-black/30 text-white/80 hover:border-white/25 hover:text-white'
+            }`}
+            title="Filter to movies currently in theaters"
+          >
+            <span>🎬</span>
+            <span>In Theatres</span>
+          </button>
 
           {/* Genre quick selector */}
           {genres.length > 0 && (
@@ -982,9 +1035,16 @@ function EmptyFeed({
         'Your shortlist is empty. Save films with the bookmark on any card to choose from later.'
       ) : filtered ? (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span>No picks match these filters.</span>
+          <span>{watchOn === 'theatrical' ? 'No in-theatre releases match these filters.' : 'No picks match these filters.'}</span>
           <Button variant="ghost" onClick={onClearFilters}>
             Clear filters
+          </Button>
+        </div>
+      ) : watchOn === 'theatrical' ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span>No in-theatre releases found for your region.</span>
+          <Button variant="ghost" onClick={() => onWatchOn('anywhere')}>
+            Show what’s available to me
           </Button>
         </div>
       ) : Array.isArray(watchOn) ? (
@@ -1463,6 +1523,104 @@ function ContinueWatchingShelf({
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+function RecentlyAddedShelf({
+  items,
+  days = 7,
+  onOpen,
+  onHide,
+}: {
+  items: RecentlyAddedItem[]
+  days?: number
+  onOpen: (tmdbId: number) => void
+  onHide?: () => void
+}) {
+  if (items.length === 0) return null
+  return (
+    <div className="mt-6">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2">
+          <span className="flex size-5 items-center justify-center rounded-md bg-emerald-500/20 text-emerald-400 text-xs font-bold" aria-hidden>
+            ⚡
+          </span>
+          <h2 className="text-sm font-semibold text-white/90">Recently Added to Streaming</h2>
+          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-white/60">
+            Past {days} days
+          </span>
+          <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[11px] font-semibold text-accent tabular-nums">
+            {items.length}
+          </span>
+        </div>
+        {onHide && (
+          <button
+            type="button"
+            onClick={onHide}
+            className="text-xs text-white/40 hover:text-white transition cursor-pointer"
+            title="Hide shelf from Discover"
+          >
+            Hide shelf
+          </button>
+        )}
+      </div>
+
+      <div className="flex gap-3.5 overflow-x-auto pb-2 scrollbar-thin">
+        {items.map((item) => (
+          <div
+            key={item.tmdb_id}
+            className="group relative flex w-36 sm:w-40 shrink-0 flex-col rounded-xl border border-white/10 bg-[#161922] p-2 hover:border-white/20 transition shadow-lg"
+          >
+            <div className="relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-black/40">
+              <button
+                type="button"
+                onClick={() => onOpen(item.tmdb_id)}
+                className="size-full cursor-pointer"
+                title={`View details for ${item.title}`}
+              >
+                <Poster
+                  path={item.poster_path}
+                  title={item.title}
+                  className="size-full object-cover transition group-hover:scale-105"
+                />
+              </button>
+              {item.match !== undefined && item.match !== null && (
+                <div className="absolute top-1.5 left-1.5 pointer-events-none">
+                  <MatchBadge match={item.match} />
+                </div>
+              )}
+              <div className="absolute top-1.5 right-1.5 pointer-events-none">
+                <span className="rounded-md bg-black/80 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300 ring-1 ring-emerald-500/30 backdrop-blur-xs">
+                  New
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-2 flex-1 min-w-0">
+              <button
+                type="button"
+                onClick={() => onOpen(item.tmdb_id)}
+                className="block text-left text-xs font-semibold text-white/90 hover:text-accent transition truncate w-full"
+                title={item.title}
+              >
+                {item.title}
+              </button>
+              <div className="flex items-center justify-between text-[11px] text-white/50 mt-0.5">
+                {item.year && <span>{item.year}</span>}
+                {item.runtime && (
+                  <span>
+                    {Math.floor(item.runtime / 60)}h {item.runtime % 60}m
+                  </span>
+                )}
+              </div>
+              <div className="mt-1">
+                <WatchBadges availability={item.availability} />
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )

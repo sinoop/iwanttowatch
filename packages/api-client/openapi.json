@@ -2033,6 +2033,65 @@
         }
       }
     },
+    "/api/v1/streaming/recently-added": {
+      "get": {
+        "summary": "Get Recently Added Streaming",
+        "description": "Films recently added to streaming services in the user's region within the past N days.",
+        "operationId": "get_recently_added_streaming_api_v1_streaming_recently_added_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 30,
+              "minimum": 1,
+              "description": "Window in days (default: 7)",
+              "default": 7,
+              "title": "Days"
+            },
+            "description": "Window in days (default: 7)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Maximum number of films to return",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Maximum number of films to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentlyAddedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/feed": {
       "get": {
         "summary": "Read Feed",
@@ -2057,6 +2116,16 @@
               "type": "boolean",
               "default": false,
               "title": "Unavailable Only"
+            }
+          },
+          {
+            "name": "theatrical",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Theatrical"
             }
           },
           {
@@ -7062,6 +7131,22 @@
                 "type": "null"
               }
             ]
+          },
+          "is_theatrical": {
+            "type": "boolean",
+            "title": "Is Theatrical",
+            "default": false
+          },
+          "theatrical_release_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theatrical Release Date"
           }
         },
         "type": "object",
@@ -10967,6 +11052,148 @@
         "type": "object",
         "title": "ReactionUpdate"
       },
+      "RecentlyAddedItem": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "original_title": {
+            "type": "string",
+            "title": "Original Title"
+          },
+          "original_language": {
+            "type": "string",
+            "title": "Original Language"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime"
+          },
+          "poster_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poster Path"
+          },
+          "genres": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Genres"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "availability": {
+            "$ref": "#/components/schemas/TitleAvailability"
+          },
+          "digital_release_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Digital Release Date"
+          },
+          "imdb": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImdbScore"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "original_title",
+          "original_language",
+          "year",
+          "runtime",
+          "poster_path",
+          "genres",
+          "match",
+          "availability"
+        ],
+        "title": "RecentlyAddedItem"
+      },
+      "RecentlyAddedResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RecentlyAddedItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "days": {
+            "type": "integer",
+            "title": "Days"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "days",
+          "total"
+        ],
+        "title": "RecentlyAddedResponse"
+      },
       "Resolution": {
         "properties": {
           "tmdb_id": {
@@ -11626,6 +11853,11 @@
           "stale": {
             "type": "boolean",
             "title": "Stale"
+          },
+          "in_theaters": {
+            "type": "boolean",
+            "title": "In Theaters",
+            "default": false
           }
         },
         "type": "object",

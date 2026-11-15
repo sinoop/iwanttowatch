@@ -64,6 +64,7 @@ from iwanttowatch.models import (
     get_setting,
 )
 from iwanttowatch.moods import moods_for
+from iwanttowatch.radar import inspect_theatrical_candidates
 from iwanttowatch.taste import (
     REACTION_FALLBACK,
     effective_ratings,
@@ -106,6 +107,8 @@ class FeedItem(BaseModel):
     # Child profile IDs that have this film on their shortlist.
     assigned_children: list[int] = Field(default_factory=list)
     imdb: ImdbScore | None
+    is_theatrical: bool = False
+    theatrical_release_date: str | None = None
 
 
 class FeedPage(BaseModel):
@@ -159,6 +162,7 @@ def read_feed(
     request: Request,
     available_only: bool = True,
     unavailable_only: bool = False,
+    theatrical: bool = False,
     # "jellyfin" or TMDb provider IDs; when given, only films on one of them.
     platforms: Annotated[list[str], Query()] = [],  # noqa: B006 (FastAPI copies defaults)
     language: str | None = None,
@@ -184,6 +188,170 @@ def read_feed(
 ) -> FeedPage:
     """The user's recommendations, best first. Films they have since watched or rated
     drop out at once; the first visit starts building the feed."""
+    if theatrical:
+        tmdb = client_from_settings(
+            session, request.app.state.engine, request.app.state.tmdb_base_url
+        )
+        if tmdb is None:
+            return FeedPage(
+                status="failed",
+                step=None,
+                error="Add a TMDb API key in Settings first",
+                built_at=None,
+                rescoring=False,
+                total=0,
+                items=[],
+                languages=[],
+                genres=[],
+                decades=[],
+                certificates=[],
+                platforms=[],
+                shortlist_count=0,
+            )
+        theatrical_data = inspect_theatrical_candidates(session, tmdb, user, min_match=0)
+        items_raw = theatrical_data.get("items", [])
+        raw_ids = [item["tmdb_id"] for item in items_raw]
+        title_rows = {
+            t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(raw_ids)))
+        }
+        saved = set(shortlisted(session, user.id))
+        thumbs_up = set(
+            session.scalars(
+                select(Feedback.tmdb_id).where(Feedback.user_id == user.id, Feedback.kind == "up")
+            )
+        )
+        theatrical_assigned: dict[int, list[int]] = defaultdict(list)
+        for tmdb_id, child_id in session.execute(
+            select(ShortlistItem.tmdb_id, ShortlistItem.user_id)
+            .join(User, User.id == ShortlistItem.user_id)
+            .where(User.is_child.is_(True), ShortlistItem.tmdb_id.in_(raw_ids))
+            .order_by(ShortlistItem.user_id)
+        ):
+            theatrical_assigned[tmdb_id].append(child_id)
+
+        cert_limit = (
+            allowed_certificates(user.region, max_certificate, tmdb)
+            if max_certificate is not None
+            else None
+        )
+        active_content_type = (
+            content_type or getattr(user, "default_content_type", "movies") or "movies"
+        )
+        matching_theatrical = []
+        for item in items_raw:
+            t = title_rows.get(item["tmdb_id"])
+            if t and not matches_content_type(t, active_content_type):
+                continue
+            if (
+                age_limit
+                and t
+                and item["tmdb_id"] not in saved
+                and not allowed_for(t, user.region, user.allowed_certificates)
+            ):
+                continue
+            if shortlist and item["tmdb_id"] not in saved:
+                continue
+            if hide_shortlisted and not shortlist and item["tmdb_id"] in saved:
+                continue
+            if only and item["tmdb_id"] not in only:
+                continue
+            if language is not None and item["original_language"] != language:
+                continue
+            if genre is not None and genre not in item["genres"]:
+                continue
+            if decade is not None and not (
+                item["year"] is not None and decade <= item["year"] < decade + 10
+            ):
+                continue
+            if year_min is not None and not (item["year"] is not None and item["year"] >= year_min):
+                continue
+            if year_max is not None and not (item["year"] is not None and item["year"] <= year_max):
+                continue
+            if cert_limit is not None and t and not allowed_for(t, user.region, cert_limit):
+                continue
+            matching_theatrical.append(item)
+
+        if sort in ("match", "recommended"):
+            matching_theatrical.sort(key=lambda i: i.get("match_pct", 0), reverse=True)
+        elif sort == "rating":
+            matching_theatrical.sort(
+                key=lambda i: (
+                    (i.get("imdb") or {}).get("rating") or 0.0,
+                    (i.get("imdb") or {}).get("votes") or 0,
+                ),
+                reverse=True,
+            )
+        elif sort == "newest":
+            matching_theatrical.sort(
+                key=lambda i: i.get("theatrical_release_date") or str(i.get("year") or 0),
+                reverse=True,
+            )
+        elif sort == "oldest":
+            matching_theatrical.sort(
+                key=lambda i: i.get("theatrical_release_date") or str(i.get("year") or 9999)
+            )
+        elif sort == "shortest":
+            matching_theatrical.sort(key=lambda i: i.get("runtime") or 9999)
+
+        languages = Counter(item["original_language"] for item in matching_theatrical)
+        genres = Counter(g for item in matching_theatrical for g in item["genres"])
+        decades = sorted(
+            {item["year"] // 10 * 10 for item in matching_theatrical if item["year"] is not None},
+            reverse=True,
+        )
+
+        return FeedPage(
+            status="ready",
+            step=None,
+            error=None,
+            built_at=utcnow(),
+            rescoring=False,
+            total=len(matching_theatrical),
+            items=[
+                FeedItem(
+                    tmdb_id=item["tmdb_id"],
+                    title=item["title"],
+                    original_title=item["original_title"],
+                    original_language=item["original_language"],
+                    year=item["year"],
+                    runtime=item["runtime"],
+                    certificate=(title_rows[item["tmdb_id"]].certifications or {}).get(user.region)
+                    if item["tmdb_id"] in title_rows
+                    else None,
+                    poster_path=item["poster_path"],
+                    genres=item["genres"],
+                    moods=moods_for(title_rows[item["tmdb_id"]])
+                    if item["tmdb_id"] in title_rows
+                    else [],
+                    match=item["match_pct"],
+                    reasons=item["reasons"],
+                    availability=TitleAvailability(
+                        tmdb_id=item["tmdb_id"],
+                        on_jellyfin=False,
+                        offers=[],
+                        other_offers=[],
+                        link=f"https://www.themoviedb.org/movie/{item['tmdb_id']}/watch?locale={user.region}",
+                        checked_at=utcnow(),
+                        stale=False,
+                        in_theaters=True,
+                    ),
+                    thumbs_up=item["tmdb_id"] in thumbs_up,
+                    shortlisted=item["tmdb_id"] in saved,
+                    assigned_children=theatrical_assigned[item["tmdb_id"]],
+                    imdb=ImdbScore(**item["imdb"]) if item.get("imdb") else None,
+                    is_theatrical=True,
+                    theatrical_release_date=item.get("theatrical_release_date"),
+                )
+                for item in matching_theatrical[offset : offset + limit]
+            ],
+            languages=[LanguageCount(language=k, count=n) for k, n in languages.most_common(10)],
+            genres=[g for g, _ in genres.most_common(12)],
+            decades=decades,
+            certificates=region_certificates(user.region, tmdb),
+            platforms=[],
+            shortlist_count=sum(1 for item in matching_theatrical if item["tmdb_id"] in saved),
+        )
+
     state = session.get(FeedBuild, user.id)
     if state is None:
         request.app.state.feed_worker.request(user.id)

@@ -955,3 +955,24 @@ def test_title_release_date_and_status(client: TestClient, monkeypatch: pytest.M
     by_id = {i["tmdb_id"]: i for i in page["items"]}
     assert by_id[201]["release_date"] == "2019-02-07"
     assert by_id[201]["status"] == "Released"
+
+
+def test_feed_theatrical_filter(client: TestClient) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    res = client.get("/api/v1/feed?theatrical=true")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "ready"
+    assert data["total"] > 0
+    item = data["items"][0]
+    assert item["is_theatrical"] is True
+    assert item["availability"]["in_theaters"] is True
+    assert "match" in item
+
+    # Filter theatrical items by genre
+    res_drama = client.get("/api/v1/feed?theatrical=true&genre=Drama")
+    assert res_drama.status_code == 200
+    drama_data = res_drama.json()
+    assert drama_data["total"] > 0
+    for it in drama_data["items"]:
+        assert "Drama" in it["genres"]

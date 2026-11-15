@@ -845,6 +845,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/streaming/recently-added": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Recently Added Streaming
+         * @description Films recently added to streaming services in the user's region within the past N days.
+         */
+        get: operations["get_recently_added_streaming_api_v1_streaming_recently_added_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/feed": {
         parameters: {
             query?: never;
@@ -2525,6 +2545,13 @@ export interface components {
             /** Assigned Children */
             assigned_children?: number[];
             imdb: components["schemas"]["ImdbScore"] | null;
+            /**
+             * Is Theatrical
+             * @default false
+             */
+            is_theatrical: boolean;
+            /** Theatrical Release Date */
+            theatrical_release_date?: string | null;
         };
         /** FeedPage */
         FeedPage: {
@@ -3828,6 +3855,42 @@ export interface components {
              */
             note: string;
         };
+        /** RecentlyAddedItem */
+        RecentlyAddedItem: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Original Title */
+            original_title: string;
+            /** Original Language */
+            original_language: string;
+            /** Year */
+            year: number | null;
+            /** Runtime */
+            runtime: number | null;
+            /** Poster Path */
+            poster_path: string | null;
+            /** Genres */
+            genres: string[];
+            /** Match */
+            match: number | null;
+            /** Reasons */
+            reasons?: string[];
+            availability: components["schemas"]["TitleAvailability"];
+            /** Digital Release Date */
+            digital_release_date?: string | null;
+            imdb?: components["schemas"]["ImdbScore"] | null;
+        };
+        /** RecentlyAddedResponse */
+        RecentlyAddedResponse: {
+            /** Items */
+            items: components["schemas"]["RecentlyAddedItem"][];
+            /** Days */
+            days: number;
+            /** Total */
+            total: number;
+        };
         /** Resolution */
         Resolution: {
             /** Tmdb Id */
@@ -4044,6 +4107,11 @@ export interface components {
             checked_at: string | null;
             /** Stale */
             stale: boolean;
+            /**
+             * In Theaters
+             * @default false
+             */
+            in_theaters: boolean;
         };
         /** TitleDetail */
         TitleDetail: {
@@ -5682,11 +5750,46 @@ export interface operations {
             };
         };
     };
+    get_recently_added_streaming_api_v1_streaming_recently_added_get: {
+        parameters: {
+            query?: {
+                /** @description Window in days (default: 7) */
+                days?: number;
+                /** @description Maximum number of films to return */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentlyAddedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_feed_api_v1_feed_get: {
         parameters: {
             query?: {
                 available_only?: boolean;
                 unavailable_only?: boolean;
+                theatrical?: boolean;
                 platforms?: string[];
                 language?: string | null;
                 genre?: string | null;

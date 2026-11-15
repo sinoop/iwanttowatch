@@ -59,6 +59,7 @@ def test_badges_show_only_what_each_person_can_play_in_their_region(
         "link": None,
         "checked_at": found[999]["checked_at"],
         "stale": False,
+        "in_theaters": False,
     }
     assert found[201]["on_jellyfin"] is False
 
@@ -177,3 +178,20 @@ def test_shown_for_unavailable_only() -> None:
     )
     assert shown_for(avail_free, available_only=False, platforms=[], unavailable_only=False) is True
     assert shown_for(avail_none, available_only=False, platforms=[], unavailable_only=False) is True
+
+
+def test_recently_added_to_streaming(client: TestClient) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    # User subscribes to Netflix (id 8) in IN
+    client.put("/api/v1/me/streaming", json={"region": "IN", "subscriptions": [8]})
+    res = client.get("/api/v1/streaming/recently-added?days=7")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["days"] == 7
+    assert "total" in data
+    assert "items" in data
+    for item in data["items"]:
+        assert "tmdb_id" in item
+        assert "title" in item
+        assert "availability" in item
+        assert "genres" in item

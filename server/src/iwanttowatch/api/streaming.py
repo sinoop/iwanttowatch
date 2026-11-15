@@ -1,12 +1,13 @@
-from datetime import UTC, datetime
-from typing import Annotated
+import logging
+from datetime import UTC, date, datetime, timedelta
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from iwanttowatch.api.deps import AdultUser, CurrentUser, DbSession, Tmdb
-from iwanttowatch.api.schemas import Me
+from iwanttowatch.api.schemas import ImdbScore, Me
 from iwanttowatch.availability import (
     availability,
     is_stale,
@@ -15,9 +16,11 @@ from iwanttowatch.availability import (
     regions,
     watchable,
 )
+from iwanttowatch.catalog import ensure_titles
 from iwanttowatch.children import child_age, library_owners, limit_for_age
+from iwanttowatch.feed import DOCUMENTARY_GENRE_ID, is_non_movie, score_films, seen
 from iwanttowatch.models import Availability, LibraryItem, User
-from iwanttowatch.tmdb import client_from_settings
+from iwanttowatch.tmdb import TmdbError, client_from_settings
 
 router = APIRouter(prefix="/api/v1")
 
@@ -55,6 +58,29 @@ class TitleAvailability(BaseModel):
     checked_at: datetime | None
     # The last check is older than three days and rechecking failed.
     stale: bool
+    in_theaters: bool = False
+
+
+class RecentlyAddedItem(BaseModel):
+    tmdb_id: int
+    title: str
+    original_title: str
+    original_language: str
+    year: int | None
+    runtime: int | None
+    poster_path: str | None
+    genres: list[str]
+    match: int | None
+    reasons: list[str] = Field(default_factory=list)
+    availability: TitleAvailability
+    digital_release_date: str | None = None
+    imdb: ImdbScore | None = None
+
+
+class RecentlyAddedResponse(BaseModel):
+    items: list[RecentlyAddedItem]
+    days: int
+    total: int
 
 
 class StreamingUpdate(BaseModel):
@@ -186,6 +212,138 @@ def shown_for(
             str(offer.provider_id) in platforms for offer in where.offers
         )
     return not available_only or is_available
+
+
+RECENT_STREAMING_CACHE = timedelta(hours=6)
+log = logging.getLogger(__name__)
+
+
+@router.get("/streaming/recently-added", response_model=RecentlyAddedResponse)
+def get_recently_added_streaming(
+    user: CurrentUser,
+    session: DbSession,
+    tmdb: Tmdb,
+    days: int = Query(7, ge=1, le=30, description="Window in days (default: 7)"),
+    limit: int = Query(20, ge=1, le=50, description="Maximum number of films to return"),
+) -> RecentlyAddedResponse:
+    """Films recently added to streaming services in the user's region within the past N days."""
+    today = date.today()
+    start_date = (today - timedelta(days=days)).isoformat()
+    end_date = today.isoformat()
+    target_region = user.region or "US"
+
+    providers = user.subscriptions
+    params: dict[str, Any] = {
+        "region": target_region,
+        "watch_region": target_region,
+        "with_release_type": "4|5|6",
+        "release_date.gte": start_date,
+        "release_date.lte": end_date,
+        "with_watch_monetization_types": "flatrate|free|ads",
+        "sort_by": "popularity.desc",
+        "without_genres": str(DOCUMENTARY_GENRE_ID),
+        "include_adult": "false",
+        "page": 1,
+    }
+    if providers:
+        params["with_watch_providers"] = "|".join(str(p) for p in providers)
+
+    candidate_ids: list[int] = []
+    try:
+        data = tmdb.get("/discover/movie", params, cache_for=RECENT_STREAMING_CACHE)
+        for item in data.get("results", []):
+            if "id" in item:
+                candidate_ids.append(int(item["id"]))
+    except TmdbError as err:
+        log.warning("Could not fetch TMDb recently added streaming discover: %s", err)
+
+    if len(candidate_ids) < 5:
+        alt_params: dict[str, Any] = {
+            "region": target_region,
+            "watch_region": target_region,
+            "primary_release_date.gte": start_date,
+            "primary_release_date.lte": end_date,
+            "with_watch_monetization_types": "flatrate|free|ads",
+            "sort_by": "popularity.desc",
+            "without_genres": str(DOCUMENTARY_GENRE_ID),
+            "include_adult": "false",
+            "page": 1,
+        }
+        if providers:
+            alt_params["with_watch_providers"] = "|".join(str(p) for p in providers)
+        try:
+            alt_data = tmdb.get("/discover/movie", alt_params, cache_for=RECENT_STREAMING_CACHE)
+            for item in alt_data.get("results", []):
+                if "id" in item:
+                    candidate_ids.append(int(item["id"]))
+        except TmdbError as err:
+            log.warning("Could not fetch TMDb primary_release_date discover: %s", err)
+
+    user_seen = seen(session, user.id)
+    unique_ids = [tid for tid in dict.fromkeys(candidate_ids) if tid not in user_seen]
+    if not unique_ids:
+        return RecentlyAddedResponse(items=[], days=days, total=0)
+
+    # Ensure titles in catalog
+    titles = ensure_titles(session, tmdb, unique_ids[: limit * 2])
+    valid_ids = [
+        tid for tid in unique_ids[: limit * 2] if tid in titles and not is_non_movie(titles[tid])
+    ]
+
+    # Availability
+    places = availability(session, tmdb, valid_ids, target_region)
+    streamable_ids: list[int] = []
+    where_by_id: dict[int, TitleAvailability] = {}
+    for tid in valid_ids:
+        place = places.get(tid)
+        where = title_availability(tid, place, on_jellyfin=False, subscriptions=user.subscriptions)
+        if where.offers or (not user.subscriptions and place and place.offers):
+            streamable_ids.append(tid)
+            where_by_id[tid] = where
+
+    if not streamable_ids:
+        return RecentlyAddedResponse(items=[], days=days, total=0)
+
+    # Score candidates against user's taste
+    scores_by_id: dict[int, float] = {}
+    reasons_by_id: dict[int, list[str]] = {}
+    try:
+        scored = score_films(session, user, streamable_ids)
+        for s in scored:
+            scores_by_id[s.tmdb_id] = s.score
+            reasons_by_id[s.tmdb_id] = s.reasons
+    except Exception as err:
+        log.warning("Could not score recent streaming films: %s", err)
+
+    # Sort streamable_ids by taste score descending
+    streamable_ids.sort(key=lambda tid: scores_by_id.get(tid, 0.0), reverse=True)
+
+    items: list[RecentlyAddedItem] = []
+    for tid in streamable_ids[:limit]:
+        t = titles[tid]
+        match_pct = round(scores_by_id[tid] * 100) if tid in scores_by_id else None
+        imdb_obj = None
+        if t.imdb_id and t.imdb_rating is not None and t.imdb_votes:
+            imdb_obj = ImdbScore(id=t.imdb_id, rating=t.imdb_rating, votes=t.imdb_votes)
+        items.append(
+            RecentlyAddedItem(
+                tmdb_id=tid,
+                title=t.title,
+                original_title=t.original_title,
+                original_language=t.original_language,
+                year=t.year,
+                runtime=t.runtime,
+                poster_path=t.poster_path,
+                genres=t.genres,
+                match=match_pct,
+                reasons=reasons_by_id.get(tid, []),
+                availability=where_by_id[tid],
+                digital_release_date=t.release_date.isoformat() if t.release_date else None,
+                imdb=imdb_obj,
+            )
+        )
+
+    return RecentlyAddedResponse(items=items, days=days, total=len(items))
 
 
 def title_availability(

@@ -364,15 +364,32 @@ export function facts(film: {
 
 /** Where films must be playable: anywhere the user can watch, on chosen platforms
  * ("jellyfin" or TMDb provider IDs), everything including films on none of them,
- * or only films unavailable to the user. */
-export type WatchOn = 'anywhere' | 'everything' | 'unavailable' | string[]
+ * in theatres, or only films unavailable to the user. */
+export type WatchOn = 'anywhere' | 'everything' | 'unavailable' | 'theatrical' | string[]
 
 export function watchOnQuery(watchOn: WatchOn) {
   return {
-    available_only: watchOn !== 'everything' && watchOn !== 'unavailable',
+    available_only: watchOn !== 'everything' && watchOn !== 'unavailable' && watchOn !== 'theatrical',
     unavailable_only: watchOn === 'unavailable' || undefined,
+    theatrical: watchOn === 'theatrical' || undefined,
     platforms: Array.isArray(watchOn) ? watchOn : undefined,
   }
+}
+
+/** Films recently added to streaming services in the user's region in the past N days. */
+export function useRecentlyAddedStreaming(days = 7, enabled = true) {
+  return useQuery({
+    queryKey: ['streaming', 'recently-added', days],
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/v1/streaming/recently-added', {
+        params: { query: { days } },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    enabled,
+    staleTime: 5 * 60 * 1000,
+  })
 }
 
 /** Inspect streaming availability and Radarr status of shortlisted films. */

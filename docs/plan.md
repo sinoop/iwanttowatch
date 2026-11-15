@@ -273,6 +273,11 @@ Completed milestones (Phases 0–5d, 5f, 5g, 7, and completed Phase 6/Mobile v1 
 - [x] **Home Assistant integration (#6):** Add an authenticated JSON endpoint (e.g. `/api/v1/integrations/home-assistant`) exposing top-rated recommendations and shortlisted movies (with match %, IMDb rating, poster URL, and availability) for Home Assistant `rest` sensors and dashboard cards.
 - [x] **Sync shortlist to Jellyfin & streaming watchlists (#2):** Add optional 1-way sync of shortlisted films in the Jellyfin library to a dedicated Jellyfin Playlist (e.g. `"iWantToWatch Shortlist"`). Streaming services (Netflix, Disney+, Prime Video) have no public watchlist write APIs, so continue deep-linking to their title pages.
 
+#### Batch 5 — Discover Enhancements & Streaming Lifecycle (2026-11-14)
+
+- [x] **In Theatres as Discover Filter:** Move theatrical release browsing out of Settings Acquisition Radar into a first-class Discover Filter (`watchOn === 'theatrical'`, quick filter toggle chip on Discover toolbar, `theatrical` parameter in `api/feed.py` returning scored theatrical candidates with full genre, sort, and language filtering) (2026-11-14).
+- [x] **Recently Added to Streaming shelf:** Add `GET /api/v1/streaming/recently-added` discovering digital/streaming releases in the user's region in the past 7 days scored against their taste profile, and render a dedicated horizontal shelf (`RecentlyAddedShelf`) on Discover (2026-11-14).
+
 ### After the Web App: mobile and multi-device roadmap
 
 Detailed analysis and trade-offs are documented in [`docs/multi-device-architecture.md`](multi-device-architecture.md).
