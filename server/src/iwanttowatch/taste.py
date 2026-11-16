@@ -6,7 +6,7 @@ import logging
 import math
 from collections import Counter, defaultdict
 from collections.abc import Collection, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from statistics import mean
 from typing import Any
 
@@ -18,7 +18,8 @@ from iwanttowatch.db import utcnow
 from iwanttowatch.llm import LlmError, LlmProvider, llm_order, provider_from_settings
 from iwanttowatch.models import Explanation, OpinionClash, Persona, Title, UserTitle
 from iwanttowatch.moods import MAX_MOODS, MOODS, moods_for, parse_moods
-from iwanttowatch.tags import BY_ID
+from iwanttowatch.recommender import _features
+from iwanttowatch.tags import BY_ID, MAX_TAGS, TAGS
 
 log = logging.getLogger(__name__)
 
@@ -551,15 +552,26 @@ def explain_match(
     return fit
 
 
-CLASH_SYSTEM = """You uncover the deeper taste pattern behind why one person's rating of a \
-film strongly conflicts with the general audience consensus. You get their taste summary, \
-their other divergent ratings, and this film's details with its consensus score. Do NOT \
-simply repeat their own tags or notes back to them — they already know why they liked or \
-disliked it. Instead, in two short sentences (under 75 words), pinpoint: (1) the specific \
-flaw or quality that divides general audiences from this viewer on this film, and (2) how \
-this connects to a broader pattern in their taste (comparing with their other divergent or \
-top-rated films). Be concrete, insightful, and speak to them as "you". Plain text only: no \
-markdown headings, no bullet points, no intro or outro, no quotes around the answer."""
+CLASH_SYSTEM = """You help a movie recommender learn from a rating that strongly conflicts \
+with general audience consensus. Instead of lecturing the user about why they liked or \
+disliked the film, propose 2 or 3 concrete, testable yes/no hypotheses that the recommender \
+can learn from when the user answers Yes or No.
+
+Do NOT repeat tags or notes the user already gave.
+Return a single JSON object (no markdown fences, no extra text) with this shape:
+{
+  "summary": "One short sentence (under 25 words) framing the divergence.",
+  "hypotheses": [
+    {"question": "Short yes/no question", "kind": "tag", "tag_id": "<allowed_tag_id>"},
+    {"question": "Short yes/no question", "kind": "feature", "feature_key": "<feature_key>"},
+    {"question": "Short yes/no question", "kind": "outlier"}
+  ]
+}
+Rules:
+- Propose 2 or 3 distinct hypotheses total, each under 14 words.
+- For "tag", pick an exact tag_id from the allowed tag list not already in the user's tags.
+- For "feature", pick an exact feature_key from the film's provided feature list.
+- Optionally include at most one "outlier" hypothesis (expectation mismatch / wrong mood)."""
 
 
 def consensus_for(title: Title) -> tuple[float, int] | None:
@@ -587,6 +599,7 @@ class DivergentItem:
     tags: list[str]
     note: str | None
     clash: str | None = None
+    hypotheses: list[dict[str, Any]] = field(default_factory=list)
 
 
 def find_divergent_ratings(
@@ -642,7 +655,7 @@ def find_divergent_ratings(
         return []
 
     clashes = {
-        c.tmdb_id: c.text
+        c.tmdb_id: c
         for c in session.scalars(
             select(OpinionClash).where(
                 OpinionClash.user_id == user_id,
@@ -666,7 +679,10 @@ def find_divergent_ratings(
             reaction=item.reaction,
             tags=item.tags,
             note=item.note,
-            clash=clashes.get(item.tmdb_id),
+            clash=clashes[item.tmdb_id].text if item.tmdb_id in clashes else None,
+            hypotheses=(
+                list(clashes[item.tmdb_id].hypotheses or []) if item.tmdb_id in clashes else []
+            ),
         )
         for item in top_items
     ]
@@ -780,6 +796,100 @@ def against_the_grain_profile(
     )
 
 
+def _truncate_text(text: str, limit: int = MAX_EXPLANATION_LENGTH) -> str:
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    end = max(cut.rfind(mark) for mark in (". ", "! ", "? ", "\n"))
+    return cut[: end + 1] if end > 0 else cut.rsplit(" ", 1)[0] + "…"
+
+
+def _strip_json_fences(raw: str) -> str:
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    return text
+
+
+def _parse_clash_response(
+    raw_text: str,
+    *,
+    existing_tags: set[str],
+    valid_features: dict[str, str],
+    positive_clash: bool,
+) -> tuple[str, list[dict[str, Any]]]:
+    """Parse structured JSON hypotheses from the LLM, falling back to plain text."""
+    cleaned = _strip_json_fences(raw_text)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        return _truncate_text(raw_text), []
+
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("hypotheses"), list):
+        return _truncate_text(raw_text), []
+
+    summary_raw = parsed.get("summary")
+    summary = (
+        _truncate_text(summary_raw.strip())
+        if isinstance(summary_raw, str) and summary_raw.strip()
+        else "Explore what drove this disagreement:"
+    )
+
+    hypotheses: list[dict[str, Any]] = []
+    seen: set[tuple[str, str | None, str | None]] = set()
+    for item in parsed["hypotheses"]:
+        if not isinstance(item, dict):
+            continue
+        question = item.get("question")
+        kind = item.get("kind")
+        if not isinstance(question, str) or not question.strip():
+            continue
+        if kind not in ("tag", "feature", "outlier"):
+            continue
+        tag_id: str | None = None
+        feature_key: str | None = None
+        if kind == "tag":
+            raw_tag = item.get("tag_id")
+            if (
+                not isinstance(raw_tag, str)
+                or raw_tag not in BY_ID
+                or raw_tag in existing_tags
+                or BY_ID[raw_tag].positive != positive_clash
+            ):
+                continue
+            tag_id = raw_tag
+        elif kind == "feature":
+            raw_feat = item.get("feature_key")
+            if not isinstance(raw_feat, str) or raw_feat not in valid_features:
+                continue
+            feature_key = raw_feat
+
+        dedup = (kind, tag_id, feature_key)
+        if dedup in seen:
+            continue
+        seen.add(dedup)
+        hypotheses.append(
+            {
+                "id": f"h{len(hypotheses) + 1}",
+                "question": question.strip()[:140],
+                "kind": kind,
+                "tag_id": tag_id,
+                "feature_key": feature_key,
+                "answer": None,
+                "effect": None,
+            }
+        )
+        if len(hypotheses) >= 3:
+            break
+
+    return summary, hypotheses
+
+
 def explain_clash(
     session: Session,
     user_id: int,
@@ -789,13 +899,16 @@ def explain_clash(
     tags: list[str],
     note: str | None,
     llm: LlmProvider,
+    *,
+    refresh: bool = False,
 ) -> str:
-    """The LLM's explanation of conflicting opinions between the user and general audience."""
+    """Generate (or return cached) hypotheses for why the user's rating clashed with consensus."""
     cached = session.get(OpinionClash, (user_id, title.tmdb_id))
-    if cached is not None:
+    if cached is not None and not refresh:
         return cached.text
 
     consensus = consensus_for(title)
+    consensus_val = consensus[0] if consensus else (title.vote_average or 6.5)
     consensus_text = (
         f"{consensus[0]:.1f}/10 ({consensus[1]:,} votes)"
         if consensus
@@ -811,15 +924,27 @@ def explain_clash(
         mins = title.runtime % 60
         about.append(f"{hours}h {mins}m" if hours else f"{mins}m")
 
+    existing_tags = set(tags)
+    positive_clash = user_rating >= consensus_val
+    allowed_tags = [
+        f"{t.id} ({t.label})"
+        for t in TAGS
+        if t.positive == positive_clash and t.id not in existing_tags
+    ]
+    valid_features = _features(title)
+    feature_choices = [f"{k} ({v})" for k, v in list(valid_features.items())[:25]]
+
     lines = [
         taste_summary(session, user_id),
         f"Film: {title.title} ({', '.join(about)})",
         f"Audience consensus rating: {consensus_text}",
         f"This user's rating: {user_score_str}",
+        f"Allowed tag_id values: {', '.join(allowed_tags)}",
+        f"Film feature_key values: {', '.join(feature_choices)}",
     ]
     tag_labels = [BY_ID[t].label for t in tags if t in BY_ID]
     if tag_labels:
-        lines.append(f"What the user noted: {', '.join(tag_labels)}")
+        lines.append(f"What the user already noted: {', '.join(tag_labels)}")
     if note:
         lines.append(f'User note: "{note.strip()}"')
     if title.tagline:
@@ -850,12 +975,162 @@ def explain_clash(
     if not raw_text:
         raise LlmError("The LLM returned an empty answer")
 
-    clash = raw_text
-    if len(clash) > MAX_EXPLANATION_LENGTH:
-        cut = clash[:MAX_EXPLANATION_LENGTH]
-        end = max(cut.rfind(mark) for mark in (". ", "! ", "? ", "\n"))
-        clash = cut[: end + 1] if end > 0 else cut.rsplit(" ", 1)[0] + "…"
+    clash, hypotheses = _parse_clash_response(
+        raw_text,
+        existing_tags=existing_tags,
+        valid_features=valid_features,
+        positive_clash=positive_clash,
+    )
 
-    session.add(OpinionClash(user_id=user_id, tmdb_id=title.tmdb_id, text=clash))
+    if cached is not None:
+        cached.text = clash
+        cached.hypotheses = hypotheses or None
+        cached.created_at = utcnow()
+    else:
+        session.add(
+            OpinionClash(
+                user_id=user_id,
+                tmdb_id=title.tmdb_id,
+                text=clash,
+                hypotheses=hypotheses or None,
+            )
+        )
     session.commit()
     return clash
+
+
+def _primary_rated_entry(session: Session, user_id: int, tmdb_id: int) -> UserTitle | None:
+    entries = list(
+        session.scalars(
+            select(UserTitle).where(UserTitle.user_id == user_id, UserTitle.tmdb_id == tmdb_id)
+        )
+    )
+    for source in ("app", "imdb", "letterboxd"):
+        for entry in entries:
+            if entry.source == source and (entry.rating is not None or entry.reaction is not None):
+                return entry
+    return entries[0] if entries else None
+
+
+def answer_clash_hypothesis(
+    session: Session,
+    user_id: int,
+    title: Title,
+    hypothesis_id: str,
+    answer: bool | None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Record a Yes/No/None answer on a clash hypothesis and sync tags/model signals."""
+    clash = session.get(OpinionClash, (user_id, title.tmdb_id))
+    if clash is None or not clash.hypotheses:
+        raise LookupError("No clash hypotheses found for this film")
+
+    feature_names = _features(title)
+    updated: list[dict[str, Any]] = []
+    matched: dict[str, Any] | None = None
+    for item in clash.hypotheses:
+        copy = dict(item)
+        if copy.get("id") == hypothesis_id:
+            copy["answer"] = answer
+            matched = copy
+        updated.append(copy)
+
+    if matched is None:
+        raise LookupError(f"Hypothesis {hypothesis_id!r} not found")
+
+    effect: str | None = None
+    kind = matched.get("kind")
+    if answer is not None:
+        if kind == "tag" and isinstance(matched.get("tag_id"), str) and matched["tag_id"] in BY_ID:
+            tag_id = matched["tag_id"]
+            tag_label = BY_ID[tag_id].label
+            entry = _primary_rated_entry(session, user_id, title.tmdb_id)
+            if entry is not None:
+                tags = list(entry.tags or [])
+                if answer is True:
+                    if tag_id not in tags and len(tags) < MAX_TAGS:
+                        tags.append(tag_id)
+                        entry.tags = tags
+                    effect = f"Added tag: {tag_label}"
+                else:
+                    if tag_id in tags:
+                        tags.remove(tag_id)
+                        entry.tags = tags
+                    effect = f"Noted — didn't add {tag_label}"
+            else:
+                effect = f"Noted: {tag_label}" if answer else f"Noted — not {tag_label}"
+        elif kind == "outlier":
+            effect = (
+                "Marked as outlier — down-weighted in your model"
+                if answer
+                else "Not an outlier — kept full taste weight"
+            )
+        elif kind == "feature" and isinstance(matched.get("feature_key"), str):
+            feat_key = matched["feature_key"]
+            feat_label = feature_names.get(feat_key, feat_key.split(":", 1)[-1])
+            effect = (
+                f"Adjusted model weight for {feat_label}"
+                if answer
+                else f"Protected {feat_label} from blame"
+            )
+
+    matched["effect"] = effect
+    clash.hypotheses = updated
+    session.commit()
+    return updated, effect
+
+
+def clash_model_signals(
+    session: Session, user_id: int
+) -> tuple[set[int], dict[str, float], dict[int, list[str]]]:
+    """Return (dampened_outliers, feature_adjustments, rated_tags) for the recommender."""
+    effective = effective_ratings(user_id)
+    rating_rows = session.execute(
+        select(effective.c.tmdb_id, effective.c.rating, effective.c.tags)
+    ).all()
+    ratings_by_id: dict[int, float] = {}
+    rated_tags: dict[int, list[str]] = {}
+    for row in rating_rows:
+        if row.rating is not None:
+            ratings_by_id[row.tmdb_id] = float(row.rating)
+        if row.tags:
+            rated_tags[row.tmdb_id] = list(row.tags)
+
+    clashes = list(
+        session.scalars(
+            select(OpinionClash).where(
+                OpinionClash.user_id == user_id,
+                OpinionClash.hypotheses.is_not(None),
+            )
+        )
+    )
+    if not clashes:
+        return set(), {}, rated_tags
+
+    titles = {
+        t.tmdb_id: t
+        for t in session.scalars(
+            select(Title).where(Title.tmdb_id.in_([c.tmdb_id for c in clashes]))
+        )
+    }
+
+    dampened_outliers: set[int] = set()
+    feature_adjustments: dict[str, float] = {}
+    for clash in clashes:
+        title = titles.get(clash.tmdb_id)
+        cons = consensus_for(title) if title is not None else None
+        cons_rating = cons[0] if cons else 6.5
+        user_rating = ratings_by_id.get(clash.tmdb_id)
+        positive = user_rating >= cons_rating if user_rating is not None else False
+        for h in clash.hypotheses or []:
+            if h.get("answer") is not True:
+                continue
+            if h.get("kind") == "outlier":
+                dampened_outliers.add(clash.tmdb_id)
+            elif h.get("kind") == "feature" and isinstance(h.get("feature_key"), str):
+                key = h["feature_key"]
+                delta = 0.05 if positive else -0.05
+                feature_adjustments[key] = max(
+                    -0.12, min(0.12, feature_adjustments.get(key, 0.0) + delta)
+                )
+
+    return dampened_outliers, feature_adjustments, rated_tags

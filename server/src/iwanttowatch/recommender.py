@@ -30,6 +30,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from iwanttowatch.models import Title
+from iwanttowatch.tags import BY_ID
 
 Floats = NDArray[np.float64]
 
@@ -60,6 +61,8 @@ ERA_PENALTY = 0.15
 ERA_PENALTY_YEARS = 20
 REMAKE_PENALTY = 0.08
 DIVERGENT_WEIGHT_BOOST = 1.25
+OUTLIER_DAMPEN_WEIGHT = 0.4
+TAG_FEATURE_BONUS = 0.04
 ERA_WINDOW = 10
 ERA_LIKED_HALF = 3
 # Share of a film's match taken from the configured LLM's predicted rating, as a
@@ -320,6 +323,9 @@ def score(
     family_picks: Collection[int] = (),
     favorite_people: Collection[int] = (),
     only_candidates: Collection[int] | None = None,
+    dampened_outliers: Collection[int] = (),
+    feature_adjustments: Mapping[str, float] = {},  # noqa: B006 (read-only)
+    rated_tags: Mapping[int, Collection[str]] = {},  # noqa: B006 (read-only)
 ) -> list[Scored]:
     """Score candidates for a user, most promising first, diversified at the top. `ai`
     holds the LLM's predictions as percentiles of the user's ratings.
@@ -341,12 +347,14 @@ def score(
         return []
     vectors = Vectors(pool)
     quality = _quality(pool)
-    weighted_labels = _weight_divergent_labels(vectors, labels, quality)
+    weighted_labels = _weight_divergent_labels(vectors, labels, quality, dampened_outliers)
     candidate_quality = quality[[vectors.rows[i] for i in scored_candidates]]
     # Applied after the LLM's share is blended in, which knows nothing of either.
     adjust = (
         (_family_bonus(titles, scored_candidates, family_picks) if child else 0.0)
         + _favorite_person_bonus(titles, scored_candidates, favorite_people)
+        + _feature_adjustment_bonus(vectors, scored_candidates, feature_adjustments)
+        + _tag_feature_bonus(vectors, weighted_labels, scored_candidates, rated_tags)
         - _era_penalty(titles, weighted_labels, scored_candidates, birth_year)
         - _remake_penalty(titles, weighted_labels, scored_candidates)
     )
@@ -472,12 +480,27 @@ def _era_penalty(
 
 
 def _weight_divergent_labels(
-    vectors: Vectors, labels: Sequence[Label], quality: Floats
+    vectors: Vectors,
+    labels: Sequence[Label],
+    quality: Floats,
+    dampened_outliers: Collection[int] = (),
 ) -> list[Label]:
     """Give explicit ratings that diverge strongly from consensus a modest weight boost
-    so the user's distinctive taste signals shape recommendations more strongly."""
+    so the user's distinctive taste signals shape recommendations more strongly — unless
+    the user marked the film as an outlier, in which case dampen its weight."""
+    dampened = set(dampened_outliers)
     out: list[Label] = []
     for label in labels:
+        if label.explicit and label.tmdb_id in dampened:
+            out.append(
+                Label(
+                    tmdb_id=label.tmdb_id,
+                    value=label.value,
+                    weight=label.weight * OUTLIER_DAMPEN_WEIGHT,
+                    explicit=label.explicit,
+                )
+            )
+            continue
         if label.explicit and label.tmdb_id in vectors.rows:
             q = float(quality[vectors.rows[label.tmdb_id]])
             if abs(label.value - q) >= 0.25:
@@ -491,6 +514,60 @@ def _weight_divergent_labels(
                 )
                 continue
         out.append(label)
+    return out
+
+
+def _feature_adjustment_bonus(
+    vectors: Vectors,
+    candidates: Sequence[int],
+    feature_adjustments: Mapping[str, float],
+) -> Floats:
+    """Apply explicit per-feature adjustments confirmed in the clash playground."""
+    if not feature_adjustments or not vectors.vocab:
+        return np.zeros(len(candidates))
+    weights = np.zeros(len(vectors.vocab), dtype=np.float64)
+    for key, delta in feature_adjustments.items():
+        if (col := vectors.index.get(key)) is not None:
+            weights[col] = delta
+    if not np.any(weights):
+        return np.zeros(len(candidates))
+    rows = np.array([vectors.rows[i] for i in candidates])
+    active = (vectors.matrix[rows] > 0).astype(np.float64)
+    out: Floats = np.clip(active @ weights, -0.12, 0.12)
+    return out
+
+
+def _tag_feature_bonus(
+    vectors: Vectors,
+    labels: Sequence[Label],
+    candidates: Sequence[int],
+    rated_tags: Mapping[int, Collection[str]],
+) -> Floats:
+    """Nudge candidates whose features align with positive vs. negative RatingTags."""
+    if not rated_tags or not vectors.vocab:
+        return np.zeros(len(candidates))
+    profile = np.zeros(len(vectors.vocab), dtype=np.float64)
+    used = 0
+    for label in labels:
+        tags = rated_tags.get(label.tmdb_id)
+        if not tags or label.tmdb_id not in vectors.rows:
+            continue
+        sign = 0.0
+        for tag_id in tags:
+            if (tag := BY_ID.get(tag_id)) is not None:
+                sign += 1.0 if tag.positive else -1.0
+        if sign != 0.0:
+            profile += np.sign(sign) * vectors.matrix[vectors.rows[label.tmdb_id]].astype(
+                np.float64
+            )
+            used += 1
+    norm = float(np.linalg.norm(profile))
+    if used < 2 or norm == 0.0:
+        return np.zeros(len(candidates))
+    profile /= norm
+    rows = np.array([vectors.rows[i] for i in candidates])
+    sim = vectors.matrix[rows].astype(np.float64) @ profile
+    out: Floats = np.clip(sim * TAG_FEATURE_BONUS, -0.06, 0.06)
     return out
 
 

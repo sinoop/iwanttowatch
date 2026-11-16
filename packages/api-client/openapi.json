@@ -551,64 +551,6 @@
         }
       }
     },
-    "/api/v1/settings/compaction": {
-      "put": {
-        "summary": "Set Compaction",
-        "description": "Configure daily automatic orphan-pruning and SQLite VACUUM.",
-        "operationId": "set_compaction_api_v1_settings_compaction_put",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CompactionUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ServerSettings"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/settings/compaction/run": {
-      "post": {
-        "summary": "Run Compaction",
-        "description": "Prune unreferenced cached titles/availability/expired cache rows and VACUUM now.",
-        "operationId": "run_compaction_api_v1_settings_compaction_run_post",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CompactionResultOut"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/settings/mcp": {
       "post": {
         "summary": "Create Mcp Key",
@@ -3202,7 +3144,7 @@
     "/api/v1/titles/{tmdb_id}/clash": {
       "post": {
         "summary": "Explain Title Clash",
-        "description": "Ask the configured LLM to explain why the user's opinion conflicts with the audience.",
+        "description": "Ask the configured LLM to propose hypotheses for why the user's opinion conflicts.",
         "operationId": "explain_title_clash_api_v1_titles__tmdb_id__clash_post",
         "parameters": [
           {
@@ -3213,6 +3155,16 @@
               "type": "integer",
               "title": "Tmdb Id"
             }
+          },
+          {
+            "name": "refresh",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Refresh"
+            }
           }
         ],
         "responses": {
@@ -3222,6 +3174,65 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TitleDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/titles/{tmdb_id}/clash/{hypothesis_id}": {
+      "post": {
+        "summary": "Answer Title Clash Hypothesis",
+        "description": "Record a Yes/No answer on a clash hypothesis and update the user's taste signals.",
+        "operationId": "answer_title_clash_hypothesis_api_v1_titles__tmdb_id__clash__hypothesis_id__post",
+        "parameters": [
+          {
+            "name": "tmdb_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Tmdb Id"
+            }
+          },
+          {
+            "name": "hypothesis_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Hypothesis Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClashHypothesisAnswer"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClashHypothesisAnswerResponse"
                 }
               }
             }
@@ -6210,42 +6221,43 @@
         ],
         "title": "ChildUpdate"
       },
-      "CompactionResultOut": {
+      "ClashHypothesis": {
         "properties": {
-          "titles_removed": {
-            "type": "integer",
-            "title": "Titles Removed"
+          "id": {
+            "type": "string",
+            "title": "Id"
           },
-          "availability_removed": {
-            "type": "integer",
-            "title": "Availability Removed"
+          "question": {
+            "type": "string",
+            "title": "Question"
           },
-          "cache_removed": {
-            "type": "integer",
-            "title": "Cache Removed"
+          "kind": {
+            "type": "string",
+            "title": "Kind"
           },
-          "size_before": {
-            "type": "integer",
-            "title": "Size Before"
+          "tag_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Id"
           },
-          "size_after": {
-            "type": "integer",
-            "title": "Size After"
-          }
-        },
-        "type": "object",
-        "required": [
-          "titles_removed",
-          "availability_removed",
-          "cache_removed",
-          "size_before",
-          "size_after"
-        ],
-        "title": "CompactionResultOut"
-      },
-      "CompactionUpdate": {
-        "properties": {
-          "enabled": {
+          "feature_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feature Key"
+          },
+          "answer": {
             "anyOf": [
               {
                 "type": "boolean"
@@ -6254,24 +6266,82 @@
                 "type": "null"
               }
             ],
-            "title": "Enabled"
+            "title": "Answer"
           },
-          "retention_days": {
+          "effect": {
             "anyOf": [
               {
-                "type": "integer",
-                "maximum": 365.0,
-                "minimum": 1.0
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Retention Days"
+            "title": "Effect"
           }
         },
         "type": "object",
-        "title": "CompactionUpdate"
+        "required": [
+          "id",
+          "question",
+          "kind"
+        ],
+        "title": "ClashHypothesis"
+      },
+      "ClashHypothesisAnswer": {
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "answer"
+        ],
+        "title": "ClashHypothesisAnswer"
+      },
+      "ClashHypothesisAnswerResponse": {
+        "properties": {
+          "clash_hypotheses": {
+            "items": {
+              "$ref": "#/components/schemas/ClashHypothesis"
+            },
+            "type": "array",
+            "title": "Clash Hypotheses"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effect"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags"
+          }
+        },
+        "type": "object",
+        "required": [
+          "clash_hypotheses",
+          "tags"
+        ],
+        "title": "ClashHypothesisAnswerResponse"
       },
       "DataExport": {
         "properties": {
@@ -6743,6 +6813,13 @@
               }
             ],
             "title": "Clash"
+          },
+          "clash_hypotheses": {
+            "items": {
+              "$ref": "#/components/schemas/ClashHypothesis"
+            },
+            "type": "array",
+            "title": "Clash Hypotheses"
           }
         },
         "type": "object",
@@ -11543,33 +11620,6 @@
             "title": "Profiling Enabled",
             "default": false
           },
-          "db_compact_enabled": {
-            "type": "boolean",
-            "title": "Db Compact Enabled",
-            "default": false
-          },
-          "db_compact_days": {
-            "type": "integer",
-            "title": "Db Compact Days",
-            "default": 30
-          },
-          "db_compact_last_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Db Compact Last At"
-          },
-          "db_size_bytes": {
-            "type": "integer",
-            "title": "Db Size Bytes",
-            "default": 0
-          },
           "llm": {
             "$ref": "#/components/schemas/LlmSettings"
           },
@@ -12284,6 +12334,13 @@
               }
             ],
             "title": "Clash"
+          },
+          "clash_hypotheses": {
+            "items": {
+              "$ref": "#/components/schemas/ClashHypothesis"
+            },
+            "type": "array",
+            "title": "Clash Hypotheses"
           },
           "radarr": {
             "anyOf": [

@@ -294,46 +294,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/settings/compaction": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set Compaction
-         * @description Configure daily automatic orphan-pruning and SQLite VACUUM.
-         */
-        put: operations["set_compaction_api_v1_settings_compaction_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/settings/compaction/run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Run Compaction
-         * @description Prune unreferenced cached titles/availability/expired cache rows and VACUUM now.
-         */
-        post: operations["run_compaction_api_v1_settings_compaction_run_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/settings/mcp": {
         parameters: {
             query?: never;
@@ -1126,9 +1086,29 @@ export interface paths {
         put?: never;
         /**
          * Explain Title Clash
-         * @description Ask the configured LLM to explain why the user's opinion conflicts with the audience.
+         * @description Ask the configured LLM to propose hypotheses for why the user's opinion conflicts.
          */
         post: operations["explain_title_clash_api_v1_titles__tmdb_id__clash_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/titles/{tmdb_id}/clash/{hypothesis_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Title Clash Hypothesis
+         * @description Record a Yes/No answer on a clash hypothesis and update the user's taste signals.
+         */
+        post: operations["answer_title_clash_hypothesis_api_v1_titles__tmdb_id__clash__hypothesis_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2231,25 +2211,36 @@ export interface components {
             /** Birth Year */
             birth_year: number;
         };
-        /** CompactionResultOut */
-        CompactionResultOut: {
-            /** Titles Removed */
-            titles_removed: number;
-            /** Availability Removed */
-            availability_removed: number;
-            /** Cache Removed */
-            cache_removed: number;
-            /** Size Before */
-            size_before: number;
-            /** Size After */
-            size_after: number;
+        /** ClashHypothesis */
+        ClashHypothesis: {
+            /** Id */
+            id: string;
+            /** Question */
+            question: string;
+            /** Kind */
+            kind: string;
+            /** Tag Id */
+            tag_id?: string | null;
+            /** Feature Key */
+            feature_key?: string | null;
+            /** Answer */
+            answer?: boolean | null;
+            /** Effect */
+            effect?: string | null;
         };
-        /** CompactionUpdate */
-        CompactionUpdate: {
-            /** Enabled */
-            enabled?: boolean | null;
-            /** Retention Days */
-            retention_days?: number | null;
+        /** ClashHypothesisAnswer */
+        ClashHypothesisAnswer: {
+            /** Answer */
+            answer: boolean | null;
+        };
+        /** ClashHypothesisAnswerResponse */
+        ClashHypothesisAnswerResponse: {
+            /** Clash Hypotheses */
+            clash_hypotheses: components["schemas"]["ClashHypothesis"][];
+            /** Effect */
+            effect?: string | null;
+            /** Tags */
+            tags: string[];
         };
         /** DataExport */
         DataExport: {
@@ -2428,6 +2419,8 @@ export interface components {
             note: string | null;
             /** Clash */
             clash?: string | null;
+            /** Clash Hypotheses */
+            clash_hypotheses?: components["schemas"]["ClashHypothesis"][];
         };
         /** ExportedEntry */
         ExportedEntry: {
@@ -4017,23 +4010,6 @@ export interface components {
              * @default false
              */
             profiling_enabled: boolean;
-            /**
-             * Db Compact Enabled
-             * @default false
-             */
-            db_compact_enabled: boolean;
-            /**
-             * Db Compact Days
-             * @default 30
-             */
-            db_compact_days: number;
-            /** Db Compact Last At */
-            db_compact_last_at?: string | null;
-            /**
-             * Db Size Bytes
-             * @default 0
-             */
-            db_size_bytes: number;
             llm: components["schemas"]["LlmSettings"];
             jellyfin: components["schemas"]["JellyfinSettings"];
             imdb: components["schemas"]["ImdbSettings"];
@@ -4253,6 +4229,8 @@ export interface components {
             explanation?: string | null;
             /** Clash */
             clash?: string | null;
+            /** Clash Hypotheses */
+            clash_hypotheses?: components["schemas"]["ClashHypothesis"][];
             radarr?: components["schemas"]["RadarrMovieStatus"] | null;
         };
         /** TitleReaction */
@@ -4840,59 +4818,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    set_compaction_api_v1_settings_compaction_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CompactionUpdate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServerSettings"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    run_compaction_api_v1_settings_compaction_run_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CompactionResultOut"];
                 };
             };
         };
@@ -6401,7 +6326,9 @@ export interface operations {
     };
     explain_title_clash_api_v1_titles__tmdb_id__clash_post: {
         parameters: {
-            query?: never;
+            query?: {
+                refresh?: boolean;
+            };
             header?: never;
             path: {
                 tmdb_id: number;
@@ -6417,6 +6344,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TitleDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_title_clash_hypothesis_api_v1_titles__tmdb_id__clash__hypothesis_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tmdb_id: number;
+                hypothesis_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClashHypothesisAnswer"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClashHypothesisAnswerResponse"];
                 };
             };
             /** @description Validation Error */

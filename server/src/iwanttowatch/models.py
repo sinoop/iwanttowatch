@@ -503,6 +503,7 @@ class OpinionClash(Base):
     )
     tmdb_id: Mapped[int] = mapped_column(ForeignKey("titles.tmdb_id"), primary_key=True)
     text: Mapped[str] = mapped_column(Text)
+    hypotheses: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

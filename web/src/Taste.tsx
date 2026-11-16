@@ -1,8 +1,9 @@
 import type { DivergentTitle, Me, RatedTitle, Reaction, TitleAvailability } from '@iwanttowatch/api-client'
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { api, errorMessage, NEGATIVE_TAG_IDS, ratingToReaction, REACTIONS, TAG_LABELS, useAvailability, useImports, usePeopleTaste, useServerSettings } from './api'
+import { api, NEGATIVE_TAG_IDS, ratingToReaction, REACTIONS, TAG_LABELS, useAvailability, useImports, usePeopleTaste, useServerSettings } from './api'
+import { ClashPlayground } from './ClashPlayground'
 import { ReactionBadge, ReactionIcon } from './RateDialog'
 import { TagIcon } from './TagIcon'
 import PersonDialog, { HeartIcon } from './PersonDialog'
@@ -794,27 +795,12 @@ function DivergentSection({
 }: {
   onSelectFilm: (tmdbId: number) => void
 }) {
-  const queryClient = useQueryClient()
   const settings = useServerSettings()
   const llmConfigured = Boolean(settings.data?.llm.order.length)
 
   const divergent = useQuery({
     queryKey: ['against-the-grain'],
     queryFn: async () => (await api.GET('/api/v1/me/against-the-grain')).data,
-  })
-
-  const askClash = useMutation({
-    mutationFn: async (tmdbId: number) => {
-      const { data, error } = await api.POST('/api/v1/titles/{tmdb_id}/clash', {
-        params: { path: { tmdb_id: tmdbId } },
-      })
-      if (error) throw new Error(errorMessage(error))
-      return data
-    },
-    onSuccess: (data) => {
-      queryClient.setQueryData(['title', data.tmdb_id], data)
-      queryClient.invalidateQueries({ queryKey: ['against-the-grain'] })
-    },
   })
 
   const profile = divergent.data
@@ -869,9 +855,6 @@ function DivergentSection({
             where={where.get(item.tmdb_id)}
             onSelectFilm={onSelectFilm}
             llmConfigured={llmConfigured}
-            onAskClash={(id) => askClash.mutate(id)}
-            isAsking={askClash.isPending && askClash.variables === item.tmdb_id}
-            error={askClash.variables === item.tmdb_id ? askClash.error?.message : null}
           />
         ))}
       </ul>
@@ -884,17 +867,11 @@ function DivergentCard({
   where,
   onSelectFilm,
   llmConfigured,
-  onAskClash,
-  isAsking,
-  error,
 }: {
   item: DivergentTitle
   where: TitleAvailability | undefined
   onSelectFilm: (tmdbId: number) => void
   llmConfigured: boolean
-  onAskClash: (tmdbId: number) => void
-  isAsking: boolean
-  error: string | null | undefined
 }) {
   const showOriginal = item.original_title && item.original_title !== item.title
   const reactionValue =
@@ -992,43 +969,13 @@ function DivergentCard({
       </div>
 
       <div className="mt-3 flex-1 border-t border-white/5 pt-2.5">
-        {item.clash ? (
-          <div className="rounded-lg border border-accent/20 bg-accent/5 p-2.5 text-xs text-white/80">
-            <div className="mb-1 flex items-center justify-between">
-              <span className="text-[11px] font-medium tracking-wide uppercase text-accent-strong">
-                ⚡ Conflicting opinion
-              </span>
-              <span className="rounded-full bg-accent/10 px-1.5 py-0.2 text-[10px] text-accent-strong">
-                AI
-              </span>
-            </div>
-            <p className="leading-relaxed">{item.clash}</p>
-          </div>
-        ) : llmConfigured ? (
-          <div>
-            <Button
-              variant="ghost"
-              className="w-full border border-white/10 py-1.5 text-xs hover:bg-white/5"
-              onClick={() => onAskClash(item.tmdb_id)}
-              disabled={isAsking}
-            >
-              {isAsking ? 'Analyzing conflict…' : '⚡ Why did you disagree? Ask AI'}
-            </Button>
-            {error && (
-              <div className="mt-1">
-                <ErrorText>{error}</ErrorText>
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-xs text-white/40">
-            Connect AI in{' '}
-            <Link to="/settings" className="underline hover:text-white">
-              Settings
-            </Link>{' '}
-            to analyze this disagreement.
-          </p>
-        )}
+        <ClashPlayground
+          tmdbId={item.tmdb_id}
+          clash={item.clash}
+          hypotheses={item.clash_hypotheses}
+          llmConfigured={llmConfigured}
+          compact
+        />
       </div>
 
       <div className="mt-2">

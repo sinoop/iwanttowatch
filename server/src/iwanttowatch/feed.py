@@ -51,6 +51,7 @@ from iwanttowatch.moods import moods_for, tag_moods
 from iwanttowatch.recommender import Label, Scored, percentile_of, score, score_rated
 from iwanttowatch.taste import (
     REACTION_PERCENTILES,
+    clash_model_signals,
     effective_ratings,
     rating_to_reaction,
     review_films,
@@ -964,6 +965,9 @@ def build_feed(
                         select(FavoritePerson.person_id).where(FavoritePerson.user_id == user_id)
                     )
                 )
+                dampened_outliers, feature_adjustments, rated_tags = clash_model_signals(
+                    session, user_id
+                )
                 scored = score(
                     titles,
                     labels,
@@ -973,6 +977,9 @@ def build_feed(
                     child=user.is_child,
                     family_picks=family,
                     favorite_people=fav_people,
+                    dampened_outliers=dampened_outliers,
+                    feature_adjustments=feature_adjustments,
+                    rated_tags=rated_tags,
                 )
                 _store(session, user_id, scored, picks)
                 return scored
@@ -1084,6 +1091,9 @@ def build_scoped_feed(
                         select(FavoritePerson.person_id).where(FavoritePerson.user_id == user_id)
                     )
                 )
+                dampened_outliers, feature_adjustments, rated_tags = clash_model_signals(
+                    session, user_id
+                )
                 scored = score(
                     titles,
                     labels,
@@ -1093,6 +1103,9 @@ def build_scoped_feed(
                     child=user.is_child,
                     family_picks=family,
                     favorite_people=fav_people,
+                    dampened_outliers=dampened_outliers,
+                    feature_adjustments=feature_adjustments,
+                    rated_tags=rated_tags,
                 )
                 _store_scoped(session, user_id, scope, scored, picks)
                 return scored
@@ -1166,6 +1179,7 @@ def score_films(
     fav_people = set(
         session.scalars(select(FavoritePerson.person_id).where(FavoritePerson.user_id == user.id))
     )
+    dampened_outliers, feature_adjustments, rated_tags = clash_model_signals(session, user.id)
     return score(
         titles,
         labels,
@@ -1176,6 +1190,9 @@ def score_films(
         family_picks=family,
         favorite_people=fav_people,
         only_candidates=only_candidates,
+        dampened_outliers=dampened_outliers,
+        feature_adjustments=feature_adjustments,
+        rated_tags=rated_tags,
     )
 
 

@@ -8,6 +8,7 @@ from sqlalchemy import String, case, cast, func, or_, select
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.imports import Candidate
 from iwanttowatch.api.reactions import TagOption
+from iwanttowatch.api.schemas import ClashHypothesis, clash_hypotheses_out
 from iwanttowatch.catalog import search_catalog_ai, search_catalog_all, search_movies
 from iwanttowatch.children import library_owners
 from iwanttowatch.feed import clear_user_rated_matches_cache, user_rated_matches
@@ -281,6 +282,7 @@ class DivergentTitle(BaseModel):
     tags: list[str]
     note: str | None
     clash: str | None = None
+    clash_hypotheses: list[ClashHypothesis] = Field(default_factory=list)
 
 
 @router.get("/me/divergent-ratings")
@@ -308,6 +310,7 @@ def list_divergent_ratings(
             tags=item.tags,
             note=item.note,
             clash=item.clash,
+            clash_hypotheses=clash_hypotheses_out(item.hypotheses),
         )
         for item in items
     ]
@@ -353,6 +356,7 @@ def get_against_the_grain(
                 tags=item.tags,
                 note=item.note,
                 clash=item.clash,
+                clash_hypotheses=clash_hypotheses_out(item.hypotheses),
             )
             for item in profile.items
         ],

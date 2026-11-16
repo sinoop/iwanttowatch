@@ -15,7 +15,7 @@ from iwanttowatch.api.deps import AdultUser, CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.library import LanguageCount
 from iwanttowatch.api.reactions import SOURCE as APP_SOURCE
 from iwanttowatch.api.reactions import load_title
-from iwanttowatch.api.schemas import ImdbScore, imdb_score
+from iwanttowatch.api.schemas import ClashHypothesis, ImdbScore, clash_hypotheses_out, imdb_score
 from iwanttowatch.api.streaming import (
     PlatformCount,
     TitleAvailability,
@@ -37,6 +37,7 @@ from iwanttowatch.feed import (
     ASK_FILMS,
     ASK_PICKS,
     SNOOZE,
+    clear_user_rated_matches_cache,
     feed_films,
     feed_reasons,
     films_for_request,
@@ -68,6 +69,7 @@ from iwanttowatch.models import (
 from iwanttowatch.moods import moods_for
 from iwanttowatch.taste import (
     REACTION_FALLBACK,
+    answer_clash_hypothesis,
     effective_ratings,
     explain_clash,
     explain_match,
@@ -674,6 +676,8 @@ class TitleDetail(BaseModel):
     explanation: str | None = None
     # The AI's explanation of conflicting opinions, once asked.
     clash: str | None = None
+    # Structured yes/no hypotheses for why the user's opinion clashed with consensus.
+    clash_hypotheses: list[ClashHypothesis] = Field(default_factory=list)
     # Status in Radarr when connected.
     radarr: RadarrMovieStatus | None = None
 
@@ -814,6 +818,7 @@ def _title_detail(
         clash=clashed.text
         if (clashed := session.get(OpinionClash, (user.id, title.tmdb_id)))
         else None,
+        clash_hypotheses=clash_hypotheses_out(clashed.hypotheses) if clashed else [],
         radarr=radarr_status,
     )
 
@@ -986,9 +991,14 @@ def explain_title(
 
 @router.post("/titles/{tmdb_id}/clash")
 def explain_title_clash(
-    tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
+    tmdb_id: int,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+    tmdb: Tmdb,
+    refresh: bool = False,
 ) -> TitleDetail:
-    """Ask the configured LLM to explain why the user's opinion conflicts with the audience."""
+    """Ask the configured LLM to propose hypotheses for why the user's opinion conflicts."""
     title = load_title(session, request, tmdb_id)
     llm = provider_from_settings(session, "clash", user.id)
     if llm is None:
@@ -1018,10 +1028,52 @@ def explain_title_clash(
             tags=rated.tags or [],
             note=rated.note,
             llm=llm,
+            refresh=refresh,
         )
     except LlmError as error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
     return _title_detail(session, user, tmdb, title)
+
+
+class ClashHypothesisAnswer(BaseModel):
+    answer: bool | None
+
+
+class ClashHypothesisAnswerResponse(BaseModel):
+    clash_hypotheses: list[ClashHypothesis]
+    effect: str | None = None
+    tags: list[str]
+
+
+@router.post("/titles/{tmdb_id}/clash/{hypothesis_id}")
+def answer_title_clash_hypothesis(
+    tmdb_id: int,
+    hypothesis_id: str,
+    body: ClashHypothesisAnswer,
+    user: CurrentUser,
+    session: DbSession,
+    request: Request,
+) -> ClashHypothesisAnswerResponse:
+    """Record a Yes/No answer on a clash hypothesis and update the user's taste signals."""
+    title = load_title(session, request, tmdb_id)
+    try:
+        updated, effect = answer_clash_hypothesis(
+            session, user.id, title, hypothesis_id, body.answer
+        )
+    except LookupError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+
+    clear_user_rated_matches_cache(user.id)
+    request.app.state.feed_worker.rescore_soon(user.id)
+
+    effective = effective_ratings(user.id)
+    rated = session.execute(select(effective).where(effective.c.tmdb_id == tmdb_id)).first()
+    tags = list(rated.tags or []) if rated is not None else []
+    return ClashHypothesisAnswerResponse(
+        clash_hypotheses=clash_hypotheses_out(updated),
+        effect=effect,
+        tags=tags,
+    )
 
 
 @router.post("/titles/{tmdb_id}/radarr")

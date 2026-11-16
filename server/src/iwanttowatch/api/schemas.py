@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -80,3 +80,19 @@ def imdb_score(title: Title) -> ImdbScore | None:
     if title.imdb_id is None or title.imdb_rating is None or not title.imdb_votes:
         return None
     return ImdbScore(id=title.imdb_id, rating=title.imdb_rating, votes=title.imdb_votes)
+
+
+class ClashHypothesis(BaseModel):
+    id: str
+    question: str
+    kind: str
+    tag_id: str | None = None
+    feature_key: str | None = None
+    answer: bool | None = None
+    effect: str | None = None
+
+
+def clash_hypotheses_out(raw: list[dict[str, Any]] | None) -> list[ClashHypothesis]:
+    if not raw:
+        return []
+    return [ClashHypothesis.model_validate(item) for item in raw]

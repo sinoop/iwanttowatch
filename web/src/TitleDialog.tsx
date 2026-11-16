@@ -1,6 +1,7 @@
 import type { ChildProfile, Me, Reaction, TitleDetail } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
+import { ClashPlayground } from './ClashPlayground'
 import {
   api,
   errorMessage,
@@ -734,23 +735,8 @@ function WhySection({
 }
 
 function ClashSection({ film }: { film: TitleDetail }) {
-  const queryClient = useQueryClient()
   const settings = useServerSettings()
   const llmConfigured = Boolean(settings.data?.llm.order.length)
-
-  const ask = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await api.POST('/api/v1/titles/{tmdb_id}/clash', {
-        params: { path: { tmdb_id: film.tmdb_id } },
-      })
-      if (error) throw new Error(errorMessage(error))
-      return data
-    },
-    onSuccess: (data) => {
-      queryClient.setQueryData(['title', film.tmdb_id], data)
-      queryClient.invalidateQueries({ queryKey: ['divergent-ratings'] })
-    },
-  })
 
   const userRating = film.seen?.rating
   const audienceRating = film.imdb?.rating
@@ -764,11 +750,12 @@ function ClashSection({ film }: { film: TitleDetail }) {
     audienceRating !== undefined &&
     Math.abs(userRating - audienceRating) >= 1.5
 
-  if (!film.clash && (!isDivergent || !llmConfigured)) return null
+  const hasHypotheses = (film.clash_hypotheses?.length ?? 0) > 0
+  if (!film.clash && !hasHypotheses && (!isDivergent || !llmConfigured)) return null
 
   return (
     <section className="mt-5 rounded-xl border border-accent/25 bg-accent/5 p-3.5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-medium text-accent-strong flex items-center gap-1.5">
           <span>⚡ Conflicting opinion</span>
           {audienceRating !== null && audienceRating !== undefined && (reactionValue || userRating != null) && (
@@ -779,35 +766,14 @@ function ClashSection({ film }: { film: TitleDetail }) {
             </span>
           )}
         </h3>
-        {film.clash && (
-          <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-strong">
-            AI-written
-          </span>
-        )}
       </div>
 
-      {film.clash ? (
-        <p className="mt-2 text-sm leading-relaxed text-white/80">{film.clash}</p>
-      ) : (
-        <div className="mt-2">
-          <p className="text-xs text-white/60 mb-2">
-            Your rating strongly differed from the general audience consensus.
-          </p>
-          <Button
-            variant="ghost"
-            className="border border-accent/30 text-accent-strong px-3 py-1 text-xs hover:bg-accent/10"
-            onClick={() => ask.mutate()}
-            disabled={ask.isPending}
-          >
-            {ask.isPending ? 'Analyzing with AI…' : 'Why did you disagree? Ask AI'}
-          </Button>
-          {ask.error && (
-            <div className="mt-2">
-              <ErrorText>{ask.error.message}</ErrorText>
-            </div>
-          )}
-        </div>
-      )}
+      <ClashPlayground
+        tmdbId={film.tmdb_id}
+        clash={film.clash}
+        hypotheses={film.clash_hypotheses}
+        llmConfigured={llmConfigured}
+      />
     </section>
   )
 }
