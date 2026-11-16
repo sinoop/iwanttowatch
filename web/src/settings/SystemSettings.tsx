@@ -1,4 +1,4 @@
-import type { Backups, ServerSettings } from '@iwanttowatch/api-client'
+import type { Backups, components, ServerSettings } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api, copyToClipboard, errorMessage } from '../api'
@@ -9,6 +9,9 @@ export function SystemSettings({ settings }: { settings: ServerSettings }) {
     <div className="space-y-6">
       <div id="profiling" className="scroll-mt-6">
         <ProfilingSection enabled={settings.profiling_enabled ?? false} />
+      </div>
+      <div id="compaction" className="scroll-mt-6">
+        <DatabaseCompactionSection settings={settings} />
       </div>
       <div id="mcp" className="scroll-mt-6">
         <McpSection enabled={settings.mcp_enabled} />
@@ -227,4 +230,112 @@ function ServerBackups() {
 
 function formatSize(bytes: number) {
   return bytes >= 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB` : `${Math.ceil(bytes / 1000)} kB`
+}
+
+function DatabaseCompactionSection({ settings }: { settings: ServerSettings }) {
+  const queryClient = useQueryClient()
+  const enabled = settings.db_compact_enabled ?? false
+  const days = settings.db_compact_days ?? 30
+  const [lastResult, setLastResult] = useState<components['schemas']['CompactionResultOut'] | null>(null)
+
+  const update = useMutation({
+    mutationFn: async (body: { enabled?: boolean; retention_days?: number }) => {
+      const { data, error } = await api.PUT('/api/v1/settings/compaction', { body })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['settings'], data)
+    },
+  })
+
+  const runNow = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await api.POST('/api/v1/settings/compaction/run')
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      setLastResult(data)
+      queryClient.invalidateQueries({ queryKey: ['settings'] })
+    },
+  })
+
+  const error = update.error ?? runNow.error
+
+  return (
+    <section className="rounded-xl border border-white/10 p-5">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <h2 className="font-semibold text-white">Database compaction</h2>
+          {(settings.db_size_bytes ?? 0) > 0 && (
+            <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs text-white/70">
+              {formatSize(settings.db_size_bytes ?? 0)}
+            </span>
+          )}
+        </div>
+        <span
+          className={`rounded-full px-2.5 py-0.5 text-xs ${
+            enabled ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/10 text-white/60'
+          }`}
+        >
+          {enabled ? 'Auto daily' : 'Manual only'}
+        </span>
+      </div>
+      <p className="mt-2 text-sm text-white/60">
+        Prunes unreferenced cached movie metadata, stale availability rows, and expired API cache entries older than
+        the retention window, then runs SQLite <code className="text-white/80">VACUUM</code> to reclaim disk space.
+        Movies in any user’s ratings, library, shortlist, or active feeds are never removed.
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <select
+          aria-label="Retention window"
+          value={days}
+          onChange={(e) => update.mutate({ retention_days: Number(e.target.value) })}
+          disabled={update.isPending}
+          className="rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30"
+        >
+          <option value={7}>Keep 7 days</option>
+          <option value={14}>Keep 14 days</option>
+          <option value={30}>Keep 30 days (default)</option>
+          <option value={90}>Keep 90 days</option>
+        </select>
+        <Button
+          variant={enabled ? 'ghost' : 'primary'}
+          onClick={() => update.mutate({ enabled: !enabled })}
+          disabled={update.isPending}
+        >
+          {enabled ? 'Turn off auto-compact' : 'Turn on auto-compact'}
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => runNow.mutate()}
+          disabled={runNow.isPending}
+        >
+          {runNow.isPending ? 'Compacting…' : 'Compact now'}
+        </Button>
+      </div>
+      {settings.db_compact_last_at && (
+        <p className="mt-3 text-xs text-white/45">
+          Last compacted{' '}
+          {new Date(settings.db_compact_last_at).toLocaleString(undefined, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          })}
+        </p>
+      )}
+      {lastResult && (
+        <p className="mt-2 text-xs text-emerald-300">
+          Removed {lastResult.titles_removed} titles, {lastResult.availability_removed} availability rows,{' '}
+          {lastResult.cache_removed} expired cache entries ({formatSize(lastResult.size_before)} →{' '}
+          {formatSize(lastResult.size_after)}).
+        </p>
+      )}
+      {error && (
+        <div className="mt-3">
+          <ErrorText>{error.message}</ErrorText>
+        </div>
+      )}
+    </section>
+  )
 }

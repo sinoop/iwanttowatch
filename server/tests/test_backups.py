@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from iwanttowatch import backups
 from iwanttowatch.api.auth import hasher
-from iwanttowatch.models import User
+from iwanttowatch.db import utcnow
+from iwanttowatch.models import ApiCache, Availability, Recommendation, Title, User, UserTitle
 
 
 def test_admins_back_up_the_database_and_download_copies(client: TestClient) -> None:
@@ -50,3 +51,57 @@ def test_only_the_newest_seven_backups_are_kept(
     kept = backups.list_backups(folder)
     assert [b.created_at for b in kept] == [start + timedelta(hours=n) for n in range(9, 2, -1)]
     assert sorted(p.name for p in folder.iterdir()) == sorted(b.name for b in kept)
+
+
+def test_compaction_settings_and_manual_run(client: TestClient) -> None:
+    old = utcnow() - timedelta(days=45)
+    recent = utcnow() - timedelta(days=2)
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        # 9001: old & unreferenced -> should be pruned
+        # 9002: old & rated -> must be kept
+        # 9003: old & in feed -> must be kept
+        # 9004: recent & unreferenced -> must be kept
+        for tid, ts in ((9001, old), (9002, old), (9003, old), (9004, recent)):
+            session.add(
+                Title(
+                    tmdb_id=tid,
+                    title=f"Film {tid}",
+                    original_title=f"Film {tid}",
+                    original_language="en",
+                    fetched_at=ts,
+                )
+            )
+            session.add(Availability(tmdb_id=tid, region="IN", offers=[], checked_at=ts))
+        session.flush()
+        session.add(UserTitle(user_id=1, tmdb_id=9002, source="app", rating=8.0))
+        session.add(Recommendation(user_id=1, tmdb_id=9003, score=0.9, rank=0, reasons=[]))
+        session.add(ApiCache(key="expired-key", body="{}", expires_at=old))
+        session.commit()
+
+    # Configure auto-compaction via API
+    updated = client.put(
+        "/api/v1/settings/compaction", json={"enabled": True, "retention_days": 30}
+    )
+    assert updated.status_code == 200
+    assert updated.json()["db_compact_enabled"] is True
+    assert updated.json()["db_compact_days"] == 30
+    assert updated.json()["db_size_bytes"] > 0
+
+    # Trigger manual compaction
+    res = client.post("/api/v1/settings/compaction/run")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["titles_removed"] == 1
+    assert body["availability_removed"] == 1
+    assert body["cache_removed"] >= 1
+    assert body["size_after"] > 0
+
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        assert session.get(Title, 9001) is None
+        assert session.get(Title, 9002) is not None
+        assert session.get(Title, 9003) is not None
+        assert session.get(Title, 9004) is not None
+        assert session.get(Availability, (9001, "IN")) is None
+
+    settings = client.get("/api/v1/settings").json()
+    assert settings["db_compact_last_at"] is not None

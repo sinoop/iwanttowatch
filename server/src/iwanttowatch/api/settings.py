@@ -3,12 +3,20 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import Engine, delete, func, select
 from sqlalchemy.orm import Session
 
 from iwanttowatch import __version__, imdb, radarr
 from iwanttowatch.api import mcp
 from iwanttowatch.api.deps import AdminUser, CurrentUser, DbSession
+from iwanttowatch.backups import (
+    DB_COMPACT_DAYS_SETTING,
+    DB_COMPACT_ENABLED_SETTING,
+    DB_COMPACT_LAST_AT_SETTING,
+    DEFAULT_COMPACT_DAYS,
+    compact_database,
+    db_size_bytes,
+)
 from iwanttowatch.db import utcnow
 from iwanttowatch.jellyfin import API_KEY_SETTING as JELLYFIN_KEY_SETTING
 from iwanttowatch.jellyfin import (
@@ -126,6 +134,11 @@ class ServerSettings(BaseModel):
     mcp_enabled: bool
     # Whether per-request timing logs are enabled for movie popup profiling.
     profiling_enabled: bool = False
+    # Automatic daily orphan-pruning and SQLite VACUUM.
+    db_compact_enabled: bool = False
+    db_compact_days: int = DEFAULT_COMPACT_DAYS
+    db_compact_last_at: datetime | None = None
+    db_size_bytes: int = 0
     llm: LlmSettings
     jellyfin: JellyfinSettings
     imdb: ImdbSettings
@@ -297,11 +310,21 @@ DEBUG_PROFILING_SETTING = "debug_profiling"
 
 def _settings_out(session: Session, is_admin: bool) -> ServerSettings:
     # Secrets are never returned, only whether they are set.
+    raw_days = get_setting(session, DB_COMPACT_DAYS_SETTING)
+    compact_days = int(raw_days) if raw_days and raw_days.isdigit() else DEFAULT_COMPACT_DAYS
+    raw_last = get_setting(session, DB_COMPACT_LAST_AT_SETTING)
+    last_at = datetime.fromisoformat(raw_last) if raw_last else None
+    bind = session.get_bind()
+    size = db_size_bytes(bind) if isinstance(bind, Engine) else 0
     return ServerSettings(
         version=__version__,
         tmdb_configured=get_setting(session, API_KEY_SETTING) is not None,
         mcp_enabled=get_setting(session, mcp.KEY_SETTING) is not None,
         profiling_enabled=get_setting(session, DEBUG_PROFILING_SETTING) == "on",
+        db_compact_enabled=get_setting(session, DB_COMPACT_ENABLED_SETTING) == "on",
+        db_compact_days=compact_days,
+        db_compact_last_at=last_at,
+        db_size_bytes=size,
         jellyfin=_jellyfin_out(session, is_admin),
         imdb=_imdb_out(session),
         radarr=_radarr_out(session, is_admin),
@@ -560,6 +583,45 @@ def set_profiling(body: ProfilingUpdate, _admin: AdminUser, session: DbSession) 
         set_setting(session, DEBUG_PROFILING_SETTING, None)
     session.commit()
     return _settings_out(session, True)
+
+
+class CompactionUpdate(BaseModel):
+    enabled: bool | None = None
+    retention_days: int | None = Field(default=None, ge=1, le=365)
+
+
+class CompactionResultOut(BaseModel):
+    titles_removed: int
+    availability_removed: int
+    cache_removed: int
+    size_before: int
+    size_after: int
+
+
+@router.put("/compaction")
+def set_compaction(body: CompactionUpdate, _admin: AdminUser, session: DbSession) -> ServerSettings:
+    """Configure daily automatic orphan-pruning and SQLite VACUUM."""
+    if body.enabled is not None:
+        set_setting(session, DB_COMPACT_ENABLED_SETTING, "on" if body.enabled else None)
+    if body.retention_days is not None:
+        set_setting(session, DB_COMPACT_DAYS_SETTING, str(body.retention_days))
+    session.commit()
+    return _settings_out(session, True)
+
+
+@router.post("/compaction/run")
+def run_compaction(_admin: AdminUser, session: DbSession, request: Request) -> CompactionResultOut:
+    """Prune unreferenced cached titles/availability/expired cache rows and VACUUM now."""
+    raw_days = get_setting(session, DB_COMPACT_DAYS_SETTING)
+    days = int(raw_days) if raw_days and raw_days.isdigit() else DEFAULT_COMPACT_DAYS
+    result = compact_database(request.app.state.engine, days)
+    return CompactionResultOut(
+        titles_removed=result.titles_removed,
+        availability_removed=result.availability_removed,
+        cache_removed=result.cache_removed,
+        size_before=result.size_before,
+        size_after=result.size_after,
+    )
 
 
 class McpKey(BaseModel):

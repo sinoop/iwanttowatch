@@ -551,6 +551,64 @@
         }
       }
     },
+    "/api/v1/settings/compaction": {
+      "put": {
+        "summary": "Set Compaction",
+        "description": "Configure daily automatic orphan-pruning and SQLite VACUUM.",
+        "operationId": "set_compaction_api_v1_settings_compaction_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompactionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerSettings"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/compaction/run": {
+      "post": {
+        "summary": "Run Compaction",
+        "description": "Prune unreferenced cached titles/availability/expired cache rows and VACUUM now.",
+        "operationId": "run_compaction_api_v1_settings_compaction_run_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompactionResultOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings/mcp": {
       "post": {
         "summary": "Create Mcp Key",
@@ -6152,6 +6210,69 @@
         ],
         "title": "ChildUpdate"
       },
+      "CompactionResultOut": {
+        "properties": {
+          "titles_removed": {
+            "type": "integer",
+            "title": "Titles Removed"
+          },
+          "availability_removed": {
+            "type": "integer",
+            "title": "Availability Removed"
+          },
+          "cache_removed": {
+            "type": "integer",
+            "title": "Cache Removed"
+          },
+          "size_before": {
+            "type": "integer",
+            "title": "Size Before"
+          },
+          "size_after": {
+            "type": "integer",
+            "title": "Size After"
+          }
+        },
+        "type": "object",
+        "required": [
+          "titles_removed",
+          "availability_removed",
+          "cache_removed",
+          "size_before",
+          "size_after"
+        ],
+        "title": "CompactionResultOut"
+      },
+      "CompactionUpdate": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "retention_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 365.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Days"
+          }
+        },
+        "type": "object",
+        "title": "CompactionUpdate"
+      },
       "DataExport": {
         "properties": {
           "format": {
@@ -11421,6 +11542,33 @@
             "type": "boolean",
             "title": "Profiling Enabled",
             "default": false
+          },
+          "db_compact_enabled": {
+            "type": "boolean",
+            "title": "Db Compact Enabled",
+            "default": false
+          },
+          "db_compact_days": {
+            "type": "integer",
+            "title": "Db Compact Days",
+            "default": 30
+          },
+          "db_compact_last_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Compact Last At"
+          },
+          "db_size_bytes": {
+            "type": "integer",
+            "title": "Db Size Bytes",
+            "default": 0
           },
           "llm": {
             "$ref": "#/components/schemas/LlmSettings"
