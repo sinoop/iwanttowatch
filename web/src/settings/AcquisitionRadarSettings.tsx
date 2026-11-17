@@ -130,21 +130,6 @@ export function AcquisitionRadarSettings() {
             </div>
           </div>
         </div>
-
-        {/* Theatrical redirect notice */}
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-xs text-white/70">
-          <div className="flex items-center gap-2">
-            <span>🎬</span>
-            <span>Looking for movies currently in theaters? In Theatres is now a filter on the Discover page.</span>
-          </div>
-          <Link
-            to="/?theatrical=true"
-            className="inline-flex items-center gap-1 font-semibold text-accent hover:underline"
-          >
-            <span>Open In Theatres on Discover</span>
-            <span>→</span>
-          </Link>
-        </div>
       </section>
 
       {/* Radarr Warning Banner if not configured */}
