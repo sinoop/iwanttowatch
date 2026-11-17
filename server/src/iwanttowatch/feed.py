@@ -459,21 +459,7 @@ def candidates(
         if i is not None
     ]
     family = sorted(family_tagged_films(session)) if user.is_child else []
-    rated = {label.tmdb_id for label in labels if label.explicit}
-    languages = list(
-        dict.fromkeys(
-            [
-                *user.languages,
-                *session.scalars(
-                    select(Title.original_language)
-                    .where(Title.tmdb_id.in_(rated))
-                    .group_by(Title.original_language)
-                    .order_by(func.count().desc())
-                    .limit(3)
-                ),
-            ]
-        )
-    )[:5]
+    languages = preferred_languages(session, user, labels)
     seeds = sorted((label for label in labels if label.explicit), key=lambda label: -label.value)
     seed_ids = [*(label.tmdb_id for label in seeds), *family][:RECOMMENDATION_SEEDS]
     # A discover search's parameters, or a film whose recommendations to read.
@@ -485,8 +471,9 @@ def candidates(
             for lang in [*languages, None]
         ]
     requests += seed_ids
+    lang_filters: list[str | None] = list(languages) or [None]
     requests += [
-        _discover(user.region, lang, [], content_type=content_type) for lang in languages or [None]
+        _discover(user.region, lang, [], content_type=content_type) for lang in lang_filters
     ]
     fav_people = list(
         session.scalars(select(FavoritePerson.person_id).where(FavoritePerson.user_id == user.id))
@@ -535,6 +522,29 @@ SCOPED_DISCOVER_CACHE = timedelta(hours=6)
 SCOPED_DISCOVER_PAGES = 2
 
 
+def preferred_languages(
+    session: Session, user: User, labels: Sequence[Label] | None = None
+) -> list[str]:
+    """Return the user's configured languages (in preference order) plus top rated languages."""
+    if labels is None:
+        labels = user_labels(session, user.id)
+    rated = {label.tmdb_id for label in labels if label.explicit}
+    inferred = (
+        list(
+            session.scalars(
+                select(Title.original_language)
+                .where(Title.tmdb_id.in_(rated))
+                .group_by(Title.original_language)
+                .order_by(func.count().desc())
+                .limit(3)
+            )
+        )
+        if rated
+        else []
+    )
+    return list(dict.fromkeys([*(user.languages or []), *inferred]))
+
+
 def theatrical_candidates(
     session: Session, tmdb: TmdbClient, user: User, *, force_refresh: bool = False
 ) -> list[int]:
@@ -568,30 +578,40 @@ def theatrical_candidates(
     today = date.today()
     start_date = (today - timedelta(days=90)).isoformat()
     end_date = (today + timedelta(days=21)).isoformat()
-    for page in range(1, SCOPED_DISCOVER_PAGES + 1):
-        try:
-            discover_data = tmdb.get(
-                "/discover/movie",
-                {
-                    "region": target_region,
-                    "with_release_type": "2|3",
-                    "primary_release_date.gte": start_date,
-                    "primary_release_date.lte": end_date,
-                    "sort_by": "popularity.desc",
-                    "without_genres": doc_id,
-                    "include_adult": "false",
-                    "page": page,
-                },
-                cache_for=cache_ttl,
-            )
-            for item in discover_data.get("results", []):
-                if "id" in item:
-                    found.append(int(item["id"]))
-            if not discover_data.get("results") or page >= discover_data.get("total_pages", page):
+    base_discover_params: dict[str, Any] = {
+        "region": target_region,
+        "with_release_type": "2|3",
+        "primary_release_date.gte": start_date,
+        "primary_release_date.lte": end_date,
+        "sort_by": "popularity.desc",
+        "without_genres": doc_id,
+        "include_adult": "false",
+    }
+    languages = preferred_languages(session, user)
+    discover_queries: list[dict[str, Any]] = [
+        base_discover_params,
+        *({**base_discover_params, "with_original_language": lang} for lang in languages),
+    ]
+    for params in discover_queries:
+        for page in range(1, SCOPED_DISCOVER_PAGES + 1):
+            try:
+                discover_data = tmdb.get(
+                    "/discover/movie",
+                    {**params, "page": page},
+                    cache_for=cache_ttl,
+                )
+                for item in discover_data.get("results", []):
+                    if "id" in item:
+                        found.append(int(item["id"]))
+                if not discover_data.get("results") or page >= discover_data.get(
+                    "total_pages", page
+                ):
+                    break
+            except TmdbError as err:
+                log.warning(
+                    "Could not fetch TMDb theatrical discover for %s: %s", target_region, err
+                )
                 break
-        except TmdbError as err:
-            log.warning("Could not fetch TMDb theatrical discover for %s: %s", target_region, err)
-            break
 
     unique = [tid for tid in dict.fromkeys(found) if tid not in user_seen and tid not in in_library]
     return unique[:MAX_CANDIDATES]

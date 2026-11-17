@@ -3,12 +3,12 @@ from datetime import date
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
 from fastapi import APIRouter, HTTPException, Request, Response, status
-from sqlalchemy import exists, select
+from sqlalchemy import delete, exists, select
 
 from iwanttowatch.api.deps import CurrentUser, DbSession
 from iwanttowatch.api.schemas import LoginRequest, Me, ProfileUpdate, SetupRequest, SetupStatus
 from iwanttowatch.jellyfin import JellyfinError, client_from_settings
-from iwanttowatch.models import User
+from iwanttowatch.models import ScopedFeedBuild, ScopedFeedItem, User
 
 router = APIRouter(prefix="/api/v1")
 hasher = PasswordHasher()
@@ -129,6 +129,17 @@ def update_profile(
         user.show_continue_watching = body.show_continue_watching
     if body.recently_added_days is not None:
         user.recently_added_days = body.recently_added_days
+    languages_changed = False
+    if body.languages is not None:
+        deduped = list(dict.fromkeys(code.lower() for code in body.languages))
+        if deduped != list(user.languages or []):
+            user.languages = deduped
+            languages_changed = True
+            session.execute(delete(ScopedFeedItem).where(ScopedFeedItem.user_id == user.id))
+            session.execute(delete(ScopedFeedBuild).where(ScopedFeedBuild.user_id == user.id))
     session.commit()
-    request.app.state.feed_worker.rescore_soon(user.id)
+    if languages_changed:
+        request.app.state.feed_worker.request(user.id)
+    else:
+        request.app.state.feed_worker.rescore_soon(user.id)
     return Me.model_validate(user)

@@ -331,6 +331,15 @@ def read_feed(
     ]
     if sort != "recommended":
         matching.sort(key=lambda item: _sort_key(sort, item[0], item[1]))
+    top_languages = dict(languages.most_common(10))
+    for code in user.languages or []:
+        if languages[code] > 0 and code not in top_languages:
+            top_languages[code] = languages[code]
+    ordered_languages = [
+        LanguageCount(language=code, count=top_languages.pop(code))
+        for code in (user.languages or [])
+        if code in top_languages
+    ] + [LanguageCount(language=k, count=n) for k, n in top_languages.items()]
     return FeedPage(
         status=cast(FeedStatus, state.status) if state and state.status else "none",
         step=state.step if state else None,
@@ -368,7 +377,7 @@ def read_feed(
             )
             for rec, title, where in matching[offset : offset + limit]
         ],
-        languages=[LanguageCount(language=k, count=n) for k, n in languages.most_common(10)],
+        languages=ordered_languages,
         genres=[g for g, _ in genres.most_common(12)],
         decades=decades,
         certificates=region_certificates(user.region, tmdb),

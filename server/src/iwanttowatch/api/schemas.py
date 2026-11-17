@@ -41,6 +41,7 @@ class ProfileUpdate(BaseModel):
     default_content_type: str | None = None
     show_continue_watching: bool | None = None
     recently_added_days: Annotated[int, Field(ge=1, le=30)] | None = None
+    languages: list[LanguageCode] | None = Field(default=None, max_length=20)
 
 
 class SetupStatus(BaseModel):

@@ -10345,6 +10345,22 @@
               }
             ],
             "title": "Recently Added Days"
+          },
+          "languages": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z]{2,3}$"
+                },
+                "type": "array",
+                "maxItems": 20
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Languages"
           }
         },
         "type": "object",

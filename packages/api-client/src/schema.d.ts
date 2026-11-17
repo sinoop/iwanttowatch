@@ -3602,6 +3602,8 @@ export interface components {
             show_continue_watching?: boolean | null;
             /** Recently Added Days */
             recently_added_days?: number | null;
+            /** Languages */
+            languages?: string[] | null;
         };
         /** ProfilingUpdate */
         ProfilingUpdate: {

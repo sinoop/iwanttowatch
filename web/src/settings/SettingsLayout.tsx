@@ -187,6 +187,7 @@ export function SettingsLayout({
       label: 'My Profile',
       icon: <UserIcon />,
       subItems: [
+        { id: 'languages', label: 'Languages', href: '/settings/profile#languages' },
         { id: 'content-filter', label: 'Default Feed Content', href: '/settings/profile#content-filter' },
         { id: 'birth-year', label: 'Birth Year', href: '/settings/profile#birth-year' },
         { id: 'jellyfin-account', label: 'Jellyfin Account', href: '/settings/profile#jellyfin-account' },

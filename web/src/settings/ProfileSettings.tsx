@@ -7,10 +7,42 @@ import { JellyfinAccount } from '../JellyfinSettings'
 import { Button, ErrorText, Field } from '../ui'
 
 const THIS_YEAR = new Date().getFullYear()
+const COMMON_LANGUAGES = [
+  'ml',
+  'en',
+  'hi',
+  'ta',
+  'te',
+  'kn',
+  'bn',
+  'mr',
+  'ko',
+  'ja',
+  'fr',
+  'es',
+  'it',
+  'de',
+  'zh',
+  'ar',
+  'pt',
+  'ru',
+]
+const languageName = new Intl.DisplayNames(['en'], { type: 'language' })
+
+function displayLanguage(code: string): string {
+  try {
+    return languageName.of(code) ?? code.toUpperCase()
+  } catch {
+    return code.toUpperCase()
+  }
+}
 
 export function ProfileSettings({ me }: { me: Me }) {
   return (
     <div className="space-y-6">
+      <div id="languages" className="scroll-mt-6">
+        <LanguagePreferences me={me} />
+      </div>
       <div id="content-filter" className="scroll-mt-6">
         <DefaultContentFilter me={me} />
       </div>
@@ -37,6 +69,202 @@ export function ProfileSettings({ me }: { me: Me }) {
         </div>
       )}
     </div>
+  )
+}
+
+function LanguagePreferences({ me }: { me: Me }) {
+  const queryClient = useQueryClient()
+  const [languages, setLanguages] = useState<string[]>(me.languages ?? [])
+  const [customCode, setCustomCode] = useState('')
+  const [codeError, setCodeError] = useState<string | null>(null)
+
+  const save = useMutation({
+    mutationFn: async (nextLanguages: string[]) => {
+      const { data, error } = await api.PUT('/api/v1/me/profile', {
+        body: { languages: nextLanguages },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['me'], data)
+      setLanguages(data.languages ?? [])
+      for (const key of ['feed', 'together']) queryClient.invalidateQueries({ queryKey: [key] })
+    },
+  })
+
+  const dirty = JSON.stringify(languages) !== JSON.stringify(me.languages ?? [])
+  const availableQuickAdd = COMMON_LANGUAGES.filter((code) => !languages.includes(code))
+
+  const addLanguage = (code: string) => {
+    const normalized = code.trim().toLowerCase()
+    if (!/^[a-z]{2,3}$/.test(normalized)) {
+      setCodeError('Enter a 2- or 3-letter ISO language code (e.g. ml, en, ja).')
+      return
+    }
+    setCodeError(null)
+    if (!languages.includes(normalized)) {
+      setLanguages((current) => [...current, normalized])
+    }
+    setCustomCode('')
+  }
+
+  const removeLanguage = (code: string) => {
+    setLanguages((current) => current.filter((c) => c !== code))
+  }
+
+  const moveLanguage = (index: number, delta: -1 | 1) => {
+    setLanguages((current) => {
+      const target = index + delta
+      if (target < 0 || target >= current.length) return current
+      const next = [...current]
+      const [item] = next.splice(index, 1)
+      next.splice(target, 0, item)
+      return next
+    })
+  }
+
+  const submitCustom = (event: FormEvent) => {
+    event.preventDefault()
+    addLanguage(customCode)
+  }
+
+  return (
+    <section className="rounded-xl border border-white/10 p-5">
+      <h2 className="font-semibold text-white">Languages</h2>
+      <p className="mt-2 text-sm text-white/60">
+        Order the languages you watch by preference. These languages are included in your recommendations and in
+        “In Theatres” discovery so regional cinema isn’t drowned out by global popularity.
+      </p>
+
+      {languages.length > 0 ? (
+        <ol className="mt-4 space-y-2" aria-label="Preferred languages">
+          {languages.map((code, index) => {
+            const label = displayLanguage(code)
+            return (
+              <li
+                key={code}
+                className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-5 text-xs font-medium text-white/40">{index + 1}.</span>
+                  <span className="truncate text-sm font-medium text-white">{label}</span>
+                  <span className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-xs text-white/60">{code}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="px-2 py-1 text-xs"
+                    onClick={() => moveLanguage(index, -1)}
+                    disabled={index === 0 || save.isPending}
+                    aria-label={`Move ${label} up`}
+                  >
+                    ↑
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="px-2 py-1 text-xs"
+                    onClick={() => moveLanguage(index, 1)}
+                    disabled={index === languages.length - 1 || save.isPending}
+                    aria-label={`Move ${label} down`}
+                  >
+                    ↓
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="px-2 py-1 text-xs text-white/60 hover:text-red-300"
+                    onClick={() => removeLanguage(code)}
+                    disabled={save.isPending}
+                    aria-label={`Remove ${label}`}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </li>
+            )
+          })}
+        </ol>
+      ) : (
+        <p className="mt-4 text-sm text-white/50">
+          No preferred languages selected yet. Add languages below to include them in your feeds.
+        </p>
+      )}
+
+      {availableQuickAdd.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-2 text-xs font-medium text-white/60">Quick add</p>
+          <div className="flex flex-wrap gap-2">
+            {availableQuickAdd.map((code) => (
+              <button
+                key={code}
+                type="button"
+                onClick={() => addLanguage(code)}
+                disabled={save.isPending || languages.length >= 20}
+                className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/75 transition-colors hover:border-accent/60 hover:text-white disabled:opacity-40"
+              >
+                + {displayLanguage(code)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <form onSubmit={submitCustom} className="mt-4 flex flex-wrap items-end gap-2">
+        <div className="w-44">
+          <Field
+            label="Add by ISO code"
+            placeholder="e.g. pa, gu, tr"
+            maxLength={3}
+            value={customCode}
+            onChange={(e) => {
+              setCustomCode(e.target.value)
+              if (codeError) setCodeError(null)
+            }}
+          />
+        </div>
+        <Button type="submit" variant="ghost" disabled={!customCode.trim() || save.isPending || languages.length >= 20}>
+          Add
+        </Button>
+      </form>
+      {codeError && (
+        <div className="mt-2">
+          <ErrorText>{codeError}</ErrorText>
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          onClick={() => save.mutate(languages)}
+          disabled={!dirty || save.isPending}
+        >
+          {save.isPending ? 'Saving…' : 'Save'}
+        </Button>
+        {dirty && (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setLanguages(me.languages ?? [])}
+            disabled={save.isPending}
+          >
+            Reset
+          </Button>
+        )}
+        {save.isSuccess && !dirty && (
+          <span role="status" className="text-sm text-emerald-300">
+            Saved. Your feeds will refresh with your updated languages.
+          </span>
+        )}
+      </div>
+      {save.error && (
+        <div className="mt-3">
+          <ErrorText>{save.error.message}</ErrorText>
+        </div>
+      )}
+    </section>
   )
 }
 

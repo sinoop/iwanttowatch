@@ -1021,3 +1021,69 @@ def test_feed_recently_added_filter_and_profile_days(
     idle(client)
     main_page = feed(client)
     assert main_page["status"] == "ready"
+
+
+def test_profile_languages_update_and_order(client: TestClient) -> None:
+    res = client.put("/api/v1/me/profile", json={"languages": ["ml", "en", "ml", "ta"]})
+    assert res.status_code == 200
+    assert res.json()["languages"] == ["ml", "en", "ta"]
+
+    reordered = client.put("/api/v1/me/profile", json={"languages": ["ta", "ml"]})
+    assert reordered.status_code == 200
+    assert reordered.json()["languages"] == ["ta", "ml"]
+
+    invalid = client.put("/api/v1/me/profile", json={"languages": ["english"]})
+    assert invalid.status_code == 422
+
+
+def test_feed_theatrical_includes_user_and_rated_languages(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ml_movie: dict[str, object] = {
+        "title": "Aattam",
+        "original_title": "ആട്ടം",
+        "lang": "ml",
+        "date": "2024-01-05",
+        "imdb": None,
+        "certs": {},
+    }
+    ta_movie: dict[str, object] = {
+        "title": "Meiyazhagan",
+        "original_title": "மெய்யழகன்",
+        "lang": "ta",
+        "date": "2024-09-27",
+        "imdb": None,
+        "certs": {},
+    }
+    ta_seed: dict[str, object] = {
+        "title": "Kadaisi Vivasayi",
+        "original_title": "கடைசி விவசாயி",
+        "lang": "ta",
+        "date": "2022-02-11",
+        "imdb": None,
+        "certs": {},
+    }
+    monkeypatch.setitem(test_imports.MOVIES, 991, ml_movie)
+    monkeypatch.setitem(test_imports.MOVIES, 992, ta_movie)
+    monkeypatch.setitem(test_imports.MOVIES, 993, ta_seed)
+
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    # User explicitly prefers Malayalam first, English second, and rated a Tamil film.
+    client.put("/api/v1/me/profile", json={"languages": ["ml", "en"]})
+    client.put("/api/v1/titles/993/reaction", json={"reaction": "loved"})
+    idle(client)
+
+    res = client.get("/api/v1/feed?theatrical=true")
+    assert res.status_code == 200
+    idle(client)
+
+    page = client.get("/api/v1/feed?theatrical=true").json()
+    assert page["status"] == "ready"
+    ids = {item["tmdb_id"] for item in page["items"]}
+    assert {991, 992} <= ids
+    lang_codes = [entry["language"] for entry in page["languages"]]
+    assert "ml" in lang_codes
+    assert lang_codes.index("ml") < lang_codes.index("en")
+
+    ml_only = client.get("/api/v1/feed?theatrical=true&language=ml").json()
+    assert 991 in {item["tmdb_id"] for item in ml_only["items"]}
