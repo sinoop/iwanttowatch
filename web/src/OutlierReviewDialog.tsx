@@ -576,15 +576,28 @@ function OutlierCard({
                   type="button"
                   onClick={() => handleToggleTag(tag.id)}
                   disabled={!selected && activeTags.length >= MAX_TAGS}
-                  className={`cursor-pointer inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-30 ${
+                  className={`cursor-pointer inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-1 disabled:cursor-not-allowed disabled:opacity-35 ${
                     selected
                       ? isPositive
-                        ? 'border-accent bg-accent/20 font-semibold text-accent-strong'
-                        : 'border-red-500 bg-red-500/20 font-semibold text-red-200'
-                      : 'border-white/10 text-white/70 hover:border-white/25 hover:text-white'
+                        ? 'border-emerald-500/60 bg-emerald-500/20 font-medium text-emerald-200 focus-visible:ring-emerald-500/60'
+                        : 'border-rose-500/60 bg-rose-500/20 font-medium text-rose-200 focus-visible:ring-rose-500/60'
+                      : isPositive
+                      ? 'border-white/10 bg-white/5 text-white/70 hover:border-emerald-500/30 hover:text-white'
+                      : 'border-white/10 bg-white/5 text-white/70 hover:border-rose-500/30 hover:text-white'
                   }`}
                 >
-                  <TagIcon tagId={tag.id} className="size-3.5 shrink-0" />
+                  <TagIcon
+                    tagId={tag.id}
+                    className={`size-3.5 shrink-0 ${
+                      selected
+                        ? isPositive
+                          ? 'text-emerald-200'
+                          : 'text-rose-200'
+                        : isPositive
+                        ? 'text-emerald-400/80'
+                        : 'text-rose-400/80'
+                    }`}
+                  />
                   <span>{tag.label}</span>
                 </button>
               )
