@@ -294,6 +294,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/compaction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Compaction
+         * @description Configure daily automatic orphan-pruning and SQLite VACUUM.
+         */
+        put: operations["set_compaction_api_v1_settings_compaction_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/compaction/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Compaction
+         * @description Prune unreferenced cached titles/availability/expired cache rows and VACUUM now.
+         */
+        post: operations["run_compaction_api_v1_settings_compaction_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/mcp": {
         parameters: {
             query?: never;
@@ -2242,6 +2282,26 @@ export interface components {
             /** Tags */
             tags: string[];
         };
+        /** CompactionResultOut */
+        CompactionResultOut: {
+            /** Titles Removed */
+            titles_removed: number;
+            /** Availability Removed */
+            availability_removed: number;
+            /** Cache Removed */
+            cache_removed: number;
+            /** Size Before */
+            size_before: number;
+            /** Size After */
+            size_after: number;
+        };
+        /** CompactionUpdate */
+        CompactionUpdate: {
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Retention Days */
+            retention_days?: number | null;
+        };
         /** DataExport */
         DataExport: {
             /**
@@ -4010,6 +4070,23 @@ export interface components {
              * @default false
              */
             profiling_enabled: boolean;
+            /**
+             * Db Compact Enabled
+             * @default false
+             */
+            db_compact_enabled: boolean;
+            /**
+             * Db Compact Days
+             * @default 30
+             */
+            db_compact_days: number;
+            /** Db Compact Last At */
+            db_compact_last_at?: string | null;
+            /**
+             * Db Size Bytes
+             * @default 0
+             */
+            db_size_bytes: number;
             llm: components["schemas"]["LlmSettings"];
             jellyfin: components["schemas"]["JellyfinSettings"];
             imdb: components["schemas"]["ImdbSettings"];
@@ -4818,6 +4895,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_compaction_api_v1_settings_compaction_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompactionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerSettings"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_compaction_api_v1_settings_compaction_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompactionResultOut"];
                 };
             };
         };
