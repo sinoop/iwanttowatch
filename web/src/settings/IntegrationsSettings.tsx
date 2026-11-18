@@ -5,6 +5,7 @@ import { api, errorMessage } from '../api'
 import { JellyfinServer } from '../JellyfinSettings'
 import { RadarrServer } from '../RadarrSettings'
 import { Button, ErrorText, Field } from '../ui'
+import { AcquisitionRadarSettings } from './AcquisitionRadarSettings'
 
 export function IntegrationsSettings({ me, settings }: { me: Me; settings: ServerSettings }) {
   return (
@@ -15,8 +16,9 @@ export function IntegrationsSettings({ me, settings }: { me: Me; settings: Serve
       <div id="jellyfin" className="scroll-mt-6">
         <JellyfinServer settings={settings} />
       </div>
-      <div id="radarr" className="scroll-mt-6">
+      <div id="radarr" className="scroll-mt-6 space-y-6">
         <RadarrServer settings={settings} />
+        <AcquisitionRadarSettings embedded />
       </div>
       <div id="imdb" className="scroll-mt-6">
         <ImdbSection me={me} settings={settings} />

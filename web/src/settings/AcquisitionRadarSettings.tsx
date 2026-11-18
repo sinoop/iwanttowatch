@@ -1,4 +1,4 @@
-import type { AutoDownloadConfig, RadarItem } from '@iwanttowatch/api-client'
+import type { AutoDownloadConfig, RadarItem, RadarRootFolder } from '@iwanttowatch/api-client'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import {
@@ -34,7 +34,76 @@ export function RadarIcon({ className = 'size-4' }: { className?: string }) {
   )
 }
 
-export function AcquisitionRadarSettings() {
+function DiskSpaceSummary({
+  rootFolders,
+  minFreeGb,
+}: {
+  rootFolders: RadarRootFolder[]
+  minFreeGb: number
+}) {
+  if (rootFolders.length === 0) return null
+
+  const minBytes = minFreeGb * 1024 * 1024 * 1024
+  const formattedValues = new Set(rootFolders.map((f) => f.free_space_formatted ?? 'Unknown'))
+
+  // When multiple root folders live on the same volume, avoid repeating the same GB badge 5 times.
+  if (formattedValues.size === 1 && rootFolders.length > 1) {
+    const first = rootFolders[0]
+    const isLow = minFreeGb > 0 && first.free_space_bytes != null && first.free_space_bytes < minBytes
+    return (
+      <div
+        className={`flex flex-col gap-1.5 rounded-xl border px-3.5 py-2.5 text-xs sm:flex-row sm:items-center sm:justify-between ${
+          isLow
+            ? 'border-amber-500/35 bg-amber-500/10 text-amber-200'
+            : 'border-white/10 bg-black/25 text-white/75'
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-white/60">Radarr Volume Free Space:</span>
+          <span className={`font-semibold ${isLow ? 'text-amber-200' : 'text-emerald-300'}`}>
+            {first.free_space_formatted ?? 'Unknown'} free
+          </span>
+          {isLow && <span title={`Below ${minFreeGb} GB minimum`}>⚠️</span>}
+        </div>
+        <span className="text-[11px] text-white/45 truncate" title={rootFolders.map((f) => f.path).join(', ')}>
+          Shared across {rootFolders.length} root folders ({rootFolders.map((f) => f.path).join(', ')})
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {rootFolders.map((folder) => {
+        const isLow =
+          minFreeGb > 0 && folder.free_space_bytes != null && folder.free_space_bytes < minBytes
+        return (
+          <div
+            key={folder.path}
+            className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-xs ${
+              isLow
+                ? 'border-amber-500/35 bg-amber-500/10 text-amber-200'
+                : 'border-white/10 bg-black/25 text-white/80'
+            }`}
+          >
+            <span className="min-w-0 truncate font-mono text-[11px]" title={folder.path}>
+              {folder.path}
+            </span>
+            <span
+              className={`shrink-0 font-semibold whitespace-nowrap ${
+                isLow ? 'text-amber-200' : 'text-emerald-300'
+              }`}
+            >
+              {folder.free_space_formatted ?? 'Unknown'} free{isLow ? ' ⚠️' : ''}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export function AcquisitionRadarSettings({ embedded = false }: { embedded?: boolean }) {
   const settings = useServerSettings()
   const radarrConfigured = settings.data?.radarr.configured ?? false
 
@@ -162,66 +231,63 @@ export function AcquisitionRadarSettings() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Acquisition Radar Header / KPI Banner */}
-      <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.04] to-transparent p-6 shadow-xl backdrop-blur-sm">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="flex size-7 items-center justify-center rounded-lg bg-accent/20 text-accent font-bold text-sm">
-                <RadarIcon className="size-4" />
-              </span>
-              <h2 className="text-xl font-bold text-white tracking-tight">Acquisition Radar</h2>
-            </div>
-            <p className="mt-1.5 max-w-xl text-sm text-white/60 leading-relaxed">
-              Intelligent media acquisition: find high-match recommendations missing from your streaming services,
-              and queue them for automatic download in Radarr.
-            </p>
+    <div className="space-y-5">
+      {/* Acquisition Radar Header & Summary Stats */}
+      <section className="rounded-xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <span className="flex size-7 items-center justify-center rounded-lg bg-accent/20 text-accent">
+              <RadarIcon className="size-4" />
+            </span>
+            <h2 className="text-lg font-semibold text-white">Acquisition Radar</h2>
           </div>
+          <p className="text-sm text-white/60">
+            Find high-match recommendations missing from your streaming services and queue them in Radarr automatically or on demand.
+          </p>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            {minFreeFormatted && (
-              <div
-                className={`rounded-xl border px-4 py-2.5 text-right ${
-                  hasSufficientSpace
-                    ? 'border-emerald-500/20 bg-emerald-500/10'
-                    : 'border-amber-500/30 bg-amber-500/15'
+        <div className={`grid grid-cols-1 gap-3 ${minFreeFormatted ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+          {minFreeFormatted && (
+            <div
+              className={`rounded-xl border px-4 py-3 ${
+                hasSufficientSpace
+                  ? 'border-emerald-500/20 bg-emerald-500/10'
+                  : 'border-amber-500/30 bg-amber-500/15'
+              }`}
+            >
+              <span
+                className={`block text-[11px] font-medium uppercase tracking-wider ${
+                  hasSufficientSpace ? 'text-emerald-300/80' : 'text-amber-300'
                 }`}
               >
-                <span
-                  className={`block text-[10px] font-medium uppercase tracking-wider ${
-                    hasSufficientSpace ? 'text-emerald-300/80' : 'text-amber-300'
-                  }`}
-                >
-                  Remaining HDD Space
-                </span>
-                <span
-                  className={`text-xl font-bold tabular-nums ${
-                    hasSufficientSpace ? 'text-emerald-300' : 'text-amber-200'
-                  }`}
-                >
-                  {minFreeFormatted}
-                </span>
-              </div>
-            )}
-
-            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-right">
-              <span className="block text-[10px] font-medium uppercase tracking-wider text-white/50">
-                Missing from Streaming
+                Remaining HDD Space
               </span>
-              <span className="text-xl font-bold text-white tabular-nums">
-                {rawItems.length}
+              <span
+                className={`mt-1 block text-xl font-bold tabular-nums ${
+                  hasSufficientSpace ? 'text-emerald-300' : 'text-amber-200'
+                }`}
+              >
+                {minFreeFormatted}
               </span>
             </div>
+          )}
 
-            <div className="rounded-xl border border-accent/20 bg-accent/10 px-4 py-2.5 text-right">
-              <span className="block text-[10px] font-medium uppercase tracking-wider text-accent-strong">
-                To Request
-              </span>
-              <span className="text-xl font-bold text-accent tabular-nums">
-                {unqueuedItems.length}
-              </span>
-            </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+            <span className="block text-[11px] font-medium uppercase tracking-wider text-white/50">
+              Missing from Streaming
+            </span>
+            <span className="mt-1 block text-xl font-bold text-white tabular-nums">
+              {rawItems.length}
+            </span>
+          </div>
+
+          <div className="rounded-xl border border-accent/20 bg-accent/10 px-4 py-3">
+            <span className="block text-[11px] font-medium uppercase tracking-wider text-accent-strong">
+              To Request
+            </span>
+            <span className="mt-1 block text-xl font-bold text-accent tabular-nums">
+              {unqueuedItems.length}
+            </span>
           </div>
         </div>
       </section>
@@ -234,24 +300,28 @@ export function AcquisitionRadarSettings() {
             <div>
               <p className="font-semibold text-amber-200">Radarr is not connected</p>
               <p className="text-xs text-amber-200/70">
-                Connect your Radarr instance in Settings to enable automated downloads and file status detection.
+                {embedded
+                  ? 'Connect your Radarr server above to enable automated downloads and remaining disk space checks.'
+                  : 'Connect your Radarr instance in Settings to enable automated downloads and file status detection.'}
               </p>
             </div>
           </div>
-          <Link
-            to="/settings/integrations#radarr"
-            className="shrink-0 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-300"
-          >
-            Connect Radarr →
-          </Link>
+          {!embedded && (
+            <Link
+              to="/settings/integrations#radarr"
+              className="shrink-0 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-300"
+            >
+              Connect Radarr →
+            </Link>
+          )}
         </div>
       )}
 
       {/* Automatic Background Downloader & Storage Guardrails */}
-      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 backdrop-blur-sm space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2.5">
+      <section className="rounded-xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-base font-semibold text-white">
                 Automatic Background Downloads
               </h3>
@@ -265,18 +335,17 @@ export function AcquisitionRadarSettings() {
                 {autoEnabled ? `Active · ≥ ${autoMinMatch}% Match` : 'Off'}
               </span>
               {autoData && (
-                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] text-white/60">
-                  {autoData.downloads_this_week} / {autoWeeklyLimit} downloaded this week
+                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] text-white/65">
+                  {autoData.downloads_this_week} / {autoWeeklyLimit} this week
                 </span>
               )}
             </div>
-            <p className="mt-1 text-xs text-white/55">
-              Autonomously queues top unstreamable recommendations into Radarr after feed updates,
-              guarded by your match threshold, remaining HDD free space, weekly download cap, and vote floor.
+            <p className="mt-1 text-xs text-white/55 leading-relaxed">
+              Autonomously queues top unstreamable recommendations in Radarr after feed updates, guarded by match score, remaining HDD space, weekly cap, and vote floor.
             </p>
           </div>
 
-          <label className="inline-flex items-center gap-2.5 cursor-pointer select-none">
+          <label className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/10 bg-black/25 px-3 py-2 cursor-pointer select-none whitespace-nowrap hover:border-white/20">
             <input
               type="checkbox"
               checked={autoEnabled}
@@ -287,92 +356,71 @@ export function AcquisitionRadarSettings() {
           </label>
         </div>
 
-        {/* Root Folder Free Disk Space Indicators */}
-        {rootFolders.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-black/25 px-3.5 py-2.5 text-xs">
-            <span className="font-medium text-white/60">Radarr HDD Free Space:</span>
-            {rootFolders.map((folder) => {
-              const freeBytes = folder.free_space_bytes
-              const minBytes = autoMinFreeGb * 1024 * 1024 * 1024
-              const isLow = autoMinFreeGb > 0 && freeBytes != null && freeBytes < minBytes
-              return (
-                <span
-                  key={folder.path}
-                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[11px] ${
-                    isLow
-                      ? 'border-amber-500/35 bg-amber-500/15 text-amber-200'
-                      : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
-                  }`}
-                >
-                  <span>{folder.path}</span>
-                  <span className="font-sans font-semibold">
-                    {folder.free_space_formatted ?? 'Unknown'} free
-                  </span>
-                  {isLow && <span title={`Below ${autoMinFreeGb} GB minimum`}>⚠️</span>}
-                </span>
-              )
-            })}
-          </div>
-        )}
+        {/* Root Folder Free Disk Space Indicator */}
+        <DiskSpaceSummary rootFolders={rootFolders} minFreeGb={autoMinFreeGb} />
 
-        {/* Controls Grid */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <label className="block rounded-xl border border-white/10 bg-[#12161f]/80 p-3">
-            <span className="block text-[11px] font-medium text-white/60">
-              Auto-Download Match %
-            </span>
-            <div className="mt-1.5 flex items-center gap-2">
+        {/* Clean 2-Column Controls Grid */}
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+          <label className="block rounded-xl border border-white/10 bg-[#12161f]/80 p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-white/80">Auto-Download Match %</span>
+              <span className="text-[11px] text-white/45">50–100%</span>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
               <input
                 type="number"
                 min={50}
                 max={100}
                 value={autoMinMatch}
                 onChange={(e) => setAutoMinMatch(Number(e.target.value))}
-                className="w-20 rounded-lg border border-white/15 bg-black/40 px-2.5 py-1 text-sm font-semibold text-white focus:border-accent focus:outline-none"
+                className="min-w-0 flex-1 rounded-lg border border-white/15 bg-black/40 px-3 py-1.5 text-sm font-semibold text-white focus:border-accent focus:outline-none"
               />
-              <span className="text-xs text-white/50">% min (50–100)</span>
+              <span className="shrink-0 text-xs text-white/50 whitespace-nowrap">% min</span>
             </div>
           </label>
 
-          <label className="block rounded-xl border border-white/10 bg-[#12161f]/80 p-3">
-            <span className="block text-[11px] font-medium text-white/60">
-              Min Remaining HDD Space
-            </span>
-            <div className="mt-1.5 flex items-center gap-2">
+          <label className="block rounded-xl border border-white/10 bg-[#12161f]/80 p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-white/80">Min Remaining HDD Space</span>
+              <span className="text-[11px] text-white/45">0 = no floor</span>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
               <input
                 type="number"
                 min={0}
                 max={100000}
                 value={autoMinFreeGb}
                 onChange={(e) => setAutoMinFreeGb(Number(e.target.value))}
-                className="w-20 rounded-lg border border-white/15 bg-black/40 px-2.5 py-1 text-sm font-semibold text-white focus:border-accent focus:outline-none"
+                className="min-w-0 flex-1 rounded-lg border border-white/15 bg-black/40 px-3 py-1.5 text-sm font-semibold text-white focus:border-accent focus:outline-none"
               />
-              <span className="text-xs text-white/50">GB free required</span>
+              <span className="shrink-0 text-xs text-white/50 whitespace-nowrap">GB free</span>
             </div>
           </label>
 
-          <label className="block rounded-xl border border-white/10 bg-[#12161f]/80 p-3">
-            <span className="block text-[11px] font-medium text-white/60">
-              Weekly Download Cap
-            </span>
-            <div className="mt-1.5 flex items-center gap-2">
+          <label className="block rounded-xl border border-white/10 bg-[#12161f]/80 p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-white/80">Weekly Download Cap</span>
+              <span className="text-[11px] text-white/45">Rolling 7 days</span>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
               <input
                 type="number"
                 min={1}
                 max={100}
                 value={autoWeeklyLimit}
                 onChange={(e) => setAutoWeeklyLimit(Number(e.target.value))}
-                className="w-20 rounded-lg border border-white/15 bg-black/40 px-2.5 py-1 text-sm font-semibold text-white focus:border-accent focus:outline-none"
+                className="min-w-0 flex-1 rounded-lg border border-white/15 bg-black/40 px-3 py-1.5 text-sm font-semibold text-white focus:border-accent focus:outline-none"
               />
-              <span className="text-xs text-white/50">movies / week</span>
+              <span className="shrink-0 text-xs text-white/50 whitespace-nowrap">movies / week</span>
             </div>
           </label>
 
-          <label className="block rounded-xl border border-white/10 bg-[#12161f]/80 p-3">
-            <span className="block text-[11px] font-medium text-white/60">
-              Minimum Vote Floor
-            </span>
-            <div className="mt-1.5 flex items-center gap-2">
+          <label className="block rounded-xl border border-white/10 bg-[#12161f]/80 p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-white/80">Minimum Vote Floor</span>
+              <span className="text-[11px] text-white/45">IMDb / TMDb</span>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
               <input
                 type="number"
                 min={0}
@@ -380,23 +428,23 @@ export function AcquisitionRadarSettings() {
                 step={50}
                 value={autoMinVotes}
                 onChange={(e) => setAutoMinVotes(Number(e.target.value))}
-                className="w-24 rounded-lg border border-white/15 bg-black/40 px-2.5 py-1 text-sm font-semibold text-white focus:border-accent focus:outline-none"
+                className="min-w-0 flex-1 rounded-lg border border-white/15 bg-black/40 px-3 py-1.5 text-sm font-semibold text-white focus:border-accent focus:outline-none"
               />
-              <span className="text-xs text-white/50">votes</span>
+              <span className="shrink-0 text-xs text-white/50 whitespace-nowrap">votes</span>
             </div>
           </label>
 
-          <label className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-[#12161f]/80 p-3 cursor-pointer">
+          <label className="sm:col-span-2 flex items-center gap-3 rounded-xl border border-white/10 bg-[#12161f]/80 px-3.5 py-3 cursor-pointer hover:border-white/20">
             <input
               type="checkbox"
               checked={autoReleasedOnly}
               onChange={(e) => setAutoReleasedOnly(e.target.checked)}
-              className="size-4 rounded border-white/20 bg-black/50 text-accent focus:ring-accent"
+              className="size-4 shrink-0 rounded border-white/20 bg-black/50 text-accent focus:ring-accent"
             />
-            <div>
-              <span className="block text-xs font-medium text-white">Released only</span>
-              <span className="block text-[11px] text-white/50">
-                Digital/physical only (no CAM rips)
+            <div className="text-xs">
+              <span className="font-medium text-white">Released only</span>
+              <span className="ml-2 text-white/55">
+                Require official physical or digital release (avoids CAM/telesync rips)
               </span>
             </div>
           </label>
@@ -408,7 +456,7 @@ export function AcquisitionRadarSettings() {
           </ErrorText>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <div className="flex flex-col gap-3 border-t border-white/10 pt-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-xs text-white/50">
             {autoData?.last_run ? (
               <span>
@@ -419,7 +467,7 @@ export function AcquisitionRadarSettings() {
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Button
               variant="ghost"
               disabled={updateAutoDownload.isPending || runAutoDownload.isPending || !radarrConfigured}
@@ -460,11 +508,11 @@ export function AcquisitionRadarSettings() {
       {error && <ErrorText>{errorMessage(error)}</ErrorText>}
 
       {/* Filter and Batch Action Bar */}
-      <div className="flex flex-col gap-4 rounded-xl border border-white/10 bg-white/[0.02] p-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
         <div className="flex flex-wrap items-center gap-3">
           {/* Minimum Match Selector */}
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-white/50">Min Match:</span>
+            <span className="text-white/50 whitespace-nowrap">Min Match:</span>
             <select
               value={minMatchMissing}
               onChange={(e) => setMinMatchMissing(Number(e.target.value))}
@@ -481,7 +529,7 @@ export function AcquisitionRadarSettings() {
 
           {/* Scope Toggle for Missing from Streaming */}
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-white/50">Scope:</span>
+            <span className="text-white/50 whitespace-nowrap">Scope:</span>
             <select
               value={scope}
               onChange={(e) => setScope(e.target.value as 'user' | 'group')}
@@ -498,13 +546,13 @@ export function AcquisitionRadarSettings() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Filter title or language..."
-            className="rounded-lg border border-white/10 bg-[#12161f] px-3 py-1.5 text-xs text-white placeholder-white/40 focus:border-accent focus:outline-none"
+            className="min-w-[180px] flex-1 rounded-lg border border-white/10 bg-[#12161f] px-3 py-1.5 text-xs text-white placeholder-white/40 focus:border-accent focus:outline-none"
           />
         </div>
 
         {/* Batch Queue Controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          {unqueuedItems.length > 0 && (
+        {unqueuedItems.length > 0 && (
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-white/5 pt-3">
             <Button
               variant="ghost"
               onClick={handleSelectAll}
@@ -516,40 +564,38 @@ export function AcquisitionRadarSettings() {
                   : 'Clear Selection'
                 : `Select All To Queue (${unqueuedItems.length})`}
             </Button>
-          )}
 
-          {selectedIds.length > 0 && (
-            <Button
-              variant="primary"
-              disabled={queueMutation.isPending || !radarrConfigured}
-              onClick={() => handleBatchQueue(selectedIds)}
-              className="text-xs px-3 py-1.5"
-            >
-              <DownloadIcon className="mr-1.5 size-3.5 inline" />
-              {queueMutation.isPending
-                ? 'Queueing…'
-                : `Queue Selected (${selectedIds.length})`}
-            </Button>
-          )}
-
-          {selectedIds.length === 0 && unqueuedItems.length > 0 && (
-            <button
-              type="button"
-              disabled={queueMutation.isPending || !radarrConfigured}
-              onClick={() => handleBatchQueue(unqueuedItems.map((i) => i.tmdb_id))}
-              className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/10 disabled:opacity-50 cursor-pointer"
-            >
-              <DownloadIcon className="mr-1.5 size-3.5 inline" />
-              {`Queue All Missing (${unqueuedItems.length})`}
-            </button>
-          )}
-        </div>
+            {selectedIds.length > 0 ? (
+              <Button
+                variant="primary"
+                disabled={queueMutation.isPending || !radarrConfigured}
+                onClick={() => handleBatchQueue(selectedIds)}
+                className="text-xs px-3 py-1.5"
+              >
+                <DownloadIcon className="mr-1.5 size-3.5 inline" />
+                {queueMutation.isPending
+                  ? 'Queueing…'
+                  : `Queue Selected (${selectedIds.length})`}
+              </Button>
+            ) : (
+              <button
+                type="button"
+                disabled={queueMutation.isPending || !radarrConfigured}
+                onClick={() => handleBatchQueue(unqueuedItems.map((i) => i.tmdb_id))}
+                className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/10 disabled:opacity-50 cursor-pointer"
+              >
+                <DownloadIcon className="mr-1.5 size-3.5 inline" />
+                {`Queue All Missing (${unqueuedItems.length})`}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Loading Skeleton */}
       {isLoading && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3, 4, 5, 6].map((n) => (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {[1, 2, 3, 4].map((n) => (
             <div key={n} className="h-44 animate-pulse rounded-xl border border-white/5 bg-white/[0.02]" />
           ))}
         </div>
@@ -570,7 +616,7 @@ export function AcquisitionRadarSettings() {
 
       {/* Movie Cards Grid */}
       {!isLoading && filteredItems.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {filteredItems.map((item) => {
             const isSelected = selectedIds.includes(item.tmdb_id)
             const isToQueue = item.radarr_status === 'to_request'
@@ -650,12 +696,12 @@ export function AcquisitionRadarSettings() {
                     </div>
 
                     {/* Match & IMDb Badges Row */}
-                    <div className="mt-2 flex items-center gap-2">
-                      <MatchBadge match={item.match_pct} className="scale-85 origin-left" />
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <MatchBadge match={item.match_pct} className="scale-90 origin-left" />
                       {item.imdb && (
                         <ImdbBadge
                           imdb={{ id: item.imdb.id, rating: item.imdb.rating, votes: item.imdb.votes }}
-                          className="scale-85 origin-left"
+                          className="scale-90 origin-left"
                         />
                       )}
                     </div>

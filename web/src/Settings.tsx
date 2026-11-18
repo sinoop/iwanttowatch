@@ -2,7 +2,6 @@ import type { Me } from '@iwanttowatch/api-client'
 import { Link, Navigate, useParams } from 'react-router'
 import { useServerSettings } from './api'
 import { AiSettings } from './settings/AiSettings'
-import { AcquisitionRadarSettings } from './settings/AcquisitionRadarSettings'
 import { DeclutterSettings } from './settings/DeclutterSettings'
 import { HouseholdSettings } from './settings/HouseholdSettings'
 import { ImportExportSettings } from './settings/ImportExportSettings'
@@ -15,7 +14,7 @@ import { StreamingSettings } from './Streaming'
 const VALID_SECTIONS = ['profile', 'imports', 'streaming', 'household', 'integrations', 'ai', 'radar', 'declutter', 'system'] as const
 type ValidSection = (typeof VALID_SECTIONS)[number]
 
-const SECTION_META: Record<ValidSection, { title: string; description: string; adminOnly?: boolean }> = {
+const SECTION_META: Record<Exclude<ValidSection, 'radar'>, { title: string; description: string; adminOnly?: boolean }> = {
   profile: {
     title: 'My Profile',
     description: 'Manage your birth year, linked Jellyfin account, AI taste profile, and sharing.',
@@ -34,17 +33,12 @@ const SECTION_META: Record<ValidSection, { title: string; description: string; a
   },
   integrations: {
     title: 'Integrations',
-    description: 'Connect metadata providers, media servers, and external rating datasets.',
+    description: 'Connect metadata providers, media servers, Radarr acquisition, and external rating datasets.',
     adminOnly: true,
   },
   ai: {
     title: 'AI & LLM',
     description: 'Configure AI writing providers (Gemini or Ollama), fallback priority, and inspect call logs.',
-    adminOnly: true,
-  },
-  radar: {
-    title: 'Acquisition Radar',
-    description: 'Smart media lifecycle: acquire unstreamable high-match movies and track early theatrical releases.',
     adminOnly: true,
   },
   declutter: {
@@ -67,7 +61,11 @@ export default function Settings({ me }: { me: Me }) {
     return <Navigate to="/settings/profile" replace />
   }
 
-  const currentSection = section as ValidSection
+  if (section === 'radar') {
+    return <Navigate to={me.is_admin ? '/settings/integrations#radarr' : '/settings/profile'} replace />
+  }
+
+  const currentSection = section as Exclude<ValidSection, 'radar'>
   const meta = SECTION_META[currentSection]
 
   if (meta.adminOnly && !me.is_admin) {
@@ -103,7 +101,6 @@ export default function Settings({ me }: { me: Me }) {
         <IntegrationsSettings me={me} settings={settings.data} />
       )}
       {currentSection === 'ai' && settings.data && <AiSettings me={me} settings={settings.data} />}
-      {currentSection === 'radar' && <AcquisitionRadarSettings />}
       {currentSection === 'declutter' && <DeclutterSettings />}
       {currentSection === 'system' && settings.data && <SystemSettings settings={settings.data} />}
     </SettingsLayout>

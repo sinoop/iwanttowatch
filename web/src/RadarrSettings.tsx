@@ -138,7 +138,7 @@ export function RadarrServer({ settings }: { settings: ServerSettings }) {
   }
 
   return (
-    <section className="mt-6 max-w-xl rounded-xl border border-white/10 p-5">
+    <section className="rounded-xl border border-white/10 p-5">
       <div className="flex items-center justify-between gap-4">
         <h2 className="font-semibold">Radarr</h2>
         <Badge on={connected}>{connected ? 'Connected' : 'Not connected'}</Badge>

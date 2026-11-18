@@ -76,17 +76,6 @@ export function ServerIcon({ className = 'size-4' }: { className?: string }) {
   )
 }
 
-export function RadarIcon({ className = 'size-4' }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19.07 4.93a10 10 0 0 0-14.14 0" />
-      <path d="M16.24 7.76a6 6 0 0 0-8.49 0" />
-      <circle cx="12" cy="12" r="2" />
-      <path d="m13.41 10.59 5.66-5.66" />
-    </svg>
-  )
-}
-
 export function TrashIcon({ className = 'size-4' }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -289,12 +278,6 @@ export function SettingsLayout({
       ],
     },
     {
-      id: 'radar',
-      to: '/settings/radar',
-      label: 'Acquisition Radar',
-      icon: <RadarIcon />,
-    },
-    {
       id: 'declutter',
       to: '/settings/declutter',
       label: 'Declutter',
@@ -489,7 +472,7 @@ export function SettingsLayout({
       </aside>
 
       {/* Main settings content panel */}
-      <div className="min-w-0 flex-1 max-w-3xl">
+      <div className="min-w-0 flex-1 max-w-4xl">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold tracking-tight text-white">{title}</h1>
           {description && <p className="mt-1 text-sm text-white/60">{description}</p>}
