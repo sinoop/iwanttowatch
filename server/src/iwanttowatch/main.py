@@ -1,4 +1,9 @@
 import logging
+import threading
+import traceback
+from collections import deque
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -38,13 +43,98 @@ from iwanttowatch.jellyfin import JellyfinWorker
 
 SESSION_MAX_AGE = 30 * 24 * 3600
 IMMUTABLE = "public, max-age=31536000, immutable"
+MAX_LOG_ENTRIES = 500
+_IGNORED_ACCESS_PATHS = ("/healthz", "/api/v1/settings/logs")
+
+
+@dataclass(frozen=True)
+class LogEntry:
+    id: int
+    timestamp: datetime
+    level: str
+    logger: str
+    message: str
+
+
+class RingBufferLogHandler(logging.Handler):
+    """Thread-safe in-memory ring buffer capturing recent server log records."""
+
+    def __init__(self, maxlen: int = MAX_LOG_ENTRIES) -> None:
+        super().__init__(level=logging.INFO)
+        self._entries: deque[LogEntry] = deque(maxlen=maxlen)
+        self._lock = threading.Lock()
+        self._next_id = 1
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = record.getMessage()
+            if record.name == "uvicorn.access" and any(p in msg for p in _IGNORED_ACCESS_PATHS):
+                return
+            if record.exc_info:
+                if not record.exc_text:
+                    record.exc_text = "".join(traceback.format_exception(*record.exc_info)).rstrip()
+                if record.exc_text:
+                    msg = f"{msg}\n{record.exc_text}"
+            ts = datetime.fromtimestamp(record.created, tz=UTC)
+            with self._lock:
+                entry = LogEntry(
+                    id=self._next_id,
+                    timestamp=ts,
+                    level=record.levelname,
+                    logger=record.name,
+                    message=msg,
+                )
+                self._next_id += 1
+                self._entries.append(entry)
+        except Exception:
+            self.handleError(record)
+
+    def entries(
+        self,
+        *,
+        min_level: int = logging.INFO,
+        search: str | None = None,
+        limit: int = 200,
+    ) -> tuple[int, list[LogEntry]]:
+        needle = search.strip().lower() if search else ""
+        with self._lock:
+            snapshot = list(self._entries)
+        matched = [
+            e
+            for e in reversed(snapshot)
+            if getattr(logging, e.level, logging.INFO) >= min_level
+            and (not needle or needle in e.message.lower() or needle in e.logger.lower())
+        ]
+        return len(matched), matched[:limit]
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+
+log_buffer = RingBufferLogHandler()
+
+
+def install_log_buffer() -> None:
+    """Attach the in-memory ring buffer handler to application and uvicorn loggers."""
+    pkg_log = logging.getLogger("iwanttowatch")
+    if pkg_log.level == logging.NOTSET or pkg_log.level > logging.INFO:
+        pkg_log.setLevel(logging.INFO)
+    for name in ("iwanttowatch", "uvicorn.error", "uvicorn.access"):
+        target = logging.getLogger(name)
+        if log_buffer not in target.handlers:
+            target.addHandler(log_buffer)
 
 
 def ensure_debug_logging() -> None:
     """Ensure iwanttowatch.* INFO logs (like profiling) are emitted."""
+    install_log_buffer()
     pkg_log = logging.getLogger("iwanttowatch")
     pkg_log.setLevel(logging.INFO)
-    if not pkg_log.handlers and not logging.getLogger().handlers:
+    if (
+        not any(type(h) is logging.StreamHandler for h in pkg_log.handlers)
+        and not logging.getLogger().handlers
+    ):
         handler = logging.StreamHandler()
         handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
         pkg_log.addHandler(handler)
@@ -52,6 +142,7 @@ def ensure_debug_logging() -> None:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
+    install_log_buffer()
     if settings.debug:
         ensure_debug_logging()
     settings.data_dir.mkdir(parents=True, exist_ok=True)

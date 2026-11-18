@@ -306,6 +306,9 @@ export function SettingsLayout({
       label: 'System',
       icon: <ServerIcon />,
       subItems: [
+        { id: 'logs', label: 'Server Logs', href: '/settings/system#logs' },
+        { id: 'profiling', label: 'Profiling', href: '/settings/system#profiling' },
+        { id: 'compaction', label: 'Compaction', href: '/settings/system#compaction' },
         {
           id: 'mcp',
           label: 'Debugging (MCP)',

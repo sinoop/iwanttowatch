@@ -7,6 +7,9 @@ import { Button, ErrorText } from '../ui'
 export function SystemSettings({ settings }: { settings: ServerSettings }) {
   return (
     <div className="space-y-6">
+      <div id="logs" className="scroll-mt-6">
+        <ServerLogsSection />
+      </div>
       <div id="profiling" className="scroll-mt-6">
         <ProfilingSection enabled={settings.profiling_enabled ?? false} />
       </div>
@@ -20,6 +23,173 @@ export function SystemSettings({ settings }: { settings: ServerSettings }) {
         <ServerBackups />
       </div>
     </div>
+  )
+}
+
+type LogLevel = 'ALL' | 'INFO' | 'WARNING' | 'ERROR'
+
+function ServerLogsSection() {
+  const queryClient = useQueryClient()
+  const [level, setLevel] = useState<LogLevel>('ALL')
+  const [search, setSearch] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  const logs = useQuery({
+    queryKey: ['server-logs', level, search],
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/v1/settings/logs', {
+        params: {
+          query: {
+            level,
+            search: search.trim() || undefined,
+            limit: 200,
+          },
+        },
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    placeholderData: (previous) => previous,
+  })
+
+  const clear = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await api.DELETE('/api/v1/settings/logs')
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['server-logs', level, search], data)
+      queryClient.invalidateQueries({ queryKey: ['server-logs'] })
+    },
+  })
+
+  const entries = logs.data?.entries ?? []
+  const total = logs.data?.total ?? 0
+  const error = logs.error ?? clear.error
+
+  const copyLogs = () => {
+    const text = entries
+      .map((e) => `${e.timestamp} [${e.level}] ${e.logger}: ${e.message}`)
+      .join('\n')
+    void copyToClipboard(text).then((ok) => {
+      if (ok) {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    })
+  }
+
+  return (
+    <section className="rounded-xl border border-white/10 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <h2 className="font-semibold text-white">Server logs</h2>
+          <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-xs text-white/70 tabular-nums">
+            {total} {total === 1 ? 'entry' : 'entries'}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {entries.length > 0 && (
+            <>
+              <Button
+                variant="ghost"
+                className="border border-white/10 px-2.5 py-1 text-xs"
+                onClick={copyLogs}
+              >
+                {copied ? 'Copied' : 'Copy'}
+              </Button>
+              <Button
+                variant="ghost"
+                className="border border-white/10 px-2.5 py-1 text-xs"
+                onClick={() => clear.mutate()}
+                disabled={clear.isPending}
+              >
+                Clear
+              </Button>
+            </>
+          )}
+          <Button
+            variant="ghost"
+            className="border border-white/10 px-2.5 py-1 text-xs"
+            onClick={() => void logs.refetch()}
+            disabled={logs.isFetching}
+          >
+            {logs.isFetching ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        </div>
+      </div>
+      <p className="mt-2 text-sm text-white/60">
+        Recent container and application logs (newest first, up to 500 entries kept in memory). Filter by severity or
+        search by module and message.
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-2.5">
+        <select
+          aria-label="Log severity filter"
+          value={level}
+          onChange={(e) => setLevel(e.target.value as LogLevel)}
+          className="rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30"
+        >
+          <option value="ALL">All levels</option>
+          <option value="INFO">Info & above</option>
+          <option value="WARNING">Warnings & errors</option>
+          <option value="ERROR">Errors only</option>
+        </select>
+        <input
+          type="search"
+          aria-label="Search server logs"
+          placeholder="Filter by message or logger (e.g. jellyfin, feed, PROFILE)…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="min-w-[220px] flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-sm text-white placeholder:text-white/35 outline-none transition-colors focus:border-accent focus:ring-2 focus:ring-accent/30"
+        />
+      </div>
+      {error && (
+        <div className="mt-3">
+          <ErrorText>{error.message}</ErrorText>
+        </div>
+      )}
+      {entries.length === 0 ? (
+        <p className="mt-4 text-sm text-white/50">No matching log entries.</p>
+      ) : (
+        <div className="mt-4 max-h-96 overflow-y-auto rounded-lg border border-white/10 bg-black/40 p-3 font-mono text-xs">
+          <ul className="divide-y divide-white/5">
+            {entries.map((entry) => {
+              const badgeColor =
+                entry.level === 'ERROR' || entry.level === 'CRITICAL'
+                  ? 'bg-red-500/20 text-red-300'
+                  : entry.level === 'WARNING'
+                    ? 'bg-amber-500/20 text-amber-300'
+                    : 'bg-white/10 text-white/65'
+              const shortLogger = entry.logger.replace(/^iwanttowatch\./, '')
+              return (
+                <li key={entry.id} className="py-1.5 first:pt-0 last:pb-0">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span
+                      className="shrink-0 text-white/40 tabular-nums"
+                      title={new Date(entry.timestamp).toLocaleString()}
+                    >
+                      {new Date(entry.timestamp).toLocaleTimeString(undefined, {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                      })}
+                    </span>
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${badgeColor}`}>
+                      {entry.level}
+                    </span>
+                    <span className="shrink-0 text-white/45">{shortLogger}</span>
+                    <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-white/85">
+                      {entry.message}
+                    </span>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+    </section>
   )
 }
 

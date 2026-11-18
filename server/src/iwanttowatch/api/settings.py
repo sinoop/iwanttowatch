@@ -1,5 +1,7 @@
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
@@ -699,3 +701,60 @@ def read_llm_calls(
             for call, name in rows
         ],
     )
+
+
+LogLevelFilter = Literal["ALL", "INFO", "WARNING", "ERROR"]
+
+
+class ServerLogEntryOut(BaseModel):
+    id: int
+    timestamp: datetime
+    level: str
+    logger: str
+    message: str
+
+
+class ServerLogsOut(BaseModel):
+    total: int
+    entries: list[ServerLogEntryOut]
+
+
+@router.get("/logs")
+def read_server_logs(
+    _admin: AdminUser,
+    level: LogLevelFilter = "ALL",
+    search: str | None = Query(default=None, max_length=200),
+    limit: int = Query(200, ge=1, le=500),
+) -> ServerLogsOut:
+    """Recent in-memory application and server logs for admin troubleshooting."""
+    from iwanttowatch.main import log_buffer
+
+    min_level = {
+        "ALL": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+    }[level]
+    total, entries = log_buffer.entries(min_level=min_level, search=search, limit=limit)
+    return ServerLogsOut(
+        total=total,
+        entries=[
+            ServerLogEntryOut(
+                id=e.id,
+                timestamp=e.timestamp,
+                level=e.level,
+                logger=e.logger,
+                message=e.message,
+            )
+            for e in entries
+        ],
+    )
+
+
+@router.delete("/logs")
+def clear_server_logs(_admin: AdminUser) -> ServerLogsOut:
+    """Clear the in-memory server log buffer."""
+    from iwanttowatch.main import log_buffer
+
+    log_buffer.clear()
+    return ServerLogsOut(total=0, entries=[])

@@ -378,6 +378,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Server Logs
+         * @description Recent in-memory application and server logs for admin troubleshooting.
+         */
+        get: operations["read_server_logs_api_v1_settings_logs_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Clear Server Logs
+         * @description Clear the in-memory server log buffer.
+         */
+        delete: operations["clear_server_logs_api_v1_settings_logs_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/imports": {
         parameters: {
             query?: never;
@@ -4059,6 +4083,29 @@ export interface components {
             /** Reaction */
             reaction: string | null;
         };
+        /** ServerLogEntryOut */
+        ServerLogEntryOut: {
+            /** Id */
+            id: number;
+            /**
+             * Timestamp
+             * Format: date-time
+             */
+            timestamp: string;
+            /** Level */
+            level: string;
+            /** Logger */
+            logger: string;
+            /** Message */
+            message: string;
+        };
+        /** ServerLogsOut */
+        ServerLogsOut: {
+            /** Total */
+            total: number;
+            /** Entries */
+            entries: components["schemas"]["ServerLogEntryOut"][];
+        };
         /** ServerSettings */
         ServerSettings: {
             /** Version */
@@ -5022,6 +5069,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_server_logs_api_v1_settings_logs_get: {
+        parameters: {
+            query?: {
+                level?: "ALL" | "INFO" | "WARNING" | "ERROR";
+                search?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerLogsOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_server_logs_api_v1_settings_logs_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerLogsOut"];
                 };
             };
         };

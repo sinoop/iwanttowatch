@@ -699,6 +699,99 @@
         }
       }
     },
+    "/api/v1/settings/logs": {
+      "get": {
+        "summary": "Read Server Logs",
+        "description": "Recent in-memory application and server logs for admin troubleshooting.",
+        "operationId": "read_server_logs_api_v1_settings_logs_get",
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "ALL",
+                "INFO",
+                "WARNING",
+                "ERROR"
+              ],
+              "type": "string",
+              "default": "ALL",
+              "title": "Level"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerLogsOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear Server Logs",
+        "description": "Clear the in-memory server log buffer.",
+        "operationId": "clear_server_logs_api_v1_settings_logs_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerLogsOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/imports": {
       "get": {
         "summary": "List Imports",
@@ -11737,6 +11830,61 @@
           "reaction"
         ],
         "title": "SeenStatus"
+      },
+      "ServerLogEntryOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          },
+          "level": {
+            "type": "string",
+            "title": "Level"
+          },
+          "logger": {
+            "type": "string",
+            "title": "Logger"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "timestamp",
+          "level",
+          "logger",
+          "message"
+        ],
+        "title": "ServerLogEntryOut"
+      },
+      "ServerLogsOut": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ServerLogEntryOut"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "entries"
+        ],
+        "title": "ServerLogsOut"
       },
       "ServerSettings": {
         "properties": {

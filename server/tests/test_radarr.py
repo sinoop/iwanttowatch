@@ -456,3 +456,44 @@ def test_title_radarr_decoupled_and_profiling_flag(
     with caplog.at_level("INFO"):
         assert client.get("/api/v1/titles/201?include_radarr=false").status_code == 200
     assert not any("PROFILE GET /api/v1/titles/201 " in r.message for r in caplog.records)
+
+
+def test_server_logs_endpoint(client: TestClient) -> None:
+    import logging
+
+    from iwanttowatch.main import log_buffer
+
+    log_buffer.clear()
+    log = logging.getLogger("iwanttowatch.test_logs")
+    log.info("Synced 42 items from Jellyfin")
+    log.warning("TMDb rate limit approaching")
+    log.error("Ollama connection refused")
+
+    res = client.get("/api/v1/settings/logs")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] == 3
+    # Newest first
+    assert [e["level"] for e in data["entries"]] == ["ERROR", "WARNING", "INFO"]
+    assert data["entries"][0]["message"] == "Ollama connection refused"
+
+    # Level filter
+    warn_res = client.get("/api/v1/settings/logs?level=WARNING")
+    assert warn_res.status_code == 200
+    assert [e["level"] for e in warn_res.json()["entries"]] == ["ERROR", "WARNING"]
+
+    err_res = client.get("/api/v1/settings/logs?level=ERROR")
+    assert err_res.status_code == 200
+    assert [e["level"] for e in err_res.json()["entries"]] == ["ERROR"]
+
+    # Search filter
+    search_res = client.get("/api/v1/settings/logs?search=jellyfin")
+    assert search_res.status_code == 200
+    assert len(search_res.json()["entries"]) == 1
+    assert "42 items" in search_res.json()["entries"][0]["message"]
+
+    # Clear logs
+    clear_res = client.delete("/api/v1/settings/logs")
+    assert clear_res.status_code == 200
+    assert clear_res.json() == {"total": 0, "entries": []}
+    assert client.get("/api/v1/settings/logs").json()["total"] == 0

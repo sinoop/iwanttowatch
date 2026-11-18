@@ -54,7 +54,7 @@ const SECTION_META: Record<ValidSection, { title: string; description: string; a
   },
   system: {
     title: 'System',
-    description: 'Database backups and read-only MCP server debugging access.',
+    description: 'Server logs, performance profiling, database compaction, backups, and MCP debugging access.',
     adminOnly: true,
   },
 }
