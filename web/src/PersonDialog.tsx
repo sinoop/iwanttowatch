@@ -1,7 +1,7 @@
 import type { components, Reaction } from '@iwanttowatch/api-client'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { fetchTitleDetail, ratingToReaction, type TitlePreview, useFavoritePerson, usePerson } from './api'
+import { api, fetchTitleDetail, ratingToReaction, type TitlePreview, useFavoritePerson, usePerson } from './api'
 import { ReactionBadge } from './RateDialog'
 import { JellyfinLogo, ProviderLogo } from './Streaming'
 import { ImdbBadge, MatchBadge } from './TitleDialog'
@@ -9,6 +9,7 @@ import { segmentedBadgeClass, segmentedTabClass } from './tabs'
 import { Button, ErrorText, Poster, SegmentedCapsule } from './ui'
 
 type PersonCredit = components['schemas']['PersonCredit']
+type PersonDetail = components['schemas']['PersonDetail']
 
 export function HeartIcon({ filled, className = 'size-4' }: { filled: boolean; className?: string }) {
   return (
@@ -29,6 +30,7 @@ export function HeartIcon({ filled, className = 'size-4' }: { filled: boolean; c
 function FilmCreditRow({
   film,
   highlight,
+  scoringMatch = false,
   onPrefetchSchedule,
   onPrefetchCancel,
   onPrefetchImmediate,
@@ -36,6 +38,7 @@ function FilmCreditRow({
 }: {
   film: PersonCredit
   highlight?: 'section' | 'inline'
+  scoringMatch?: boolean
   onPrefetchSchedule: (tmdbId: number) => void
   onPrefetchCancel: () => void
   onPrefetchImmediate: (tmdbId: number) => void
@@ -99,7 +102,17 @@ function FilmCreditRow({
 
           {/* Badges row */}
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            {film.match !== null && film.match !== undefined && <MatchBadge match={film.match} />}
+            {film.match !== null && film.match !== undefined ? (
+              <MatchBadge match={film.match} />
+            ) : scoringMatch ? (
+              <span
+                title="Calculating match…"
+                aria-label="Calculating match"
+                className="inline-grid size-10 shrink-0 animate-pulse place-items-center rounded-full bg-white/[0.04] ring-1 ring-white/10"
+              >
+                <span className="size-3 animate-spin rounded-full border-2 border-amber-300/70 border-t-transparent" />
+              </span>
+            ) : null}
             {film.imdb_rating !== null && film.imdb_rating !== undefined ? (
               <ImdbBadge
                 imdb={{ id: '', rating: film.imdb_rating, votes: film.imdb_votes ?? 0 }}
@@ -171,6 +184,8 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
   const [sortBy, setSortBy] = useState<'popular' | 'newest' | 'rating'>('popular')
   const [filmSearch, setFilmSearch] = useState('')
   const [bioExpanded, setBioExpanded] = useState(false)
+  const [scoringMatchIds, setScoringMatchIds] = useState<Set<number>>(new Set())
+  const attemptedMatchKeys = useRef<Set<string>>(new Set())
 
   if (personId !== prevPersonId) {
     setPrevPersonId(personId)
@@ -179,6 +194,7 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
     setSortBy('popular')
     setFilmSearch('')
     setBioExpanded(false)
+    setScoringMatchIds(new Set())
   }
 
   const person = personQuery.data
@@ -251,6 +267,102 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
   const popularHasImdb = popularFilms.some((f) => (f.imdb_votes ?? 0) > 0)
   const allSearchMatchesCount =
     isSearching && tab === 'available' ? filterByRole(allFilms).filter(matchesFilmQuery).length : 0
+
+  const matchScopeFilms = tab === 'all' && isDualRole && roleFilter !== 'all' ? roleFilteredFilms : allFilms
+  const matchScopeVoted = matchScopeFilms.filter(hasAudienceVotes)
+  const topFivePopular = (matchScopeVoted.length > 0 ? matchScopeVoted : matchScopeFilms).slice(0, 5)
+  const popularTargetCsv = topFivePopular
+    .filter(
+      (f) =>
+        (f.match === null || f.match === undefined) &&
+        (!f.watched || (f.user_rating !== null && f.user_rating !== undefined)),
+    )
+    .map((f) => f.tmdb_id)
+    .join(',')
+  const activePersonId = person?.id ?? null
+  const matchAttemptKey =
+    activePersonId !== null && popularTargetCsv
+      ? `${activePersonId}:${personQuery.dataUpdatedAt}:${popularTargetCsv}`
+      : null
+
+  useEffect(() => {
+    if (
+      personId === null ||
+      activePersonId === null ||
+      personId !== activePersonId ||
+      personQuery.isLoading ||
+      personQuery.isFetching ||
+      !popularTargetCsv ||
+      !matchAttemptKey ||
+      attemptedMatchKeys.current.has(matchAttemptKey)
+    ) {
+      return
+    }
+
+    const idsToScore = popularTargetCsv.split(',').map(Number)
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      if (controller.signal.aborted) return
+      attemptedMatchKeys.current.add(matchAttemptKey)
+      setScoringMatchIds(new Set(idsToScore))
+
+      void api
+        .POST('/api/v1/people/{person_id}/matches', {
+          params: { path: { person_id: activePersonId } },
+          body: { tmdb_ids: idsToScore },
+          signal: controller.signal,
+        })
+        .then(({ data }) => {
+          if (controller.signal.aborted || !data?.matches?.length) return
+          const byId = new Map(data.matches.map((m) => [m.tmdb_id, m]))
+          queryClient.setQueryData<PersonDetail | null>(['person', activePersonId], (current) => {
+            if (!current) return current
+            const patchCredit = (credit: PersonCredit): PersonCredit => {
+              const updated = byId.get(credit.tmdb_id)
+              if (!updated) return credit
+              return {
+                ...credit,
+                match: updated.match ?? credit.match,
+                imdb_rating: updated.imdb_rating ?? credit.imdb_rating,
+                imdb_votes: updated.imdb_votes ?? credit.imdb_votes,
+              }
+            }
+            return {
+              ...current,
+              filmography: current.filmography?.map(patchCredit),
+              affinity: current.affinity
+                ? {
+                    ...current.affinity,
+                    rated_films: current.affinity.rated_films?.map(patchCredit),
+                  }
+                : current.affinity,
+            }
+          })
+        })
+        .catch(() => {
+          // Non-blocking background enrichment; leave existing UI untouched on failure.
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setScoringMatchIds(new Set())
+          }
+        })
+    }, 350)
+
+    return () => {
+      controller.abort()
+      window.clearTimeout(timer)
+      setScoringMatchIds(new Set())
+    }
+  }, [
+    personId,
+    activePersonId,
+    personQuery.isLoading,
+    personQuery.isFetching,
+    popularTargetCsv,
+    matchAttemptKey,
+    queryClient,
+  ])
 
   const prefetchFilm = (tmdbId: number) => {
     void queryClient.prefetchQuery({
@@ -610,7 +722,11 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                       </span>
                     </div>
                     <span className="text-[10px] text-amber-200/60">
-                      {popularHasImdb ? 'IMDb & TMDb votes' : 'TMDb votes & buzz'}
+                      {scoringMatchIds.size > 0
+                        ? 'Calculating matches…'
+                        : popularHasImdb
+                          ? 'IMDb & TMDb votes'
+                          : 'TMDb votes & buzz'}
                     </span>
                   </div>
                   <div className="divide-y divide-amber-400/15">
@@ -619,6 +735,7 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                         key={film.tmdb_id}
                         film={film}
                         highlight="section"
+                        scoringMatch={scoringMatchIds.has(film.tmdb_id)}
                         onPrefetchSchedule={schedulePrefetch}
                         onPrefetchCancel={cancelPrefetch}
                         onPrefetchImmediate={prefetchFilm}
@@ -639,6 +756,7 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                       <FilmCreditRow
                         key={film.tmdb_id}
                         film={film}
+                        scoringMatch={scoringMatchIds.has(film.tmdb_id)}
                         onPrefetchSchedule={schedulePrefetch}
                         onPrefetchCancel={cancelPrefetch}
                         onPrefetchImmediate={prefetchFilm}
@@ -658,6 +776,7 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                     key={film.tmdb_id}
                     film={film}
                     highlight={hasPopularHighlights && popularIds.has(film.tmdb_id) ? 'inline' : undefined}
+                    scoringMatch={scoringMatchIds.has(film.tmdb_id)}
                     onPrefetchSchedule={schedulePrefetch}
                     onPrefetchCancel={cancelPrefetch}
                     onPrefetchImmediate={prefetchFilm}

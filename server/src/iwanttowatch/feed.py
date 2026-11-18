@@ -1256,6 +1256,52 @@ def clear_user_rated_matches_cache(user_id: int) -> None:
     _clear_single_score_cache(user_id)
 
 
+def cached_single_scores(
+    session: Session,
+    user_id: int,
+    tmdb_ids: Sequence[int],
+) -> dict[int, tuple[float, list[str]]]:
+    """Return in-memory cached (score, reasons) pairs for already-scored non-feed titles."""
+    bind_id = id(session.get_bind())
+    out: dict[int, tuple[float, list[str]]] = {}
+    for tid in tmdb_ids:
+        cached = _SINGLE_SCORE_CACHE.get((bind_id, user_id, tid))
+        if cached is not None:
+            out[tid] = cached
+    return out
+
+
+def score_candidate_films(
+    session: Session,
+    user: User,
+    tmdb_ids: Sequence[int],
+) -> dict[int, tuple[float, list[str]]]:
+    """Score multiple unseen films in one pass against the user's feed pool, caching
+    individual results in _SINGLE_SCORE_CACHE."""
+    unique_ids = list(dict.fromkeys(tmdb_ids))
+    if not unique_ids:
+        return {}
+    bind_id = id(session.get_bind())
+    out = cached_single_scores(session, user.id, unique_ids)
+    missing = [tid for tid in unique_ids if tid not in out]
+    if missing:
+        picks = stored_picks(session, user.id)
+        scored_list = score_films(
+            session,
+            user,
+            [*feed_films(session, user), *missing],
+            only_candidates=missing,
+        )
+        if len(_SINGLE_SCORE_CACHE) + len(scored_list) > 2048:
+            _SINGLE_SCORE_CACHE.clear()
+        for scored in scored_list:
+            reasons = feed_reasons(scored, picks)
+            result = (scored.score, reasons)
+            _SINGLE_SCORE_CACHE[(bind_id, user.id, scored.tmdb_id)] = result
+            out[scored.tmdb_id] = result
+    return out
+
+
 def score_single_film(
     session: Session,
     user: User,
@@ -1263,32 +1309,7 @@ def score_single_film(
 ) -> tuple[float, list[str]] | None:
     """Return (score, reasons) for a single unseen film against the user's feed pool,
     using an in-memory cache so opening a title and shortlisting it only scores once."""
-    bind_id = id(session.get_bind())
-    cache_key = (bind_id, user.id, tmdb_id)
-    cached = _SINGLE_SCORE_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    scored = next(
-        (
-            s
-            for s in score_films(
-                session,
-                user,
-                [*feed_films(session, user), tmdb_id],
-                only_candidates=[tmdb_id],
-            )
-            if s.tmdb_id == tmdb_id
-        ),
-        None,
-    )
-    if scored is None:
-        return None
-    reasons = feed_reasons(scored, stored_picks(session, user.id))
-    result = (scored.score, reasons)
-    if len(_SINGLE_SCORE_CACHE) > 2048:
-        _SINGLE_SCORE_CACHE.clear()
-    _SINGLE_SCORE_CACHE[cache_key] = result
-    return result
+    return score_candidate_films(session, user, [tmdb_id]).get(tmdb_id)
 
 
 def ensure_shortlist_recommendation(session: Session, user: User, tmdb_id: int) -> bool:

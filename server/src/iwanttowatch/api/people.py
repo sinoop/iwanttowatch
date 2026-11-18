@@ -11,12 +11,18 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert
 
-from iwanttowatch import imdb
+from iwanttowatch import catalog, imdb
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.streaming import Offer
 from iwanttowatch.children import library_owners
 from iwanttowatch.db import utcnow
-from iwanttowatch.feed import clear_user_rated_matches_cache, seen
+from iwanttowatch.feed import (
+    cached_single_scores,
+    clear_user_rated_matches_cache,
+    score_candidate_films,
+    seen,
+    user_rated_matches,
+)
 from iwanttowatch.models import Availability, FavoritePerson, LibraryItem, Recommendation, Title
 from iwanttowatch.taste import effective_ratings, rating_to_reaction
 from iwanttowatch.tmdb import TmdbClient, TmdbError, TmdbNotFound
@@ -25,6 +31,7 @@ router = APIRouter(prefix="/api/v1/people", tags=["people"])
 PERSON_CACHE = timedelta(days=7)
 EXTERNAL_IDS_CACHE = timedelta(days=30)
 IMDB_ENRICH_LIMIT = 20
+POPULAR_MATCH_LIMIT = 5
 # IMDb has roughly ~50x more voters than TMDb; scale IMDb votes onto TMDb's range so
 # cached IMDb-enriched titles stay comparable to uncached TMDb-only credits while still
 # giving regional cinema with sparse TMDb votes a fair lift.
@@ -145,6 +152,21 @@ class PersonDetail(BaseModel):
     is_favorite: bool = False
     affinity: PersonAffinity
     filmography: list[PersonCredit] = Field(default_factory=list)
+
+
+class PersonMatchesRequest(BaseModel):
+    tmdb_ids: list[int] = Field(min_length=1, max_length=10)
+
+
+class PersonCreditMatch(BaseModel):
+    tmdb_id: int
+    match: int | None = None
+    imdb_rating: float | None = None
+    imdb_votes: int | None = None
+
+
+class PersonMatchesResponse(BaseModel):
+    matches: list[PersonCreditMatch] = Field(default_factory=list)
 
 
 class FavoriteToggleRequest(BaseModel):
@@ -487,6 +509,12 @@ def get_person(
             )
         ):
             match_map[tmdb_id] = round(score * 100)
+        unmatched_ids = [mid for mid in movie_ids if mid not in match_map]
+        if unmatched_ids:
+            for tid, (cached_score, _) in cached_single_scores(
+                session, user.id, unmatched_ids
+            ).items():
+                match_map[tid] = round(cached_score * 100)
 
     filmography: list[PersonCredit] = []
     for mid, m in movies.items():
@@ -592,6 +620,89 @@ def get_person(
         is_favorite=is_fav,
         affinity=affinity,
         filmography=filmography,
+    )
+
+
+@router.post("/{person_id}/matches", response_model=PersonMatchesResponse)
+def compute_person_matches(
+    request: Request,
+    person_id: int,
+    body: PersonMatchesRequest,
+    session: DbSession,
+    user: CurrentUser,
+    tmdb: Tmdb,
+) -> PersonMatchesResponse:
+    """Calculate match percentages (and IMDb ratings if enabled) for up to 5 popular credits."""
+    del person_id
+    ids = list(dict.fromkeys(body.tmdb_ids))[:POPULAR_MATCH_LIMIT]
+    if not ids:
+        return PersonMatchesResponse()
+
+    matches: dict[int, int] = {}
+    for tmdb_id, score in session.execute(
+        select(Recommendation.tmdb_id, Recommendation.score).where(
+            Recommendation.user_id == user.id, Recommendation.tmdb_id.in_(ids)
+        )
+    ):
+        matches[tmdb_id] = round(score * 100)
+
+    seen_set = seen(session, user.id)
+    effective = effective_ratings(user.id)
+    rated_ids = set(
+        session.scalars(
+            select(effective.c.tmdb_id).where(
+                effective.c.tmdb_id.in_(ids),
+                effective.c.rating.is_not(None),
+            )
+        )
+    )
+    if rated_ids - set(matches):
+        rated_scores = user_rated_matches(session, user)
+        for tid in rated_ids:
+            if tid not in matches and tid in rated_scores:
+                matches[tid] = rated_scores[tid]
+
+    unseen_to_score = [tid for tid in ids if tid not in matches and tid not in seen_set]
+    titles = catalog.ensure_titles(session, tmdb, unseen_to_score) if unseen_to_score else {}
+
+    data_dir = request.app.state.data_dir
+    if titles and imdb.enabled(session) and imdb.ratings_file(data_dir).exists():
+        need_imdb = [
+            t
+            for t in titles.values()
+            if t.imdb_id and t.imdb_rating is None and t.imdb_votes is None
+        ]
+        if need_imdb:
+            found = imdb.lookup_ratings(data_dir, [t.imdb_id for t in need_imdb if t.imdb_id])
+            for t in need_imdb:
+                if t.imdb_id and t.imdb_id in found:
+                    t.imdb_rating, t.imdb_votes = found[t.imdb_id]
+                else:
+                    t.imdb_votes = 0
+    session.commit()
+
+    if unseen_to_score:
+        for tid, (score_val, _) in score_candidate_films(session, user, unseen_to_score).items():
+            matches[tid] = round(score_val * 100)
+
+    imdb_by_id: dict[int, tuple[float | None, int | None]] = {}
+    for row in session.execute(
+        select(Title.tmdb_id, Title.imdb_rating, Title.imdb_votes).where(
+            Title.tmdb_id.in_(ids), Title.imdb_rating.is_not(None)
+        )
+    ):
+        imdb_by_id[row.tmdb_id] = (row.imdb_rating, row.imdb_votes)
+
+    return PersonMatchesResponse(
+        matches=[
+            PersonCreditMatch(
+                tmdb_id=tid,
+                match=matches.get(tid),
+                imdb_rating=imdb_by_id.get(tid, (None, None))[0],
+                imdb_votes=imdb_by_id.get(tid, (None, None))[1],
+            )
+            for tid in ids
+        ]
     )
 
 

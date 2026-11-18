@@ -542,3 +542,129 @@ def test_person_filmography_imdb_enrichment_lifts_regional_classics(
     assert filmography[0]["imdb_votes"] == 45000
     assert filmography[1]["imdb_rating"] == 6.0
     assert filmography[1]["imdb_votes"] == 800
+
+
+def test_person_popular_matches_scores_uncached_and_reuses_cache(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    monkeypatch.setitem(
+        MOVIES,
+        9301,
+        {
+            "title": "Uncached Drama",
+            "original_title": "Uncached Drama",
+            "lang": "en",
+            "date": "2018-04-12",
+            "imdb": "tt9301001",
+            "votes": 5000,
+        },
+    )
+    monkeypatch.setitem(
+        MOVIES,
+        9302,
+        {
+            "title": "Watched Unrated",
+            "original_title": "Watched Unrated",
+            "lang": "en",
+            "date": "2015-01-10",
+            "imdb": "tt9302001",
+            "votes": 4000,
+        },
+    )
+    monkeypatch.setitem(
+        PEOPLE,
+        903,
+        {
+            "id": 903,
+            "name": "Match Test Person",
+            "known_for_department": "Acting",
+            "movie_credits": {
+                "cast": [
+                    {
+                        "id": 9301,
+                        "title": "Uncached Drama",
+                        "original_title": "Uncached Drama",
+                        "release_date": "2018-04-12",
+                        "character": "Lead",
+                        "vote_average": 7.9,
+                        "vote_count": 5000,
+                        "popularity": 25.0,
+                    },
+                    {
+                        "id": 9302,
+                        "title": "Watched Unrated",
+                        "original_title": "Watched Unrated",
+                        "release_date": "2015-01-10",
+                        "character": "Support",
+                        "vote_average": 7.1,
+                        "vote_count": 4000,
+                        "popularity": 20.0,
+                    },
+                    {
+                        "id": 9303,
+                        "title": "Feed Film",
+                        "original_title": "Feed Film",
+                        "release_date": "2020-06-01",
+                        "character": "Cameo",
+                        "vote_average": 7.4,
+                        "vote_count": 3000,
+                        "popularity": 18.0,
+                    },
+                ],
+                "crew": [],
+            },
+        },
+    )
+
+    with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
+        session.add_all(
+            [
+                Title(
+                    tmdb_id=9302,
+                    title="Watched Unrated",
+                    original_title="Watched Unrated",
+                    original_language="en",
+                    year=2015,
+                ),
+                Title(
+                    tmdb_id=9303,
+                    title="Feed Film",
+                    original_title="Feed Film",
+                    original_language="en",
+                    year=2020,
+                ),
+                UserTitle(
+                    user_id=1,
+                    tmdb_id=9302,
+                    source="app",
+                    watched=True,
+                ),
+            ]
+        )
+        session.flush()
+        session.add(Recommendation(user_id=1, tmdb_id=9303, score=0.84, rank=1, reasons=[]))
+        session.commit()
+
+    # Initial fetch only has the feed match, not the uncached film.
+    initial = client.get("/api/v1/people/903")
+    assert initial.status_code == 200, initial.text
+    by_id = {f["tmdb_id"]: f for f in initial.json()["filmography"]}
+    assert by_id[9301]["match"] is None
+    assert by_id[9302]["match"] is None
+    assert by_id[9303]["match"] == 84
+
+    # Delayed popular-match endpoint scores unseen uncached titles and preserves feed/watched semantics.
+    res = client.post("/api/v1/people/903/matches", json={"tmdb_ids": [9301, 9302, 9303]})
+    assert res.status_code == 200, res.text
+    scored = {m["tmdb_id"]: m for m in res.json()["matches"]}
+    assert scored[9301]["match"] is not None
+    assert 1 <= scored[9301]["match"] <= 99
+    assert scored[9302]["match"] is None
+    assert scored[9303]["match"] == 84
+
+    # Subsequent person fetch picks up the in-memory cached score automatically.
+    refetched = client.get("/api/v1/people/903")
+    assert refetched.status_code == 200, refetched.text
+    refetched_by_id = {f["tmdb_id"]: f for f in refetched.json()["filmography"]}
+    assert refetched_by_id[9301]["match"] == scored[9301]["match"]

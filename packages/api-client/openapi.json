@@ -5176,6 +5176,59 @@
         }
       }
     },
+    "/api/v1/people/{person_id}/matches": {
+      "post": {
+        "tags": [
+          "people"
+        ],
+        "summary": "Compute Person Matches",
+        "description": "Calculate match percentages (and IMDb ratings if enabled) for up to 5 popular credits.",
+        "operationId": "compute_person_matches_api_v1_people__person_id__matches_post",
+        "parameters": [
+          {
+            "name": "person_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Person Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonMatchesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonMatchesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/{person_id}/favorite": {
       "put": {
         "tags": [
@@ -10223,6 +10276,52 @@
         ],
         "title": "PersonCredit"
       },
+      "PersonCreditMatch": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match"
+          },
+          "imdb_rating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imdb Rating"
+          },
+          "imdb_votes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imdb Votes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id"
+        ],
+        "title": "PersonCreditMatch"
+      },
       "PersonDetail": {
         "properties": {
           "id": {
@@ -10322,6 +10421,37 @@
           "affinity"
         ],
         "title": "PersonDetail"
+      },
+      "PersonMatchesRequest": {
+        "properties": {
+          "tmdb_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Tmdb Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_ids"
+        ],
+        "title": "PersonMatchesRequest"
+      },
+      "PersonMatchesResponse": {
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/PersonCreditMatch"
+            },
+            "type": "array",
+            "title": "Matches"
+          }
+        },
+        "type": "object",
+        "title": "PersonMatchesResponse"
       },
       "PersonRef": {
         "properties": {

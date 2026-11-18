@@ -1932,6 +1932,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/people/{person_id}/matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compute Person Matches
+         * @description Calculate match percentages (and IMDb ratings if enabled) for up to 5 popular credits.
+         */
+        post: operations["compute_person_matches_api_v1_people__person_id__matches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/people/{person_id}/favorite": {
         parameters: {
             query?: never;
@@ -3570,6 +3590,17 @@ export interface components {
             /** Streaming Offers */
             streaming_offers?: components["schemas"]["Offer"][];
         };
+        /** PersonCreditMatch */
+        PersonCreditMatch: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Match */
+            match?: number | null;
+            /** Imdb Rating */
+            imdb_rating?: number | null;
+            /** Imdb Votes */
+            imdb_votes?: number | null;
+        };
         /** PersonDetail */
         PersonDetail: {
             /** Id */
@@ -3596,6 +3627,16 @@ export interface components {
             affinity: components["schemas"]["PersonAffinity"];
             /** Filmography */
             filmography?: components["schemas"]["PersonCredit"][];
+        };
+        /** PersonMatchesRequest */
+        PersonMatchesRequest: {
+            /** Tmdb Ids */
+            tmdb_ids: number[];
+        };
+        /** PersonMatchesResponse */
+        PersonMatchesResponse: {
+            /** Matches */
+            matches?: components["schemas"]["PersonCreditMatch"][];
         };
         /** PersonRef */
         PersonRef: {
@@ -7946,6 +7987,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PersonDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compute_person_matches_api_v1_people__person_id__matches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                person_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonMatchesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonMatchesResponse"];
                 };
             };
             /** @description Validation Error */

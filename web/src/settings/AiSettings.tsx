@@ -1,7 +1,7 @@
 import type { Me, ServerSettings } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { api, errorMessage } from '../api'
+import { api, copyToClipboard, errorMessage } from '../api'
 import { Button, ErrorText, Field } from '../ui'
 
 type Provider = ServerSettings['llm']['order'][number]
@@ -504,9 +504,30 @@ function LlmActivity() {
 }
 
 function LlmText({ label, text }: { label: string; text: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = () => {
+    void copyToClipboard(text).then((ok) => {
+      if (ok) {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    })
+  }
+
   return (
     <div>
-      <p className="mb-1 text-xs font-medium uppercase tracking-wide text-white/45">{label}</p>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-white/45">{label}</p>
+        <Button
+          variant="ghost"
+          className="border border-white/10 px-2 py-0.5 text-xs"
+          aria-label={`Copy ${label.toLowerCase()}`}
+          onClick={handleCopy}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+      </div>
       <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/30 p-3 font-mono text-xs text-white/80">
         {text}
       </pre>
