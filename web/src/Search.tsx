@@ -1,6 +1,6 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, errorMessage, fetchTitleDetail, type TitlePreview, useServerSettings } from './api'
+import { api, errorMessage, fetchTitleDetail, type TitlePreview, useDebouncedSearch, useServerSettings } from './api'
 import PersonDialog from './PersonDialog'
 import TitleDialog from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
@@ -25,9 +25,16 @@ export function FilmSearch({
 }) {
   const settings = useServerSettings()
   const [query, setQuery] = useState('')
-  const search = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await api.GET('/api/v1/catalog/search', { params: { query: { query } } })
+  const [debouncedQuery, flushQuery, resetQuery] = useDebouncedSearch(query, 300)
+  const search = useQuery({
+    queryKey: ['catalog-search', debouncedQuery],
+    enabled: Boolean(settings.data?.tmdb_configured) && debouncedQuery.length >= 1,
+    staleTime: 60_000,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await api.GET('/api/v1/catalog/search', {
+        params: { query: { query: debouncedQuery } },
+        signal,
+      })
       if (error) throw new Error(errorMessage(error))
       return data.slice(0, 8)
     },
@@ -35,7 +42,7 @@ export function FilmSearch({
   if (!settings.data?.tmdb_configured) return null
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (query.trim()) search.mutate()
+    if (query.trim()) flushQuery()
   }
 
   return (
@@ -49,8 +56,8 @@ export function FilmSearch({
           autoFocus={autoFocus}
           className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none placeholder:text-white/35 focus:border-accent focus:ring-2 focus:ring-accent/30"
         />
-        <Button type="submit" variant="ghost" disabled={search.isPending}>
-          Search
+        <Button type="submit" variant="ghost" disabled={search.isFetching}>
+          {search.isFetching ? 'Searching…' : 'Search'}
         </Button>
       </form>
       {search.error && (
@@ -58,13 +65,20 @@ export function FilmSearch({
           <ErrorText>{search.error.message}</ErrorText>
         </div>
       )}
-      {search.data && (
+      {debouncedQuery && search.data && (
         <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
           <div className="mb-2 flex items-center justify-between gap-3 text-sm">
             <span className="text-white/60">
               {search.data.length ? prompt : 'No films found.'}
             </span>
-            <Button variant="ghost" className="px-2 py-1" onClick={() => search.reset()}>
+            <Button
+              variant="ghost"
+              className="px-2 py-1"
+              onClick={() => {
+                setQuery('')
+                resetQuery()
+              }}
+            >
               Clear
             </Button>
           </div>
@@ -129,17 +143,25 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
 
   const [mode, setMode] = useState<'search' | 'ask'>('search')
   const [text, setText] = useState('')
+  const [debouncedText, flushText, resetDebouncedText] = useDebouncedSearch(text, 300)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [openTitle, setOpenTitle] = useState<number | null>(null)
   const [openPerson, setOpenPerson] = useState<number | null>(null)
 
   const llmConfigured = (settings.data?.llm.order.length ?? 0) > 0
 
-  const search = useMutation({
-    mutationFn: async (queryText?: string) => {
-      const q = (queryText ?? text).trim()
+  const search = useQuery({
+    queryKey: ['catalog-search-all', debouncedText],
+    enabled:
+      Boolean(settings.data?.tmdb_configured) &&
+      mode === 'search' &&
+      dropdownOpen &&
+      debouncedText.length >= 1,
+    staleTime: 60_000,
+    queryFn: async ({ signal }) => {
       const { data, error } = await api.GET('/api/v1/catalog/search-all', {
-        params: { query: { query: q } },
+        params: { query: { query: debouncedText } },
+        signal,
       })
       if (error) throw new Error(errorMessage(error))
       return {
@@ -163,7 +185,14 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
     },
   })
 
-  const active = mode === 'ask' ? ask : search
+  const isSearchPending =
+    mode === 'search' &&
+    dropdownOpen &&
+    (search.isFetching || (text.trim().length >= 2 && text.trim() !== debouncedText))
+  const active =
+    mode === 'ask'
+      ? { isPending: ask.isPending, error: ask.error, data: ask.data }
+      : { isPending: isSearchPending, error: search.error, data: search.data }
 
   // Close search dropdown on click outside or Escape
   useEffect(() => {
@@ -186,7 +215,7 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
 
   const handleClose = () => {
     setDropdownOpen(false)
-    search.reset()
+    resetDebouncedText()
     ask.reset()
   }
 
@@ -196,7 +225,7 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
     setMode('search')
     setDropdownOpen(true)
     ask.reset()
-    search.mutate(q)
+    flushText()
   }
 
   const handleAskSubmit = (queryText?: string) => {
@@ -204,7 +233,6 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
     if (!q || !llmConfigured || ask.isPending) return
     setMode('ask')
     setDropdownOpen(true)
-    search.reset()
     ask.mutate(q)
   }
 
@@ -269,7 +297,13 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
           id="header-search"
           type="text"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value
+            setText(next)
+            if (mode === 'search') {
+              setDropdownOpen(next.trim().length >= 2)
+            }
+          }}
           placeholder={
             mode === 'search'
               ? 'Search films, actors…'
@@ -289,7 +323,7 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
                 : 'text-white/60 hover:text-white hover:bg-white/10'
             }`}
           >
-            {search.isPending ? 'Searching…' : 'Search'}
+            {isSearchPending ? 'Searching…' : 'Search'}
           </button>
           <button
             type={mode === 'ask' ? 'submit' : 'button'}

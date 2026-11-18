@@ -1,8 +1,8 @@
-import type { Candidate, ImportRow } from '@iwanttowatch/api-client'
+import type { ImportRow } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
-import { api, errorMessage, ratingToReaction } from './api'
+import { api, errorMessage, ratingToReaction, useDebouncedSearch } from './api'
 import { ReactionBadge } from './RateDialog'
 import { Button, ErrorText, Poster } from './ui'
 
@@ -42,15 +42,21 @@ export default function Review() {
 function ReviewRow({ jobId, row }: { jobId: number; row: ImportRow }) {
   const queryClient = useQueryClient()
   const [query, setQuery] = useState(row.title)
-  const [results, setResults] = useState<Candidate[] | null>(null)
+  const [edited, setEdited] = useState(false)
+  const [debouncedQuery, flushQuery] = useDebouncedSearch(query, 300)
 
-  const search = useMutation({
-    mutationFn: async () => {
-      const { data, error } = await api.GET('/api/v1/catalog/search', { params: { query: { query } } })
+  const search = useQuery({
+    queryKey: ['catalog-search-review', row.id, debouncedQuery],
+    enabled: edited && debouncedQuery.length >= 1,
+    staleTime: 60_000,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await api.GET('/api/v1/catalog/search', {
+        params: { query: { query: debouncedQuery } },
+        signal,
+      })
       if (error) throw new Error(errorMessage(error))
       return data
     },
-    onSuccess: setResults,
   })
   const resolve = useMutation({
     mutationFn: async (tmdbId: number | null) => {
@@ -68,8 +74,12 @@ function ReviewRow({ jobId, row }: { jobId: number; row: ImportRow }) {
   })
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    search.mutate()
+    if (query.trim()) {
+      setEdited(true)
+      flushQuery()
+    }
   }
+  const results = edited && debouncedQuery.length >= 1 ? (search.data ?? null) : null
   const candidates = results ?? row.candidates
 
   return (
@@ -116,12 +126,15 @@ function ReviewRow({ jobId, row }: { jobId: number; row: ImportRow }) {
       <form onSubmit={submit} className="mt-4 flex gap-2">
         <input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setEdited(true)
+          }}
           aria-label="Search TMDb"
           className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
         />
-        <Button type="submit" variant="ghost" disabled={search.isPending}>
-          Search
+        <Button type="submit" variant="ghost" disabled={search.isFetching}>
+          {search.isFetching ? 'Searching…' : 'Search'}
         </Button>
       </form>
       {results?.length === 0 && <p className="mt-2 text-sm text-white/50">No movies found.</p>}

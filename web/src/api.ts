@@ -1,7 +1,28 @@
 import { createApiClient, type FeedPage, type Reaction, type TitleDetail, type TitleReaction } from '@iwanttowatch/api-client'
 import { useMutation, useQueries, useQuery, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 
 export const api = createApiClient()
+
+/** Debounce a search input value for search-as-you-type, with immediate flush on submit. */
+export function useDebouncedSearch(
+  value: string,
+  delayMs = 300,
+  minAutoLength = 2,
+): [string, () => void, () => void] {
+  const trimmed = value.trim()
+  const [debounced, setDebounced] = useState('')
+
+  useEffect(() => {
+    const next = trimmed.length >= minAutoLength ? trimmed : ''
+    const timer = window.setTimeout(() => setDebounced(next), next ? delayMs : 0)
+    return () => window.clearTimeout(timer)
+  }, [trimmed, delayMs, minAutoLength])
+
+  const flush = () => setDebounced(trimmed)
+  const reset = () => setDebounced('')
+  return [trimmed ? debounced : '', flush, reset]
+}
 
 /** Turns a FastAPI error body into a sentence for the user. */
 export function errorMessage(error: unknown): string {

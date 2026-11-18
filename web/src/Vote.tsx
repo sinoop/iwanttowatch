@@ -1,7 +1,7 @@
 import type { Ballot, BallotFilm } from '@iwanttowatch/api-client'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
-import { api, errorMessage, formatReleaseDate } from './api'
+import { api, errorMessage, formatReleaseDate, useDebouncedSearch } from './api'
 import { WatchBadges } from './Streaming'
 import { Button, ErrorText, Field, Poster } from './ui'
 
@@ -174,13 +174,15 @@ function FilmVote({ film, choice, onVote }: { film: BallotFilm; choice: Choice |
 function AddFilm({ token, voter }: { token: string; voter: string }) {
   const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
-  const [submitted, setSubmitted] = useState('')
+  const [debouncedQuery, flushQuery] = useDebouncedSearch(query, 300, 2)
   const results = useQuery({
-    queryKey: ['vote-search', token, submitted],
-    enabled: submitted.length >= 2,
-    queryFn: async () => {
+    queryKey: ['vote-search', token, debouncedQuery],
+    enabled: debouncedQuery.length >= 2,
+    staleTime: 60_000,
+    queryFn: async ({ signal }) => {
       const { data, error } = await api.GET('/api/v1/vote/{token}/search', {
-        params: { path: { token }, query: { query: submitted } },
+        params: { path: { token }, query: { query: debouncedQuery } },
+        signal,
       })
       if (error) throw new Error(errorMessage(error))
       return data
@@ -205,7 +207,7 @@ function AddFilm({ token, voter }: { token: string; voter: string }) {
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          setSubmitted(query.trim())
+          if (query.trim().length >= 2) flushQuery()
         }}
         className="mt-3 flex gap-2"
       >
@@ -216,8 +218,8 @@ function AddFilm({ token, voter }: { token: string; voter: string }) {
           aria-label="Search for a film"
           className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
         />
-        <Button type="submit" variant="ghost" className="border border-white/10">
-          Search
+        <Button type="submit" variant="ghost" className="border border-white/10" disabled={results.isFetching}>
+          {results.isFetching ? 'Searching…' : 'Search'}
         </Button>
       </form>
       {(results.error || add.error) && (
