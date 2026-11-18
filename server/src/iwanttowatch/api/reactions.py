@@ -1,7 +1,9 @@
 """Rating a film in iWantToWatch: Didn't like / Liked / Loved, plus up to three tags and
 an optional note."""
 
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from typing import Literal, cast
 
@@ -9,15 +11,16 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
-from iwanttowatch import imdb
+from iwanttowatch import availability as availability_mod
+from iwanttowatch import catalog, imdb
 from iwanttowatch.api.deps import CurrentUser, DbSession
 from iwanttowatch.catalog import ensure_title
 from iwanttowatch.db import utcnow
 from iwanttowatch.feed import clear_user_rated_matches_cache
-from iwanttowatch.models import OutlierReview, RatingPrompt, Title, User, UserTitle
+from iwanttowatch.models import Availability, OutlierReview, RatingPrompt, Title, User, UserTitle
 from iwanttowatch.tags import BY_ID, MAX_NOTE, MAX_TAGS, Group, options_for
 from iwanttowatch.taste import REACTION_FALLBACK, rating_to_reaction, refresh_reaction_ratings
-from iwanttowatch.tmdb import TmdbError, client_from_settings
+from iwanttowatch.tmdb import TmdbClient, TmdbError, client_from_settings
 
 router = APIRouter(prefix="/api/v1/titles")
 SOURCE = "app"
@@ -56,6 +59,21 @@ class ReactionUpdate(BaseModel):
     note: str = Field("", max_length=MAX_NOTE)
 
 
+_TITLE_FETCH_LOCKS_GUARD = threading.Lock()
+_TITLE_FETCH_LOCKS: dict[int, threading.Lock] = {}
+
+
+def _title_fetch_lock(tmdb_id: int) -> threading.Lock:
+    with _TITLE_FETCH_LOCKS_GUARD:
+        lock = _TITLE_FETCH_LOCKS.get(tmdb_id)
+        if lock is None:
+            if len(_TITLE_FETCH_LOCKS) > 512:
+                _TITLE_FETCH_LOCKS.clear()
+            lock = threading.Lock()
+            _TITLE_FETCH_LOCKS[tmdb_id] = lock
+        return lock
+
+
 def load_title(
     session: DbSession,
     request: Request,
@@ -73,21 +91,79 @@ def load_title(
         else:
             imdb.ensure_title_rating(session, request.app.state.data_dir, title)
         return title
-    tmdb = client_from_settings(session, request.app.state.engine, request.app.state.tmdb_base_url)
-    if tmdb is None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Add a TMDb API key in Settings first")
-    t_tmdb = time.perf_counter() if timings is not None else 0.0
-    try:
-        title = ensure_title(session, tmdb, tmdb_id)
-    except TmdbError as error:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Movie not found on TMDb") from error
+    with _title_fetch_lock(tmdb_id):
+        title = session.get(Title, tmdb_id, populate_existing=True)
+        if title is not None:
+            if timings is not None:
+                timings["tmdb_fetch_ms"] = 0.0
+                t0 = time.perf_counter()
+                imdb.ensure_title_rating(session, request.app.state.data_dir, title)
+                timings["imdb_ms"] = (time.perf_counter() - t0) * 1000
+            else:
+                imdb.ensure_title_rating(session, request.app.state.data_dir, title)
+            return title
+        tmdb = client_from_settings(
+            session, request.app.state.engine, request.app.state.tmdb_base_url
+        )
+        if tmdb is None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Add a TMDb API key in Settings first")
+        t_tmdb = time.perf_counter() if timings is not None else 0.0
+        try:
+            title = ensure_title(session, tmdb, tmdb_id)
+        except TmdbError as error:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Movie not found on TMDb") from error
+        if timings is not None:
+            timings["tmdb_fetch_ms"] = (time.perf_counter() - t_tmdb) * 1000
+        t_imdb = time.perf_counter() if timings is not None else 0.0
+        imdb.ensure_title_rating(session, request.app.state.data_dir, title)
+        if timings is not None:
+            timings["imdb_ms"] = (time.perf_counter() - t_imdb) * 1000
+        session.commit()
+        return title
+
+
+def load_title_and_availability(
+    session: DbSession,
+    request: Request,
+    tmdb: TmdbClient,
+    tmdb_id: int,
+    region: str,
+    timings: dict[str, float] | None = None,
+) -> Title:
+    """Ensure both title metadata and regional availability are stored, fetching both from
+    TMDb in parallel when neither is cached yet."""
+    existing_title = session.get(Title, tmdb_id)
+    existing_avail = session.get(Availability, (tmdb_id, region))
+    need_avail = existing_avail is None or availability_mod.is_stale(existing_avail)
+    if existing_title is None and need_avail:
+        with _title_fetch_lock(tmdb_id):
+            existing_title = session.get(Title, tmdb_id, populate_existing=True)
+            existing_avail = session.get(Availability, (tmdb_id, region), populate_existing=True)
+            need_avail = existing_avail is None or availability_mod.is_stale(existing_avail)
+            if existing_title is None and need_avail:
+                t_par = time.perf_counter() if timings is not None else 0.0
+                with ThreadPoolExecutor(2) as pool:
+                    title_fut = pool.submit(catalog.fetch_title_details, tmdb, tmdb_id)
+                    avail_fut = pool.submit(availability_mod._fetch, tmdb, tmdb_id, region)
+                    try:
+                        details = title_fut.result()
+                    except TmdbError as error:
+                        raise HTTPException(
+                            status.HTTP_404_NOT_FOUND, "Movie not found on TMDb"
+                        ) from error
+                    avail_result = avail_fut.result()
+                catalog.store_title_details(session, None, tmdb_id, details)
+                availability_mod.upsert_availability(session, tmdb_id, region, avail_result)
+                session.commit()
+                if timings is not None:
+                    timings["parallel_tmdb_ms"] = (time.perf_counter() - t_par) * 1000
+    t_load = time.perf_counter() if timings is not None else 0.0
+    title = load_title(session, request, tmdb_id, timings=timings)
     if timings is not None:
-        timings["tmdb_fetch_ms"] = (time.perf_counter() - t_tmdb) * 1000
-    t_imdb = time.perf_counter() if timings is not None else 0.0
-    imdb.ensure_title_rating(session, request.app.state.data_dir, title)
-    if timings is not None:
-        timings["imdb_ms"] = (time.perf_counter() - t_imdb) * 1000
-    session.commit()
+        timings["load_title_ms"] = (time.perf_counter() - t_load) * 1000
+    existing_avail = session.get(Availability, (tmdb_id, region))
+    if existing_avail is None or availability_mod.is_stale(existing_avail):
+        availability_mod.availability(session, tmdb, [tmdb_id], region)
     return title
 
 

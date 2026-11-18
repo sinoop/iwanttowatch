@@ -449,13 +449,16 @@ def test_the_shortlist_keeps_films_with_their_match_until_they_are_watched(
         401
     ]
 
-    # A film that has left the feed comes back as a candidate once saved.
+    # A film that has left the feed (or isn't cached yet) joins the shortlist immediately
+    # without waiting for a background rescore.
     with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
         session.execute(delete(Recommendation).where(Recommendation.tmdb_id == 402))
         session.commit()
     assert client.get("/api/v1/titles/402").json()["shortlisted"] is False
     client.put("/api/v1/titles/402/shortlist")
     assert client.get("/api/v1/titles/402").json()["shortlisted"] is True
+    saved = feed(client, shortlist=True, available_only=False)
+    assert {i["tmdb_id"] for i in saved["items"]} == {401, 402}
     idle(client)
     saved = feed(client, shortlist=True, available_only=False)
     assert {i["tmdb_id"] for i in saved["items"]} == {401, 402}

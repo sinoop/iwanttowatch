@@ -1,7 +1,6 @@
 import logging
 import time
 from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from typing import Annotated, Literal, cast
 
@@ -9,12 +8,11 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from iwanttowatch import availability as availability_mod
-from iwanttowatch import catalog, radarr
+from iwanttowatch import radarr
 from iwanttowatch.api.deps import AdultUser, CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.library import LanguageCount
 from iwanttowatch.api.reactions import SOURCE as APP_SOURCE
-from iwanttowatch.api.reactions import load_title
+from iwanttowatch.api.reactions import load_title, load_title_and_availability
 from iwanttowatch.api.schemas import ClashHypothesis, ImdbScore, clash_hypotheses_out, imdb_score
 from iwanttowatch.api.streaming import (
     PlatformCount,
@@ -38,15 +36,13 @@ from iwanttowatch.feed import (
     ASK_PICKS,
     SNOOZE,
     clear_user_rated_matches_cache,
-    feed_films,
-    feed_reasons,
+    ensure_shortlist_recommendation,
     films_for_request,
     hidden,
     matches_content_type,
-    score_films,
+    score_single_film,
     seen,
     shortlisted,
-    stored_picks,
 )
 from iwanttowatch.jellyfin import URL_SETTING as JELLYFIN_URL_SETTING
 from iwanttowatch.llm import LlmError, provider_from_settings
@@ -264,7 +260,10 @@ def read_feed(
     for rec, title in rows:
         if (
             title.tmdb_id in exclude
-            or not matches_content_type(title, active_content_type)
+            or (
+                not (shortlist and title.tmdb_id in saved)
+                and not matches_content_type(title, active_content_type)
+            )
             or (
                 age_limit
                 and title.tmdb_id not in saved
@@ -563,14 +562,15 @@ def add_to_shortlist(
     tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
 ) -> Response:
     """Save a film to choose from later; it stays in the feed with its match."""
-    title = load_title(session, request, tmdb_id)
-    # Look up where it streams before writing: the lookup caches on its own connection.
-    availability(session, tmdb, [tmdb_id], user.region)
+    title = load_title_and_availability(session, request, tmdb, tmdb_id, user.region)
     if session.get(ShortlistItem, (user.id, tmdb_id)) is None:
         session.add(ShortlistItem(user_id=user.id, tmdb_id=tmdb_id))
         session.commit()
-        # Films from search or Watch together join the feed's candidates.
-        if session.get(Recommendation, (user.id, tmdb_id)) is None:
+        # Films from search or Watch together join the feed's candidates immediately.
+        if (
+            not ensure_shortlist_recommendation(session, user, tmdb_id)
+            and session.get(Recommendation, (user.id, tmdb_id)) is None
+        ):
             request.app.state.feed_worker.rescore_soon(user.id)
         radarr.auto_sync_if_unstreamable(session, tmdb, user, tmdb_id, title)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -707,22 +707,10 @@ def _match_and_reasons(
             timings["match_rescored"] = 1.0
         # Not in the feed, such as a film the user searched for: score it with the
         # feed's films, so its match means the same, without adding it to the feed.
-        scored = next(
-            (
-                s
-                for s in score_films(
-                    session,
-                    user,
-                    [*feed_films(session, user), title.tmdb_id],
-                    only_candidates=[title.tmdb_id],
-                )
-                if s.tmdb_id == title.tmdb_id
-            ),
-            None,
-        )
+        scored = score_single_film(session, user, title.tmdb_id)
         if scored is not None:
-            match = round(scored.score * 100)
-            reasons = feed_reasons(scored, stored_picks(session, user.id))
+            score_val, reasons = scored
+            match = round(score_val * 100)
     return (match, reasons)
 
 
@@ -868,7 +856,6 @@ def read_title(
     include_radarr: bool = True,
 ) -> TitleDetail:
     from iwanttowatch.api.settings import DEBUG_PROFILING_SETTING
-    from iwanttowatch.tmdb import TmdbError
 
     debug = (
         bool(getattr(request.app.state, "debug", False))
@@ -877,31 +864,9 @@ def read_title(
     timings: dict[str, float] | None = {} if debug else None
     t_total = time.perf_counter() if debug else 0.0
 
-    # When both metadata and regional availability are uncached, fetch both from TMDb in parallel.
-    existing_title = session.get(Title, tmdb_id)
-    existing_avail = session.get(Availability, (tmdb_id, user.region))
-    if existing_title is None and (
-        existing_avail is None or availability_mod.is_stale(existing_avail)
-    ):
-        t_par = time.perf_counter() if debug else 0.0
-        with ThreadPoolExecutor(2) as pool:
-            title_fut = pool.submit(catalog.fetch_title_details, tmdb, tmdb_id)
-            avail_fut = pool.submit(availability_mod._fetch, tmdb, tmdb_id, user.region)
-            try:
-                details = title_fut.result()
-            except TmdbError as error:
-                raise HTTPException(status.HTTP_404_NOT_FOUND, "Movie not found on TMDb") from error
-            avail_result = avail_fut.result()
-        catalog.store_title_details(session, None, tmdb_id, details)
-        availability_mod.upsert_availability(session, tmdb_id, user.region, avail_result)
-        session.commit()
-        if timings is not None:
-            timings["parallel_tmdb_ms"] = (time.perf_counter() - t_par) * 1000
-
-    t_load = time.perf_counter() if debug else 0.0
-    title = load_title(session, request, tmdb_id, timings=timings)
-    if timings is not None:
-        timings["load_title_ms"] = (time.perf_counter() - t_load) * 1000
+    title = load_title_and_availability(
+        session, request, tmdb, tmdb_id, user.region, timings=timings
+    )
     if user.is_child:
         ensure_themes_note_quietly(session, title, user.id)
     detail = _title_detail(

@@ -9,10 +9,10 @@ from sqlalchemy import select
 
 from iwanttowatch import radarr
 from iwanttowatch.api.deps import AdultUser, DbSession, ParentUser, Tmdb
-from iwanttowatch.api.reactions import load_title
+from iwanttowatch.api.reactions import load_title_and_availability
 from iwanttowatch.api.schemas import BirthYear, Me
-from iwanttowatch.availability import availability
 from iwanttowatch.children import refresh_limit
+from iwanttowatch.feed import ensure_shortlist_recommendation
 from iwanttowatch.models import Recommendation, ShortlistItem, User
 from iwanttowatch.tmdb import client_from_settings
 
@@ -149,12 +149,14 @@ def assign_to_child(
 ) -> Response:
     """Assign a film to a child profile's shortlist so it shows up in their picks."""
     child = _child(session, child_id)
-    title = load_title(session, request, tmdb_id)
-    availability(session, tmdb, [tmdb_id], child.region)
+    title = load_title_and_availability(session, request, tmdb, tmdb_id, child.region)
     if session.get(ShortlistItem, (child.id, tmdb_id)) is None:
         session.add(ShortlistItem(user_id=child.id, tmdb_id=tmdb_id))
         session.commit()
-        if session.get(Recommendation, (child.id, tmdb_id)) is None:
+        if (
+            not ensure_shortlist_recommendation(session, child, tmdb_id)
+            and session.get(Recommendation, (child.id, tmdb_id)) is None
+        ):
             request.app.state.feed_worker.rescore_soon(child.id)
         radarr.auto_sync_if_unstreamable(session, tmdb, _adult, tmdb_id, title)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

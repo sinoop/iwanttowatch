@@ -23,7 +23,7 @@ from typing import Any, Literal
 
 from sqlalchemy import Engine, delete, func, or_, select
 from sqlalchemy.dialects.sqlite import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from iwanttowatch import imdb
 from iwanttowatch.availability import availability, watchable
@@ -965,10 +965,12 @@ def build_feed(
             step(f"Reading details of {len(ids)} films")
             titles = ensure_titles(session, tmdb, [*(label.tmdb_id for label in labels), *ids])
             session.commit()
+            saved_ids = set(shortlisted(session, user_id))
             ids = [
                 i
                 for i in ids
-                if i in titles and matches_content_type(titles[i], active_content_type)
+                if i in titles
+                and (i in saved_ids or matches_content_type(titles[i], active_content_type))
             ]
             if imdb.enabled(session):
                 step("Reading IMDb ratings")
@@ -1180,6 +1182,19 @@ def feed_films(session: Session, user: User) -> list[int]:
     )
 
 
+_DEFERRED_TITLE_COLS = (
+    defer(Title.translations),
+    defer(Title.alternative_titles),
+    defer(Title.overview),
+    defer(Title.tagline),
+    defer(Title.certifications),
+    defer(Title.spoken_languages),
+    defer(Title.origin_countries),
+    defer(Title.themes_note),
+    defer(Title.ai_moods),
+)
+
+
 def score_films(
     session: Session,
     user: User,
@@ -1193,9 +1208,19 @@ def score_films(
     exclude = seen(session, user.id)
     ids = [i for i in ids if i not in exclude]
     wanted = {*ids, *(label.tmdb_id for label in labels)}
-    titles = {t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(wanted)))}
+    titles = {
+        t.tmdb_id: t
+        for t in session.scalars(
+            select(Title).where(Title.tmdb_id.in_(wanted)).options(*_DEFERRED_TITLE_COLS)
+        )
+    }
     active_content_type = getattr(user, "default_content_type", "movies") or "movies"
-    ids = [i for i in ids if i in titles and matches_content_type(titles[i], active_content_type)]
+    keep = set(only_candidates or ()) | set(shortlisted(session, user.id))
+    ids = [
+        i
+        for i in ids
+        if i in titles and (i in keep or matches_content_type(titles[i], active_content_type))
+    ]
     fav_people = set(
         session.scalars(select(FavoritePerson.person_id).where(FavoritePerson.user_id == user.id))
     )
@@ -1217,10 +1242,92 @@ def score_films(
 
 
 _RATED_MATCHES_CACHE: dict[int, tuple[int, Any, dict[int, int]]] = {}
+_SINGLE_SCORE_CACHE: dict[tuple[int, int, int], tuple[float, list[str]]] = {}
+
+
+def _clear_single_score_cache(user_id: int) -> None:
+    stale = [key for key in list(_SINGLE_SCORE_CACHE) if key[1] == user_id]
+    for key in stale:
+        _SINGLE_SCORE_CACHE.pop(key, None)
 
 
 def clear_user_rated_matches_cache(user_id: int) -> None:
     _RATED_MATCHES_CACHE.pop(user_id, None)
+    _clear_single_score_cache(user_id)
+
+
+def score_single_film(
+    session: Session,
+    user: User,
+    tmdb_id: int,
+) -> tuple[float, list[str]] | None:
+    """Return (score, reasons) for a single unseen film against the user's feed pool,
+    using an in-memory cache so opening a title and shortlisting it only scores once."""
+    bind_id = id(session.get_bind())
+    cache_key = (bind_id, user.id, tmdb_id)
+    cached = _SINGLE_SCORE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    scored = next(
+        (
+            s
+            for s in score_films(
+                session,
+                user,
+                [*feed_films(session, user), tmdb_id],
+                only_candidates=[tmdb_id],
+            )
+            if s.tmdb_id == tmdb_id
+        ),
+        None,
+    )
+    if scored is None:
+        return None
+    reasons = feed_reasons(scored, stored_picks(session, user.id))
+    result = (scored.score, reasons)
+    if len(_SINGLE_SCORE_CACHE) > 2048:
+        _SINGLE_SCORE_CACHE.clear()
+    _SINGLE_SCORE_CACHE[cache_key] = result
+    return result
+
+
+def ensure_shortlist_recommendation(session: Session, user: User, tmdb_id: int) -> bool:
+    """Ensure a shortlisted film has a Recommendation row immediately so it appears in the
+    shortlist and feed right away without waiting for a delayed background rescore."""
+    if session.get(Recommendation, (user.id, tmdb_id)) is not None:
+        return True
+    if tmdb_id in seen(session, user.id):
+        return False
+    res = score_single_film(session, user, tmdb_id)
+    if res is None:
+        return False
+    score_val, reasons = res
+    higher_rank = session.scalar(
+        select(func.min(Recommendation.rank)).where(
+            Recommendation.user_id == user.id,
+            Recommendation.score <= score_val,
+        )
+    )
+    if higher_rank is not None:
+        rank = int(higher_rank)
+    else:
+        max_rank = session.scalar(
+            select(func.max(Recommendation.rank)).where(Recommendation.user_id == user.id)
+        )
+        rank = int(max_rank) + 1 if max_rank is not None else 0
+    session.execute(
+        insert(Recommendation)
+        .values(
+            user_id=user.id,
+            tmdb_id=tmdb_id,
+            score=score_val,
+            rank=rank,
+            reasons=reasons,
+        )
+        .on_conflict_do_nothing(index_elements=[Recommendation.user_id, Recommendation.tmdb_id])
+    )
+    session.commit()
+    return True
 
 
 def user_rated_matches(session: Session, user: User) -> dict[int, int]:
@@ -1243,7 +1350,10 @@ def user_rated_matches(session: Session, user: User) -> dict[int, int]:
 
     all_ids = {label.tmdb_id for label in labels}
     titles = {
-        t.tmdb_id: t for t in session.scalars(select(Title).where(Title.tmdb_id.in_(all_ids)))
+        t.tmdb_id: t
+        for t in session.scalars(
+            select(Title).where(Title.tmdb_id.in_(all_ids)).options(*_DEFERRED_TITLE_COLS)
+        )
     }
     fav_people = set(
         session.scalars(select(FavoritePerson.person_id).where(FavoritePerson.user_id == user.id))
@@ -1262,6 +1372,7 @@ def user_rated_matches(session: Session, user: User) -> dict[int, int]:
 def _store(
     session: Session, user_id: int, scored: Sequence[Scored], picks: dict[int, AiPick]
 ) -> None:
+    _clear_single_score_cache(user_id)
     session.execute(delete(Recommendation).where(Recommendation.user_id == user_id))
     session.add_all(
         Recommendation(
@@ -1355,6 +1466,7 @@ class FeedWorker:
         force_refresh: bool = False,
     ) -> None:
         """Rebuild the user's feed (or scoped filter) from scratch, fetching fresh candidates."""
+        _clear_single_score_cache(user_id)
         with Session(self._engine) as session:
             if scope == "main":
                 state: FeedBuild | ScopedFeedBuild = session.get(FeedBuild, user_id) or FeedBuild(
@@ -1375,6 +1487,7 @@ class FeedWorker:
 
     def rescore_soon(self, user_id: int) -> None:
         """Rescore the user's feed once they stop rating and giving feedback for a moment."""
+        _clear_single_score_cache(user_id)
         with self._lock:
             if (pending := self._timers.get(user_id)) is not None:
                 pending.cancel()

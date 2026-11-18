@@ -267,9 +267,15 @@ function StreamingDock({
 
 function TitleSkeleton({
   preview,
+  shortlisted = false,
+  onShortlist,
+  onClose,
   onBack,
 }: {
   preview?: TitlePreview
+  shortlisted?: boolean
+  onShortlist: () => void
+  onClose: () => void
   onBack?: () => void
 }) {
   return (
@@ -325,7 +331,35 @@ function TitleSkeleton({
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
-            <div className="h-7 w-24 animate-pulse rounded-full bg-white/10" />
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <button
+                type="button"
+                aria-pressed={shortlisted}
+                onClick={onShortlist}
+                title={shortlisted ? 'On your shortlist' : 'Add to shortlist'}
+                aria-label={shortlisted ? 'On your shortlist' : 'Add to shortlist'}
+                className={`flex h-7 items-center gap-1 rounded-full border px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+                  shortlisted
+                    ? 'border-accent/40 bg-accent/15 text-accent-strong'
+                    : 'border-white/10 bg-white/5 text-white/70 hover:border-white/20 hover:text-white'
+                }`}
+              >
+                <BookmarkIcon filled={shortlisted} className="size-3.5" />
+                <span className="hidden sm:inline">
+                  {shortlisted ? 'Shortlisted' : 'Shortlist'}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close dialog"
+                className="flex size-7 items-center justify-center rounded-full text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                <svg viewBox="0 0 20 20" fill="currentColor" className="size-4" aria-hidden="true">
+                  <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                </svg>
+              </button>
+            </div>
             <div className="h-7 w-28 animate-pulse rounded-full bg-white/10" />
           </div>
         </div>
@@ -385,6 +419,12 @@ function Details({
     enabled: !me?.is_child,
     staleTime: 30_000,
   })
+  const shortlistOverride = useQuery<boolean | null>({
+    queryKey: ['shortlist-override', tmdbId],
+    queryFn: () => null,
+    enabled: false,
+    initialData: null,
+  })
   if (title.error) {
     return (
       <div className="space-y-4 p-6">
@@ -396,9 +436,24 @@ function Details({
     )
   }
   const preview = queryClient.getQueryData<TitlePreview>(['title-preview', tmdbId])
-  if (!title.data) return <TitleSkeleton preview={preview} onBack={onBack} />
-  const film: TitleDetail =
+  if (!title.data) {
+    const skeletonShortlisted = shortlistOverride.data ?? preview?.shortlisted ?? false
+    return (
+      <TitleSkeleton
+        preview={preview}
+        shortlisted={skeletonShortlisted}
+        onShortlist={() => shortlist.mutate({ tmdbId, save: !skeletonShortlisted })}
+        onClose={onClose}
+        onBack={onBack}
+      />
+    )
+  }
+  const baseFilm: TitleDetail =
     radarrQuery.data?.configured ? { ...title.data, radarr: radarrQuery.data } : title.data
+  const film: TitleDetail =
+    shortlistOverride.data !== null && shortlistOverride.data !== undefined
+      ? { ...baseFilm, shortlisted: shortlistOverride.data }
+      : baseFilm
 
   return (
     <div className="flex max-h-[calc(100dvh-2rem)] flex-1 flex-col overflow-hidden">
@@ -443,7 +498,6 @@ function Details({
               <button
                 type="button"
                 aria-pressed={film.shortlisted}
-                disabled={shortlist.isPending}
                 onClick={() => shortlist.mutate({ tmdbId, save: !film.shortlisted })}
                 title={film.shortlisted ? 'On your shortlist' : 'Add to shortlist'}
                 aria-label={film.shortlisted ? 'On your shortlist' : 'Add to shortlist'}

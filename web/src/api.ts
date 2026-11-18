@@ -1,5 +1,5 @@
-import { createApiClient, type Reaction, type TitleDetail, type TitleReaction } from '@iwanttowatch/api-client'
-import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { createApiClient, type FeedPage, type Reaction, type TitleDetail, type TitleReaction } from '@iwanttowatch/api-client'
+import { useMutation, useQueries, useQuery, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query'
 
 export const api = createApiClient()
 
@@ -58,9 +58,51 @@ export function useShortlist() {
         : await api.DELETE('/api/v1/titles/{tmdb_id}/shortlist', params)
       if (error) throw new Error(errorMessage(error))
     },
-    onSettled: (_, __, { tmdbId }) => {
+    onMutate: ({ tmdbId, save }) => {
+      const previousTitle = queryClient.getQueryData<TitleDetail>(['title', tmdbId])
+      const previousOverride = queryClient.getQueryData<boolean | null>(['shortlist-override', tmdbId])
+      queryClient.setQueryData<boolean | null>(['shortlist-override', tmdbId], save)
+      queryClient.setQueryData<TitleDetail>(['title', tmdbId], (old) =>
+        old ? { ...old, shortlisted: save } : old,
+      )
+      queryClient.setQueriesData<InfiniteData<FeedPage>>({ queryKey: ['feed'] }, (old) => {
+        if (!old) return old
+        const hadShortlisted = old.pages.some((p) =>
+          p.items.some((item) => item.tmdb_id === tmdbId && item.shortlisted),
+        )
+        const hasItem = old.pages.some((p) => p.items.some((item) => item.tmdb_id === tmdbId))
+        const delta = hasItem ? (save && !hadShortlisted ? 1 : !save && hadShortlisted ? -1 : 0) : save ? 1 : 0
+        return {
+          ...old,
+          pages: old.pages.map((page) => ({
+            ...page,
+            shortlist_count: Math.max(0, page.shortlist_count + delta),
+            items: page.items.map((item) =>
+              item.tmdb_id === tmdbId ? { ...item, shortlisted: save } : item,
+            ),
+          })),
+        }
+      })
+      return { previousTitle, previousOverride }
+    },
+    onSuccess: (_, { tmdbId, save }) => {
+      queryClient.setQueryData<TitleDetail>(['title', tmdbId], (old) =>
+        old ? { ...old, shortlisted: save } : old,
+      )
+    },
+    onError: (_, { tmdbId }, context) => {
+      queryClient.setQueryData<boolean | null>(
+        ['shortlist-override', tmdbId],
+        context?.previousOverride ?? null,
+      )
+      if (context?.previousTitle) {
+        queryClient.setQueryData<TitleDetail>(['title', tmdbId], context.previousTitle)
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['title', tmdbId] })
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['feed'] })
-      queryClient.invalidateQueries({ queryKey: ['title', tmdbId] })
       queryClient.invalidateQueries({ queryKey: ['radarr', 'shortlist'] })
     },
   })
@@ -98,10 +140,45 @@ export function useAssignToChild() {
         : await api.DELETE('/api/v1/children/{child_id}/shortlist/{tmdb_id}', params)
       if (error) throw new Error(errorMessage(error))
     },
-    onSettled: (_, __, { tmdbId }) => {
+    onMutate: ({ childId, tmdbId, save }) => {
+      const updateAssigned = (assigned: number[] = []) =>
+        save
+          ? assigned.includes(childId)
+            ? assigned
+            : [...assigned, childId].sort((a, b) => a - b)
+          : assigned.filter((id) => id !== childId)
+
+      const previousTitle = queryClient.getQueryData<TitleDetail>(['title', tmdbId])
+      queryClient.setQueryData<TitleDetail>(['title', tmdbId], (old) =>
+        old ? { ...old, assigned_children: updateAssigned(old.assigned_children) } : old,
+      )
+      queryClient.setQueriesData<InfiniteData<FeedPage>>({ queryKey: ['feed'] }, (old) =>
+        old
+          ? {
+              ...old,
+              pages: old.pages.map((page) => ({
+                ...page,
+                items: page.items.map((item) =>
+                  item.tmdb_id === tmdbId
+                    ? { ...item, assigned_children: updateAssigned(item.assigned_children) }
+                    : item,
+                ),
+              })),
+            }
+          : old,
+      )
+      return { previousTitle }
+    },
+    onError: (_, { tmdbId }, context) => {
+      if (context?.previousTitle) {
+        queryClient.setQueryData<TitleDetail>(['title', tmdbId], context.previousTitle)
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['title', tmdbId] })
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['feed'] })
       queryClient.invalidateQueries({ queryKey: ['together', 'picks'] })
-      queryClient.invalidateQueries({ queryKey: ['title', tmdbId] })
     },
   })
 }
@@ -598,6 +675,7 @@ export interface TitlePreview {
   poster_path?: string | null
   match?: number | null
   imdb?: TitleDetail['imdb']
+  shortlisted?: boolean
 }
 
 /** Fetch full title details without blocking on Radarr status. */

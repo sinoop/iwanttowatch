@@ -75,6 +75,23 @@ export default function Together({ me }: { me: Me }) {
         : await api.DELETE('/api/v1/together/shortlist/{tmdb_id}', params)
       if (error) throw new Error(errorMessage(error))
     },
+    onMutate: ({ tmdbId, save }) => {
+      type PicksPage = NonNullable<typeof picks.data>
+      queryClient.setQueriesData<PicksPage>({ queryKey: ['together', 'picks'] }, (old) => {
+        if (!old) return old
+        const hadSaved = old.items.some((i) => i.tmdb_id === tmdbId && i.shortlisted_by !== null)
+        const delta = save && !hadSaved ? 1 : !save && hadSaved ? -1 : 0
+        return {
+          ...old,
+          shortlist_count: Math.max(0, old.shortlist_count + delta),
+          items: old.items.map((item) =>
+            item.tmdb_id === tmdbId
+              ? { ...item, shortlisted_by: save ? me.display_name : null }
+              : item,
+          ),
+        }
+      })
+    },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['together', 'picks'] }),
   })
 

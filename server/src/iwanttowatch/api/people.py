@@ -12,7 +12,7 @@ from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.streaming import Offer
 from iwanttowatch.children import library_owners
 from iwanttowatch.db import utcnow
-from iwanttowatch.feed import seen
+from iwanttowatch.feed import clear_user_rated_matches_cache, seen
 from iwanttowatch.models import Availability, FavoritePerson, LibraryItem, Recommendation, Title
 from iwanttowatch.taste import effective_ratings, rating_to_reaction
 from iwanttowatch.tmdb import TmdbNotFound
@@ -543,6 +543,7 @@ def add_favorite(
         )
     )
     session.commit()
+    clear_user_rated_matches_cache(user.id)
     return {"ok": True, "is_favorite": True}
 
 
@@ -559,4 +560,5 @@ def remove_favorite(
         )
     )
     session.commit()
+    clear_user_rated_matches_cache(user.id)
     return {"ok": True, "is_favorite": False}

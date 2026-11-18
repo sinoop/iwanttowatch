@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from iwanttowatch import radarr
 from iwanttowatch.api.deps import AdultUser, CurrentUser, DbSession, Tmdb
-from iwanttowatch.api.reactions import load_title
+from iwanttowatch.api.reactions import load_title_and_availability
 from iwanttowatch.api.schemas import ImdbScore, imdb_score
 from iwanttowatch.api.streaming import (
     PlatformCount,
@@ -20,7 +20,6 @@ from iwanttowatch.api.streaming import (
     shown_for,
     title_availability,
 )
-from iwanttowatch.availability import availability
 from iwanttowatch.children import allowed_for, library_owners
 from iwanttowatch.db import utcnow
 from iwanttowatch.models import (
@@ -317,9 +316,7 @@ def add_to_group_shortlist(
     tmdb_id: int, user: CurrentUser, session: DbSession, request: Request, tmdb: Tmdb
 ) -> Response:
     """Save a film for everyone on this server to choose from on Watch together."""
-    title = load_title(session, request, tmdb_id)
-    # Look up where it streams before writing: the lookup caches on its own connection.
-    availability(session, tmdb, [tmdb_id], user.region)
+    title = load_title_and_availability(session, request, tmdb, tmdb_id, user.region)
     if session.get(GroupShortlistItem, tmdb_id) is None:
         session.add(GroupShortlistItem(tmdb_id=tmdb_id, added_by=user.id))
         session.commit()

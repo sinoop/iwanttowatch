@@ -21,10 +21,12 @@ from iwanttowatch.api.reactions import (
     TitleReaction,
     clear_reaction,
     load_title,
+    load_title_and_availability,
     set_reaction,
 )
 from iwanttowatch.availability import availability
 from iwanttowatch.catalog import search_movies
+from iwanttowatch.feed import ensure_shortlist_recommendation
 from iwanttowatch.llm import provider_from_settings
 from iwanttowatch.models import (
     Availability,
@@ -289,12 +291,18 @@ def home_assistant_add_shortlist(
 ) -> Response:
     """Add a movie to the user's shortlist from Home Assistant."""
     user = _resolve_user(request, session, username)
-    title = load_title(session, request, tmdb_id)
-    availability(session, tmdb, [tmdb_id], user.region)
+    if session.get(Title, tmdb_id) is None:
+        title = load_title_and_availability(session, request, tmdb, tmdb_id, user.region)
+    else:
+        title = load_title(session, request, tmdb_id)
+        availability(session, tmdb, [tmdb_id], user.region)
     if session.get(ShortlistItem, (user.id, tmdb_id)) is None:
         session.add(ShortlistItem(user_id=user.id, tmdb_id=tmdb_id))
         session.commit()
-        if session.get(Recommendation, (user.id, tmdb_id)) is None:
+        if (
+            not ensure_shortlist_recommendation(session, user, tmdb_id)
+            and session.get(Recommendation, (user.id, tmdb_id)) is None
+        ):
             request.app.state.feed_worker.rescore_soon(user.id)
         radarr.auto_sync_if_unstreamable(session, tmdb, user, tmdb_id, title)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -370,7 +378,10 @@ def home_assistant_title_detail(
 ) -> TitleDetail:
     """Full movie details (genres, runtime, cast, match reasons, availability, Radarr)."""
     user = _resolve_user(request, session, username)
-    title = load_title(session, request, tmdb_id)
+    if session.get(Title, tmdb_id) is None:
+        title = load_title_and_availability(session, request, tmdb, tmdb_id, user.region)
+    else:
+        title = load_title(session, request, tmdb_id)
     return _title_detail(session, user, tmdb, title)
 
 

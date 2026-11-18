@@ -1,6 +1,6 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, errorMessage, useServerSettings } from './api'
+import { api, errorMessage, fetchTitleDetail, type TitlePreview, useServerSettings } from './api'
 import PersonDialog from './PersonDialog'
 import TitleDialog from './TitleDialog'
 import { Button, ErrorText, Poster } from './ui'
@@ -94,9 +94,38 @@ export function FilmSearch({
 /** The unified search and Ask AI box. */
 export default function HeaderSearch({ className = '' }: { className?: string } = {}) {
   const settings = useServerSettings()
+  const queryClient = useQueryClient()
+  const prefetchTimer = useRef<number | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const prefetchFilm = (tmdbId: number) => {
+    void queryClient.prefetchQuery({
+      queryKey: ['title', tmdbId],
+      queryFn: () => fetchTitleDetail(tmdbId),
+      staleTime: 60_000,
+    })
+  }
+
+  const schedulePrefetch = (tmdbId: number) => {
+    if (prefetchTimer.current !== null) {
+      window.clearTimeout(prefetchTimer.current)
+    }
+    prefetchTimer.current = window.setTimeout(() => {
+      prefetchTimer.current = null
+      prefetchFilm(tmdbId)
+    }, 120)
+  }
+
+  const cancelPrefetch = () => {
+    if (prefetchTimer.current !== null) {
+      window.clearTimeout(prefetchTimer.current)
+      prefetchTimer.current = null
+    }
+  }
+
+  useEffect(() => () => cancelPrefetch(), [])
 
   const [mode, setMode] = useState<'search' | 'ask'>('search')
   const [text, setText] = useState('')
@@ -404,7 +433,16 @@ export default function HeaderSearch({ className = '' }: { className?: string } 
                         <li key={c.tmdb_id} className="w-28 shrink-0">
                           <button
                             type="button"
+                            onMouseEnter={() => schedulePrefetch(c.tmdb_id)}
+                            onMouseLeave={cancelPrefetch}
+                            onFocus={() => prefetchFilm(c.tmdb_id)}
                             onClick={() => {
+                              cancelPrefetch()
+                              queryClient.setQueryData<TitlePreview>(['title-preview', c.tmdb_id], {
+                                title: c.title,
+                                year: c.year,
+                                poster_path: c.poster_path,
+                              })
                               setDropdownOpen(false)
                               setOpenTitle(c.tmdb_id)
                             }}
