@@ -1,20 +1,36 @@
-"""Acquisition Radar API: inspect missing from streaming and theatrical releases."""
+"""Acquisition Radar API: missing from streaming, theatrical releases, and auto-downloader."""
 
 from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from iwanttowatch.api.deps import AdultUser, CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.schemas import ImdbScore
 from iwanttowatch.radar import (
+    DEFAULT_AUTO_MIN_FREE_GB,
+    DEFAULT_AUTO_MIN_MATCH,
+    DEFAULT_AUTO_MIN_VOTES,
+    DEFAULT_AUTO_RELEASED_ONLY,
+    DEFAULT_AUTO_WEEKLY_LIMIT,
+    get_auto_download_status,
     inspect_missing_candidates,
     inspect_theatrical_candidates,
     queue_radar_candidates,
+    run_auto_downloader,
+    save_auto_download_config,
 )
 from iwanttowatch.radarr import RadarrError
 
 router = APIRouter(prefix="/api/v1/library/radar", tags=["radar"])
+
+
+class RadarRootFolder(BaseModel):
+    path: str
+    free_space_bytes: int | None = None
+    free_space_gb: float | None = None
+    free_space_formatted: str | None = None
+    below_threshold: bool = False
 
 
 class RadarItem(BaseModel):
@@ -46,6 +62,9 @@ class MissingCandidatesResponse(BaseModel):
     to_request_count: int
     downloading_count: int
     downloaded_count: int
+    root_folders: list[RadarRootFolder] = Field(default_factory=list)
+    min_free_space_bytes: int | None = None
+    min_free_space_formatted: str | None = None
     items: list[RadarItem]
 
 
@@ -76,6 +95,58 @@ class RadarQueueResponse(BaseModel):
     requested_count: int
     failed_count: int
     items: list[RadarQueueItemResult]
+
+
+class AutoDownloadConfig(BaseModel):
+    enabled: bool = False
+    min_match: int = Field(DEFAULT_AUTO_MIN_MATCH, ge=50, le=100)
+    min_free_space_gb: int = Field(DEFAULT_AUTO_MIN_FREE_GB, ge=0, le=100000)
+    weekly_limit: int = Field(DEFAULT_AUTO_WEEKLY_LIMIT, ge=1, le=100)
+    min_votes: int = Field(DEFAULT_AUTO_MIN_VOTES, ge=0, le=1000000)
+    released_only: bool = DEFAULT_AUTO_RELEASED_ONLY
+
+
+class AutoDownloadHistoryItem(BaseModel):
+    tmdb_id: int
+    title: str
+    year: int | None = None
+    match_pct: int
+    root_folder: str | None = None
+    queued_at: str
+
+
+class AutoDownloadLastRun(BaseModel):
+    ran_at: str
+    queued_count: int
+    skipped_low_space: int = 0
+    skipped_weekly_cap: int = 0
+    skipped_votes: int = 0
+    skipped_unreleased: int = 0
+    detail: str
+
+
+class AutoDownloadStatusResponse(BaseModel):
+    radarr_configured: bool
+    config: AutoDownloadConfig
+    downloads_this_week: int
+    remaining_weekly_quota: int
+    root_folders: list[RadarRootFolder] = Field(default_factory=list)
+    has_sufficient_space: bool = True
+    min_free_space_bytes: int | None = None
+    min_free_space_formatted: str | None = None
+    last_run: AutoDownloadLastRun | None = None
+    history: list[AutoDownloadHistoryItem] = Field(default_factory=list)
+
+
+class AutoDownloadRunResponse(BaseModel):
+    queued_count: int
+    queued_items: list[AutoDownloadHistoryItem] = Field(default_factory=list)
+    skipped_low_space: int = 0
+    skipped_weekly_cap: int = 0
+    skipped_votes: int = 0
+    skipped_unreleased: int = 0
+    detail: str
+    status: AutoDownloadStatusResponse
 
 
 @router.get("/missing", response_model=MissingCandidatesResponse)
@@ -133,5 +204,55 @@ def queue_candidates(
             minimum_availability=body.minimum_availability,
         )
         return RadarQueueResponse(**data)
+    except RadarrError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err
+
+
+@router.get("/auto-download", response_model=AutoDownloadStatusResponse)
+def get_auto_download_settings(
+    _user: CurrentUser,
+    session: DbSession,
+) -> AutoDownloadStatusResponse:
+    """Inspect background auto-downloader settings, remaining HDD space, and weekly quota."""
+    data = get_auto_download_status(session)
+    return AutoDownloadStatusResponse(**data)
+
+
+@router.put("/auto-download", response_model=AutoDownloadStatusResponse)
+def update_auto_download_settings(
+    body: AutoDownloadConfig,
+    _user: AdultUser,
+    session: DbSession,
+) -> AutoDownloadStatusResponse:
+    """Update background auto-downloader settings (match %, min free space GB, weekly cap)."""
+    save_auto_download_config(
+        session,
+        enabled=body.enabled,
+        min_match=body.min_match,
+        min_free_space_gb=body.min_free_space_gb,
+        weekly_limit=body.weekly_limit,
+        min_votes=body.min_votes,
+        released_only=body.released_only,
+    )
+    session.commit()
+    data = get_auto_download_status(session)
+    return AutoDownloadStatusResponse(**data)
+
+
+@router.post("/auto-download/run", response_model=AutoDownloadRunResponse)
+def trigger_auto_downloader(
+    user: AdultUser,
+    session: DbSession,
+    tmdb: Tmdb,
+) -> AutoDownloadRunResponse:
+    """Execute the background auto-downloader immediately on demand."""
+    try:
+        data = run_auto_downloader(
+            session=session,
+            tmdb=tmdb,
+            user=user,
+            force=True,
+        )
+        return AutoDownloadRunResponse(**data)
     except RadarrError as err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err

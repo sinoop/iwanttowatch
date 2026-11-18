@@ -220,3 +220,164 @@ def test_radar_queue_candidates(client: TestClient, fake_radarr: FakeRadarr) -> 
     # Verify FakeRadarr received movie with monitored=True
     assert 401 in fake_radarr.movies
     assert fake_radarr.movies[401]["monitored"] is True
+
+
+def test_radar_auto_downloader_config_and_guardrails(
+    client: TestClient, fake_radarr: FakeRadarr
+) -> None:
+    _setup_services(client)
+
+    # Check default auto-download settings and reported disk space
+    status_res = client.get("/api/v1/library/radar/auto-download")
+    assert status_res.status_code == 200
+    status_data = status_res.json()
+    assert status_data["radarr_configured"] is True
+    assert status_data["config"]["enabled"] is False
+    assert status_data["config"]["min_match"] == 85
+    assert status_data["config"]["min_free_space_gb"] == 20
+    assert status_data["config"]["weekly_limit"] == 3
+    assert status_data["config"]["min_votes"] == 500
+    assert status_data["config"]["released_only"] is True
+    assert len(status_data["root_folders"]) == 2
+    assert status_data["min_free_space_bytes"] == 20000000000
+
+    app = client.app
+    engine = app.state.engine  # type: ignore[attr-defined]
+
+    with Session(engine) as session:
+        user = session.scalars(select(User).where(User.username == "riya")).one()
+        user.subscriptions = [8]
+
+        # 301: 90% match, released, 5000 votes (eligible!)
+        # 401: 82% match, released, 3000 votes (eligible only when min_match <= 82)
+        # 501: 92% match, released, 100 votes (below 500 vote floor)
+        # 601: 94% match, In Production, 2000 votes (unreleased)
+        session.add_all(
+            [
+                Title(
+                    tmdb_id=301,
+                    title="Drishyam",
+                    original_title="Drishyam",
+                    original_language="ml",
+                    year=2013,
+                    status="Released",
+                    release_date=date(2013, 12, 19),
+                    vote_count=5000,
+                    genres=["Drama"],
+                ),
+                Title(
+                    tmdb_id=401,
+                    title="Premam",
+                    original_title="Premam",
+                    original_language="ml",
+                    year=2015,
+                    status="Released",
+                    release_date=date(2015, 5, 29),
+                    vote_count=3000,
+                    genres=["Romance"],
+                ),
+                Title(
+                    tmdb_id=501,
+                    title="Obscure Indie",
+                    original_title="Obscure Indie",
+                    original_language="en",
+                    year=2021,
+                    status="Released",
+                    release_date=date(2021, 3, 10),
+                    vote_count=100,
+                    genres=["Drama"],
+                ),
+                Title(
+                    tmdb_id=601,
+                    title="Future Blockbuster",
+                    original_title="Future Blockbuster",
+                    original_language="en",
+                    year=2028,
+                    status="In Production",
+                    release_date=date(2028, 12, 1),
+                    vote_count=2000,
+                    genres=["Sci-Fi"],
+                ),
+            ]
+        )
+        session.flush()
+        session.add_all(
+            [
+                Availability(tmdb_id=301, region="IN", offers=[]),
+                Availability(tmdb_id=401, region="IN", offers=[]),
+                Availability(tmdb_id=501, region="IN", offers=[]),
+                Availability(tmdb_id=601, region="IN", offers=[]),
+                Recommendation(user_id=user.id, tmdb_id=601, score=0.94, rank=1, reasons=["Great"]),
+                Recommendation(user_id=user.id, tmdb_id=501, score=0.92, rank=2, reasons=["Great"]),
+                Recommendation(user_id=user.id, tmdb_id=301, score=0.90, rank=3, reasons=["Great"]),
+                Recommendation(user_id=user.id, tmdb_id=401, score=0.82, rank=4, reasons=["Great"]),
+            ]
+        )
+        session.commit()
+
+    # 1. Test HDD remaining space block: require 60 GB free (root folder has ~46.6 GB)
+    put_high_space = client.put(
+        "/api/v1/library/radar/auto-download",
+        json={
+            "enabled": True,
+            "min_match": 80,
+            "min_free_space_gb": 60,
+            "weekly_limit": 3,
+            "min_votes": 500,
+            "released_only": True,
+        },
+    )
+    assert put_high_space.status_code == 200
+    assert put_high_space.json()["has_sufficient_space"] is False
+
+    run_low_space = client.post("/api/v1/library/radar/auto-download/run")
+    assert run_low_space.status_code == 200
+    low_space_data = run_low_space.json()
+    assert low_space_data["queued_count"] == 0
+    assert low_space_data["skipped_low_space"] == 2  # 301 and 401 blocked by low space
+    assert low_space_data["skipped_votes"] == 1  # 501 blocked by votes
+    assert low_space_data["skipped_unreleased"] == 1  # 601 blocked by unreleased
+    assert 301 not in fake_radarr.movies
+
+    # 2. Lower min_free_space_gb to 10 GB and set min_match to 80% with weekly_limit=1
+    client.put(
+        "/api/v1/library/radar/auto-download",
+        json={
+            "enabled": True,
+            "min_match": 80,
+            "min_free_space_gb": 10,
+            "weekly_limit": 1,
+            "min_votes": 500,
+            "released_only": True,
+        },
+    )
+
+    run_capped = client.post("/api/v1/library/radar/auto-download/run")
+    assert run_capped.status_code == 200
+    capped_data = run_capped.json()
+    assert capped_data["queued_count"] == 1
+    assert capped_data["queued_items"][0]["tmdb_id"] == 301
+    assert capped_data["skipped_weekly_cap"] == 1  # 401 skipped due to weekly_limit=1
+    assert 301 in fake_radarr.movies
+    assert 401 not in fake_radarr.movies
+
+    # 3. Increase weekly_limit to 3 and run again -> 401 (82% match >= 80%) is now queued
+    client.put(
+        "/api/v1/library/radar/auto-download",
+        json={
+            "enabled": True,
+            "min_match": 80,
+            "min_free_space_gb": 10,
+            "weekly_limit": 3,
+            "min_votes": 500,
+            "released_only": True,
+        },
+    )
+    run_second = client.post("/api/v1/library/radar/auto-download/run")
+    assert run_second.status_code == 200
+    second_data = run_second.json()
+    assert second_data["queued_count"] == 1
+    assert second_data["queued_items"][0]["tmdb_id"] == 401
+    assert second_data["status"]["downloads_this_week"] == 2
+    assert second_data["status"]["remaining_weekly_quota"] == 1
+    assert 401 in fake_radarr.movies

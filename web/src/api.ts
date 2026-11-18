@@ -687,6 +687,67 @@ export function useRadarQueue() {
   })
 }
 
+/** Radar: fetch background auto-downloader config, remaining HDD space, and weekly quota. */
+export function useRadarAutoDownload(enabled = true) {
+  return useQuery({
+    queryKey: ['radar', 'auto-download'],
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/v1/library/radar/auto-download')
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    enabled,
+  })
+}
+
+/** Radar: update background auto-downloader settings. */
+export function useUpdateRadarAutoDownload() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: {
+      enabled: boolean
+      min_match: number
+      min_free_space_gb: number
+      weekly_limit: number
+      min_votes: number
+      released_only: boolean
+    }) => {
+      const { data, error } = await api.PUT('/api/v1/library/radar/auto-download', {
+        body,
+      })
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['radar', 'auto-download'], data)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['radar'] })
+    },
+  })
+}
+
+/** Radar: trigger the background auto-downloader on demand. */
+export function useRunRadarAutoDownload() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await api.POST('/api/v1/library/radar/auto-download/run')
+      if (error) throw new Error(errorMessage(error))
+      return data
+    },
+    onSuccess: (data) => {
+      if (data?.status) {
+        queryClient.setQueryData(['radar', 'auto-download'], data.status)
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['radar'] })
+      queryClient.invalidateQueries({ queryKey: ['radarr'] })
+    },
+  })
+}
+
 /** Lightweight title metadata used as an instant placeholder while full details load. */
 export interface TitlePreview {
   title: string

@@ -1038,6 +1038,19 @@ def build_feed(
             return
         state.status, state.step, state.error, state.built_at = "ready", None, None, utcnow()
         session.commit()
+        if not user.is_child:
+            _maybe_run_auto_downloader(session, tmdb, user)
+
+
+def _maybe_run_auto_downloader(session: Session, tmdb: TmdbClient, user: User) -> None:
+    """Run the background Radarr auto-downloader after a feed build when enabled."""
+    from iwanttowatch.radar import is_auto_download_enabled, run_auto_downloader
+
+    try:
+        if is_auto_download_enabled(session):
+            run_auto_downloader(session, tmdb, user)
+    except Exception as err:
+        log.warning("Background auto-downloader failed for user %s: %s", user.id, err)
 
 
 def build_scoped_feed(

@@ -5085,6 +5085,90 @@
         }
       }
     },
+    "/api/v1/library/radar/auto-download": {
+      "get": {
+        "tags": [
+          "radar"
+        ],
+        "summary": "Get Auto Download Settings",
+        "description": "Inspect background auto-downloader settings, remaining HDD space, and weekly quota.",
+        "operationId": "get_auto_download_settings_api_v1_library_radar_auto_download_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoDownloadStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "radar"
+        ],
+        "summary": "Update Auto Download Settings",
+        "description": "Update background auto-downloader settings (match %, min free space GB, weekly cap).",
+        "operationId": "update_auto_download_settings_api_v1_library_radar_auto_download_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutoDownloadConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoDownloadStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/library/radar/auto-download/run": {
+      "post": {
+        "tags": [
+          "radar"
+        ],
+        "summary": "Trigger Auto Downloader",
+        "description": "Execute the background auto-downloader immediately on demand.",
+        "operationId": "trigger_auto_downloader_api_v1_library_radar_auto_download_run_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutoDownloadRunResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/people/favorites": {
       "get": {
         "tags": [
@@ -6027,6 +6111,270 @@
           "why"
         ],
         "title": "AskPick"
+      },
+      "AutoDownloadConfig": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          },
+          "min_match": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 50.0,
+            "title": "Min Match",
+            "default": 85
+          },
+          "min_free_space_gb": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Min Free Space Gb",
+            "default": 20
+          },
+          "weekly_limit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Weekly Limit",
+            "default": 3
+          },
+          "min_votes": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Min Votes",
+            "default": 500
+          },
+          "released_only": {
+            "type": "boolean",
+            "title": "Released Only",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "AutoDownloadConfig"
+      },
+      "AutoDownloadHistoryItem": {
+        "properties": {
+          "tmdb_id": {
+            "type": "integer",
+            "title": "Tmdb Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "match_pct": {
+            "type": "integer",
+            "title": "Match Pct"
+          },
+          "root_folder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Root Folder"
+          },
+          "queued_at": {
+            "type": "string",
+            "title": "Queued At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tmdb_id",
+          "title",
+          "match_pct",
+          "queued_at"
+        ],
+        "title": "AutoDownloadHistoryItem"
+      },
+      "AutoDownloadLastRun": {
+        "properties": {
+          "ran_at": {
+            "type": "string",
+            "title": "Ran At"
+          },
+          "queued_count": {
+            "type": "integer",
+            "title": "Queued Count"
+          },
+          "skipped_low_space": {
+            "type": "integer",
+            "title": "Skipped Low Space",
+            "default": 0
+          },
+          "skipped_weekly_cap": {
+            "type": "integer",
+            "title": "Skipped Weekly Cap",
+            "default": 0
+          },
+          "skipped_votes": {
+            "type": "integer",
+            "title": "Skipped Votes",
+            "default": 0
+          },
+          "skipped_unreleased": {
+            "type": "integer",
+            "title": "Skipped Unreleased",
+            "default": 0
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ran_at",
+          "queued_count",
+          "detail"
+        ],
+        "title": "AutoDownloadLastRun"
+      },
+      "AutoDownloadRunResponse": {
+        "properties": {
+          "queued_count": {
+            "type": "integer",
+            "title": "Queued Count"
+          },
+          "queued_items": {
+            "items": {
+              "$ref": "#/components/schemas/AutoDownloadHistoryItem"
+            },
+            "type": "array",
+            "title": "Queued Items"
+          },
+          "skipped_low_space": {
+            "type": "integer",
+            "title": "Skipped Low Space",
+            "default": 0
+          },
+          "skipped_weekly_cap": {
+            "type": "integer",
+            "title": "Skipped Weekly Cap",
+            "default": 0
+          },
+          "skipped_votes": {
+            "type": "integer",
+            "title": "Skipped Votes",
+            "default": 0
+          },
+          "skipped_unreleased": {
+            "type": "integer",
+            "title": "Skipped Unreleased",
+            "default": 0
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AutoDownloadStatusResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "queued_count",
+          "detail",
+          "status"
+        ],
+        "title": "AutoDownloadRunResponse"
+      },
+      "AutoDownloadStatusResponse": {
+        "properties": {
+          "radarr_configured": {
+            "type": "boolean",
+            "title": "Radarr Configured"
+          },
+          "config": {
+            "$ref": "#/components/schemas/AutoDownloadConfig"
+          },
+          "downloads_this_week": {
+            "type": "integer",
+            "title": "Downloads This Week"
+          },
+          "remaining_weekly_quota": {
+            "type": "integer",
+            "title": "Remaining Weekly Quota"
+          },
+          "root_folders": {
+            "items": {
+              "$ref": "#/components/schemas/RadarRootFolder"
+            },
+            "type": "array",
+            "title": "Root Folders"
+          },
+          "has_sufficient_space": {
+            "type": "boolean",
+            "title": "Has Sufficient Space",
+            "default": true
+          },
+          "min_free_space_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Free Space Bytes"
+          },
+          "min_free_space_formatted": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Free Space Formatted"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AutoDownloadLastRun"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/AutoDownloadHistoryItem"
+            },
+            "type": "array",
+            "title": "History"
+          }
+        },
+        "type": "object",
+        "required": [
+          "radarr_configured",
+          "config",
+          "downloads_this_week",
+          "remaining_weekly_quota"
+        ],
+        "title": "AutoDownloadStatusResponse"
       },
       "BackupOut": {
         "properties": {
@@ -9708,6 +10056,35 @@
             "type": "integer",
             "title": "Downloaded Count"
           },
+          "root_folders": {
+            "items": {
+              "$ref": "#/components/schemas/RadarRootFolder"
+            },
+            "type": "array",
+            "title": "Root Folders"
+          },
+          "min_free_space_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Free Space Bytes"
+          },
+          "min_free_space_formatted": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Free Space Formatted"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/RadarItem"
@@ -10931,6 +11308,57 @@
           "items"
         ],
         "title": "RadarQueueResponse"
+      },
+      "RadarRootFolder": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "free_space_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Space Bytes"
+          },
+          "free_space_gb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Space Gb"
+          },
+          "free_space_formatted": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Free Space Formatted"
+          },
+          "below_threshold": {
+            "type": "boolean",
+            "title": "Below Threshold",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "RadarRootFolder"
       },
       "RadarrMovieStatus": {
         "properties": {

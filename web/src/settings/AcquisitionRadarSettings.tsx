@@ -1,12 +1,15 @@
-import type { RadarItem } from '@iwanttowatch/api-client'
+import type { AutoDownloadConfig, RadarItem } from '@iwanttowatch/api-client'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import {
   errorMessage,
   formatReleaseDate,
+  useRadarAutoDownload,
   useRadarMissing,
   useRadarQueue,
+  useRunRadarAutoDownload,
   useServerSettings,
+  useUpdateRadarAutoDownload,
 } from '../api'
 import TitleDialog, { Chips, DownloadIcon, ImdbBadge, MatchBadge } from '../TitleDialog'
 import { Button, ErrorText, Poster } from '../ui'
@@ -45,9 +48,38 @@ export function AcquisitionRadarSettings() {
   const missingQuery = useRadarMissing(minMatchMissing, scope, true)
   const queueMutation = useRadarQueue()
 
+  const autoDownloadQuery = useRadarAutoDownload(true)
+  const updateAutoDownload = useUpdateRadarAutoDownload()
+  const runAutoDownload = useRunRadarAutoDownload()
+
+  const [autoDraft, setAutoDraft] = useState<Partial<AutoDownloadConfig>>({})
+  const serverCfg = autoDownloadQuery.data?.config
+  const autoEnabled = autoDraft.enabled ?? serverCfg?.enabled ?? false
+  const autoMinMatch = autoDraft.min_match ?? serverCfg?.min_match ?? 85
+  const autoMinFreeGb = autoDraft.min_free_space_gb ?? serverCfg?.min_free_space_gb ?? 20
+  const autoWeeklyLimit = autoDraft.weekly_limit ?? serverCfg?.weekly_limit ?? 3
+  const autoMinVotes = autoDraft.min_votes ?? serverCfg?.min_votes ?? 500
+  const autoReleasedOnly = autoDraft.released_only ?? serverCfg?.released_only ?? true
+
+  const setAutoEnabled = (enabled: boolean) => setAutoDraft((prev) => ({ ...prev, enabled }))
+  const setAutoMinMatch = (min_match: number) => setAutoDraft((prev) => ({ ...prev, min_match }))
+  const setAutoMinFreeGb = (min_free_space_gb: number) =>
+    setAutoDraft((prev) => ({ ...prev, min_free_space_gb }))
+  const setAutoWeeklyLimit = (weekly_limit: number) =>
+    setAutoDraft((prev) => ({ ...prev, weekly_limit }))
+  const setAutoMinVotes = (min_votes: number) => setAutoDraft((prev) => ({ ...prev, min_votes }))
+  const setAutoReleasedOnly = (released_only: boolean) =>
+    setAutoDraft((prev) => ({ ...prev, released_only }))
+
   const currentData = missingQuery.data
   const isLoading = missingQuery.isLoading
   const error = missingQuery.error
+
+  const autoData = autoDownloadQuery.data
+  const rootFolders = autoData?.root_folders ?? currentData?.root_folders ?? []
+  const minFreeFormatted =
+    autoData?.min_free_space_formatted ?? currentData?.min_free_space_formatted ?? null
+  const hasSufficientSpace = autoData?.has_sufficient_space ?? true
 
   const rawItems: RadarItem[] = currentData?.items ?? []
   const filteredItems = rawItems.filter((item) => {
@@ -92,6 +124,43 @@ export function AcquisitionRadarSettings() {
     void handleBatchQueue([item.tmdb_id])
   }
 
+  const handleSaveAutoDownload = async () => {
+    try {
+      await updateAutoDownload.mutateAsync({
+        enabled: autoEnabled,
+        min_match: Math.max(50, Math.min(100, autoMinMatch)),
+        min_free_space_gb: Math.max(0, autoMinFreeGb),
+        weekly_limit: Math.max(1, Math.min(100, autoWeeklyLimit)),
+        min_votes: Math.max(0, autoMinVotes),
+        released_only: autoReleasedOnly,
+      })
+      setActionSuccess(
+        autoEnabled
+          ? `Saved automatic downloader settings (≥ ${autoMinMatch}% match, ≥ ${autoMinFreeGb} GB free space).`
+          : 'Saved automatic downloader settings (currently disabled).',
+      )
+    } catch {
+      // Captured by mutation
+    }
+  }
+
+  const handleRunAutoDownloadNow = async () => {
+    try {
+      await updateAutoDownload.mutateAsync({
+        enabled: autoEnabled,
+        min_match: Math.max(50, Math.min(100, autoMinMatch)),
+        min_free_space_gb: Math.max(0, autoMinFreeGb),
+        weekly_limit: Math.max(1, Math.min(100, autoWeeklyLimit)),
+        min_votes: Math.max(0, autoMinVotes),
+        released_only: autoReleasedOnly,
+      })
+      const res = await runAutoDownload.mutateAsync()
+      setActionSuccess(`Auto-downloader run complete: ${res.detail}`)
+    } catch {
+      // Captured by mutation
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Acquisition Radar Header / KPI Banner */}
@@ -111,6 +180,31 @@ export function AcquisitionRadarSettings() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {minFreeFormatted && (
+              <div
+                className={`rounded-xl border px-4 py-2.5 text-right ${
+                  hasSufficientSpace
+                    ? 'border-emerald-500/20 bg-emerald-500/10'
+                    : 'border-amber-500/30 bg-amber-500/15'
+                }`}
+              >
+                <span
+                  className={`block text-[10px] font-medium uppercase tracking-wider ${
+                    hasSufficientSpace ? 'text-emerald-300/80' : 'text-amber-300'
+                  }`}
+                >
+                  Remaining HDD Space
+                </span>
+                <span
+                  className={`text-xl font-bold tabular-nums ${
+                    hasSufficientSpace ? 'text-emerald-300' : 'text-amber-200'
+                  }`}
+                >
+                  {minFreeFormatted}
+                </span>
+              </div>
+            )}
+
             <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-right">
               <span className="block text-[10px] font-medium uppercase tracking-wider text-white/50">
                 Missing from Streaming
@@ -153,6 +247,199 @@ export function AcquisitionRadarSettings() {
         </div>
       )}
 
+      {/* Automatic Background Downloader & Storage Guardrails */}
+      <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 backdrop-blur-sm space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2.5">
+              <h3 className="text-base font-semibold text-white">
+                Automatic Background Downloads
+              </h3>
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                  autoEnabled
+                    ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25'
+                    : 'bg-white/10 text-white/55'
+                }`}
+              >
+                {autoEnabled ? `Active · ≥ ${autoMinMatch}% Match` : 'Off'}
+              </span>
+              {autoData && (
+                <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] text-white/60">
+                  {autoData.downloads_this_week} / {autoWeeklyLimit} downloaded this week
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-white/55">
+              Autonomously queues top unstreamable recommendations into Radarr after feed updates,
+              guarded by your match threshold, remaining HDD free space, weekly download cap, and vote floor.
+            </p>
+          </div>
+
+          <label className="inline-flex items-center gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={autoEnabled}
+              onChange={(e) => setAutoEnabled(e.target.checked)}
+              className="size-4 rounded border-white/20 bg-black/50 text-accent focus:ring-accent"
+            />
+            <span className="text-xs font-medium text-white">Enable auto-downloads</span>
+          </label>
+        </div>
+
+        {/* Root Folder Free Disk Space Indicators */}
+        {rootFolders.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-black/25 px-3.5 py-2.5 text-xs">
+            <span className="font-medium text-white/60">Radarr HDD Free Space:</span>
+            {rootFolders.map((folder) => {
+              const freeBytes = folder.free_space_bytes
+              const minBytes = autoMinFreeGb * 1024 * 1024 * 1024
+              const isLow = autoMinFreeGb > 0 && freeBytes != null && freeBytes < minBytes
+              return (
+                <span
+                  key={folder.path}
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[11px] ${
+                    isLow
+                      ? 'border-amber-500/35 bg-amber-500/15 text-amber-200'
+                      : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
+                  }`}
+                >
+                  <span>{folder.path}</span>
+                  <span className="font-sans font-semibold">
+                    {folder.free_space_formatted ?? 'Unknown'} free
+                  </span>
+                  {isLow && <span title={`Below ${autoMinFreeGb} GB minimum`}>⚠️</span>}
+                </span>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Controls Grid */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <label className="block rounded-xl border border-white/10 bg-[#12161f]/80 p-3">
+            <span className="block text-[11px] font-medium text-white/60">
+              Auto-Download Match %
+            </span>
+            <div className="mt-1.5 flex items-center gap-2">
+              <input
+                type="number"
+                min={50}
+                max={100}
+                value={autoMinMatch}
+                onChange={(e) => setAutoMinMatch(Number(e.target.value))}
+                className="w-20 rounded-lg border border-white/15 bg-black/40 px-2.5 py-1 text-sm font-semibold text-white focus:border-accent focus:outline-none"
+              />
+              <span className="text-xs text-white/50">% min (50–100)</span>
+            </div>
+          </label>
+
+          <label className="block rounded-xl border border-white/10 bg-[#12161f]/80 p-3">
+            <span className="block text-[11px] font-medium text-white/60">
+              Min Remaining HDD Space
+            </span>
+            <div className="mt-1.5 flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                max={100000}
+                value={autoMinFreeGb}
+                onChange={(e) => setAutoMinFreeGb(Number(e.target.value))}
+                className="w-20 rounded-lg border border-white/15 bg-black/40 px-2.5 py-1 text-sm font-semibold text-white focus:border-accent focus:outline-none"
+              />
+              <span className="text-xs text-white/50">GB free required</span>
+            </div>
+          </label>
+
+          <label className="block rounded-xl border border-white/10 bg-[#12161f]/80 p-3">
+            <span className="block text-[11px] font-medium text-white/60">
+              Weekly Download Cap
+            </span>
+            <div className="mt-1.5 flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={autoWeeklyLimit}
+                onChange={(e) => setAutoWeeklyLimit(Number(e.target.value))}
+                className="w-20 rounded-lg border border-white/15 bg-black/40 px-2.5 py-1 text-sm font-semibold text-white focus:border-accent focus:outline-none"
+              />
+              <span className="text-xs text-white/50">movies / week</span>
+            </div>
+          </label>
+
+          <label className="block rounded-xl border border-white/10 bg-[#12161f]/80 p-3">
+            <span className="block text-[11px] font-medium text-white/60">
+              Minimum Vote Floor
+            </span>
+            <div className="mt-1.5 flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                max={1000000}
+                step={50}
+                value={autoMinVotes}
+                onChange={(e) => setAutoMinVotes(Number(e.target.value))}
+                className="w-24 rounded-lg border border-white/15 bg-black/40 px-2.5 py-1 text-sm font-semibold text-white focus:border-accent focus:outline-none"
+              />
+              <span className="text-xs text-white/50">votes</span>
+            </div>
+          </label>
+
+          <label className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-[#12161f]/80 p-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoReleasedOnly}
+              onChange={(e) => setAutoReleasedOnly(e.target.checked)}
+              className="size-4 rounded border-white/20 bg-black/50 text-accent focus:ring-accent"
+            />
+            <div>
+              <span className="block text-xs font-medium text-white">Released only</span>
+              <span className="block text-[11px] text-white/50">
+                Digital/physical only (no CAM rips)
+              </span>
+            </div>
+          </label>
+        </div>
+
+        {(updateAutoDownload.error || runAutoDownload.error) && (
+          <ErrorText>
+            {errorMessage(updateAutoDownload.error ?? runAutoDownload.error)}
+          </ErrorText>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          <div className="text-xs text-white/50">
+            {autoData?.last_run ? (
+              <span>
+                Last run: <strong className="text-white/75">{autoData.last_run.detail}</strong>
+              </span>
+            ) : (
+              <span>Has not run automatically yet.</span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="ghost"
+              disabled={updateAutoDownload.isPending || runAutoDownload.isPending || !radarrConfigured}
+              onClick={() => void handleRunAutoDownloadNow()}
+              className="text-xs px-3 py-1.5"
+            >
+              {runAutoDownload.isPending ? 'Running…' : 'Run Auto-Downloader Now'}
+            </Button>
+            <Button
+              variant="primary"
+              disabled={updateAutoDownload.isPending}
+              onClick={() => void handleSaveAutoDownload()}
+              className="text-xs px-3 py-1.5"
+            >
+              {updateAutoDownload.isPending ? 'Saving…' : 'Save Auto-Download Settings'}
+            </Button>
+          </div>
+        </div>
+      </section>
+
       {/* Action Success Alert */}
       {actionSuccess && (
         <div className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/15 p-4 text-sm text-emerald-200">
@@ -183,10 +470,12 @@ export function AcquisitionRadarSettings() {
               onChange={(e) => setMinMatchMissing(Number(e.target.value))}
               className="rounded-lg border border-white/10 bg-[#12161f] px-2.5 py-1.5 text-xs text-white focus:border-accent focus:outline-none"
             >
+              <option value={65}>≥ 65% Match</option>
               <option value={70}>≥ 70% Match</option>
               <option value={75}>≥ 75% Match (Recommended)</option>
               <option value={80}>≥ 80% Match</option>
               <option value={85}>≥ 85% Match</option>
+              <option value={90}>≥ 90% Match</option>
             </select>
           </div>
 

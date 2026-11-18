@@ -9,8 +9,9 @@ Surfaces high-value movies to acquire or monitor in Radarr:
    automatically without pulling CAM/telesync rips.
 """
 
+import json
 import logging
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 from iwanttowatch.availability import availability, watchable
 from iwanttowatch.catalog import ensure_titles
 from iwanttowatch.children import library_owners
+from iwanttowatch.db import utcnow
 from iwanttowatch.feed import (
     DOCUMENTARY_GENRE_ID,
     hidden,
@@ -33,15 +35,18 @@ from iwanttowatch.models import (
     Title,
     User,
     get_setting,
+    set_setting,
 )
 from iwanttowatch.radarr import (
     DEFAULT_MIN_AVAILABILITY,
     MIN_AVAILABILITY_SETTING,
     QUALITY_PROFILE_SETTING,
     ROOT_FOLDER_SETTING,
+    RadarrClient,
     RadarrError,
     client_from_settings,
     queue_movie,
+    resolve_root_folder,
 )
 from iwanttowatch.tmdb import TmdbClient, TmdbError
 
@@ -49,6 +54,179 @@ log = logging.getLogger(__name__)
 
 NOW_PLAYING_CACHE = timedelta(hours=12)
 THEATRICAL_DISCOVER_CACHE = timedelta(hours=12)
+
+AUTO_DOWNLOAD_ENABLED_SETTING = "radar_auto_download_enabled"
+AUTO_DOWNLOAD_MIN_MATCH_SETTING = "radar_auto_download_min_match"
+AUTO_DOWNLOAD_MIN_FREE_GB_SETTING = "radar_auto_download_min_free_gb"
+AUTO_DOWNLOAD_WEEKLY_LIMIT_SETTING = "radar_auto_download_weekly_limit"
+AUTO_DOWNLOAD_MIN_VOTES_SETTING = "radar_auto_download_min_votes"
+AUTO_DOWNLOAD_RELEASED_ONLY_SETTING = "radar_auto_download_released_only"
+AUTO_DOWNLOAD_HISTORY_SETTING = "radar_auto_download_history"
+AUTO_DOWNLOAD_LAST_RUN_SETTING = "radar_auto_download_last_run"
+
+DEFAULT_AUTO_MIN_MATCH = 85
+DEFAULT_AUTO_MIN_FREE_GB = 20
+DEFAULT_AUTO_WEEKLY_LIMIT = 3
+DEFAULT_AUTO_MIN_VOTES = 500
+DEFAULT_AUTO_RELEASED_ONLY = True
+
+BYTES_PER_GB = 1024**3
+ESTIMATED_MOVIE_BYTES = 5 * BYTES_PER_GB
+MAX_AUTO_DOWNLOAD_HISTORY = 100
+
+
+def format_bytes(bytes_count: int) -> str:
+    """Format byte count into human-readable string (e.g. '46.6 GB', '500.0 MB')."""
+    if bytes_count < 1024:
+        return f"{bytes_count} B"
+    kb = bytes_count / 1024
+    if kb < 1024:
+        return f"{kb:.1f} KB"
+    mb = kb / 1024
+    if mb < 1024:
+        return f"{mb:.1f} MB"
+    gb = mb / 1024
+    return f"{gb:.1f} GB"
+
+
+def is_auto_download_enabled(session: Session) -> bool:
+    """Whether the autonomous background downloader is enabled."""
+    return get_setting(session, AUTO_DOWNLOAD_ENABLED_SETTING) == "true"
+
+
+def get_auto_download_config(session: Session) -> dict[str, Any]:
+    """Read background auto-downloader settings with safe defaults."""
+    enabled = is_auto_download_enabled(session)
+
+    raw_match = get_setting(session, AUTO_DOWNLOAD_MIN_MATCH_SETTING)
+    min_match = (
+        max(50, min(100, int(raw_match)))
+        if raw_match and raw_match.isdigit()
+        else DEFAULT_AUTO_MIN_MATCH
+    )
+
+    raw_free = get_setting(session, AUTO_DOWNLOAD_MIN_FREE_GB_SETTING)
+    min_free_gb = (
+        max(0, min(100000, int(raw_free)))
+        if raw_free and raw_free.isdigit()
+        else DEFAULT_AUTO_MIN_FREE_GB
+    )
+
+    raw_weekly = get_setting(session, AUTO_DOWNLOAD_WEEKLY_LIMIT_SETTING)
+    weekly_limit = (
+        max(1, min(100, int(raw_weekly)))
+        if raw_weekly and raw_weekly.isdigit()
+        else DEFAULT_AUTO_WEEKLY_LIMIT
+    )
+
+    raw_votes = get_setting(session, AUTO_DOWNLOAD_MIN_VOTES_SETTING)
+    min_votes = (
+        max(0, min(1000000, int(raw_votes)))
+        if raw_votes and raw_votes.isdigit()
+        else DEFAULT_AUTO_MIN_VOTES
+    )
+
+    raw_released = get_setting(session, AUTO_DOWNLOAD_RELEASED_ONLY_SETTING)
+    released_only = DEFAULT_AUTO_RELEASED_ONLY if raw_released is None else raw_released == "true"
+
+    return {
+        "enabled": enabled,
+        "min_match": min_match,
+        "min_free_space_gb": min_free_gb,
+        "weekly_limit": weekly_limit,
+        "min_votes": min_votes,
+        "released_only": released_only,
+    }
+
+
+def save_auto_download_config(
+    session: Session,
+    *,
+    enabled: bool,
+    min_match: int = DEFAULT_AUTO_MIN_MATCH,
+    min_free_space_gb: int = DEFAULT_AUTO_MIN_FREE_GB,
+    weekly_limit: int = DEFAULT_AUTO_WEEKLY_LIMIT,
+    min_votes: int = DEFAULT_AUTO_MIN_VOTES,
+    released_only: bool = DEFAULT_AUTO_RELEASED_ONLY,
+) -> dict[str, Any]:
+    """Persist background auto-downloader settings."""
+    set_setting(session, AUTO_DOWNLOAD_ENABLED_SETTING, "true" if enabled else "false")
+    set_setting(session, AUTO_DOWNLOAD_MIN_MATCH_SETTING, str(max(50, min(100, min_match))))
+    set_setting(
+        session,
+        AUTO_DOWNLOAD_MIN_FREE_GB_SETTING,
+        str(max(0, min(100000, min_free_space_gb))),
+    )
+    set_setting(session, AUTO_DOWNLOAD_WEEKLY_LIMIT_SETTING, str(max(1, min(100, weekly_limit))))
+    set_setting(session, AUTO_DOWNLOAD_MIN_VOTES_SETTING, str(max(0, min(1000000, min_votes))))
+    set_setting(session, AUTO_DOWNLOAD_RELEASED_ONLY_SETTING, "true" if released_only else "false")
+    return get_auto_download_config(session)
+
+
+def inspect_radarr_disk_space(
+    session: Session,
+    client: RadarrClient | None = None,
+    min_free_space_gb: int | None = None,
+) -> dict[str, Any]:
+    """Inspect remaining HDD free space across Radarr root folders."""
+    if client is None:
+        client = client_from_settings(session, timeout=3.0)
+    if min_free_space_gb is None:
+        min_free_space_gb = get_auto_download_config(session)["min_free_space_gb"]
+
+    threshold_bytes = max(0, min_free_space_gb) * BYTES_PER_GB
+    default_root_folder = get_setting(session, ROOT_FOLDER_SETTING)
+
+    folders: list[dict[str, Any]] = []
+    free_values: list[int] = []
+
+    if client is not None:
+        try:
+            raw_folders = client.root_folders()
+            for rf in raw_folders:
+                if not isinstance(rf, dict) or "path" not in rf:
+                    continue
+                path = str(rf["path"])
+                raw_free = rf.get("freeSpace")
+                free_bytes = int(raw_free) if isinstance(raw_free, (int, float)) else None
+                free_gb = round(free_bytes / BYTES_PER_GB, 2) if free_bytes is not None else None
+                free_fmt = format_bytes(free_bytes) if free_bytes is not None else None
+                below = bool(
+                    threshold_bytes > 0 and free_bytes is not None and free_bytes < threshold_bytes
+                )
+                if free_bytes is not None:
+                    free_values.append(free_bytes)
+                folders.append(
+                    {
+                        "path": path,
+                        "free_space_bytes": free_bytes,
+                        "free_space_gb": free_gb,
+                        "free_space_formatted": free_fmt,
+                        "below_threshold": below,
+                    }
+                )
+            if not default_root_folder and folders:
+                default_root_folder = folders[0]["path"]
+        except RadarrError as err:
+            log.warning("Could not fetch Radarr root folders for disk space inspection: %s", err)
+
+    min_free_bytes = min(free_values) if free_values else None
+    min_free_fmt = format_bytes(min_free_bytes) if min_free_bytes is not None else None
+
+    has_sufficient_space = True
+    if threshold_bytes > 0 and folders:
+        # Sufficient if at least one root folder meets the free space floor
+        known_folders = [f for f in folders if f["free_space_bytes"] is not None]
+        if known_folders and all(f["below_threshold"] for f in known_folders):
+            has_sufficient_space = False
+
+    return {
+        "folders": folders,
+        "default_root_folder": default_root_folder,
+        "min_free_space_bytes": min_free_bytes,
+        "min_free_space_formatted": min_free_fmt,
+        "has_sufficient_space": has_sufficient_space,
+    }
 
 
 def inspect_missing_candidates(
@@ -61,6 +239,7 @@ def inspect_missing_candidates(
     """Inspect unwatched, high-match recommendations not streamable on subscriptions or Jellyfin."""
     client = client_from_settings(session, timeout=3.0)
     radarr_configured = client is not None
+    disk_info = inspect_radarr_disk_space(session, client=client)
 
     owners = library_owners(session, user)
     in_library = set(
@@ -112,6 +291,9 @@ def inspect_missing_candidates(
             "to_request_count": 0,
             "downloading_count": 0,
             "downloaded_count": 0,
+            "root_folders": disk_info["folders"],
+            "min_free_space_bytes": disk_info["min_free_space_bytes"],
+            "min_free_space_formatted": disk_info["min_free_space_formatted"],
             "items": [],
         }
 
@@ -133,6 +315,9 @@ def inspect_missing_candidates(
             "to_request_count": 0,
             "downloading_count": 0,
             "downloaded_count": 0,
+            "root_folders": disk_info["folders"],
+            "min_free_space_bytes": disk_info["min_free_space_bytes"],
+            "min_free_space_formatted": disk_info["min_free_space_formatted"],
             "items": [],
         }
 
@@ -227,6 +412,9 @@ def inspect_missing_candidates(
         "to_request_count": to_request_count,
         "downloading_count": downloading_count,
         "downloaded_count": downloaded_count,
+        "root_folders": disk_info["folders"],
+        "min_free_space_bytes": disk_info["min_free_space_bytes"],
+        "min_free_space_formatted": disk_info["min_free_space_formatted"],
         "items": items,
     }
 
@@ -506,4 +694,331 @@ def queue_radar_candidates(
         "requested_count": requested_count,
         "failed_count": failed_count,
         "items": results,
+    }
+
+
+def _load_auto_download_history(session: Session) -> list[dict[str, Any]]:
+    raw = get_setting(session, AUTO_DOWNLOAD_HISTORY_SETTING)
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [entry for entry in parsed if isinstance(entry, dict) and "tmdb_id" in entry]
+    except Exception:
+        pass
+    return []
+
+
+def _save_auto_download_history(session: Session, history: list[dict[str, Any]]) -> None:
+    trimmed = history[:MAX_AUTO_DOWNLOAD_HISTORY]
+    set_setting(session, AUTO_DOWNLOAD_HISTORY_SETTING, json.dumps(trimmed))
+
+
+def _load_auto_download_last_run(session: Session) -> dict[str, Any] | None:
+    raw = get_setting(session, AUTO_DOWNLOAD_LAST_RUN_SETTING)
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and "ran_at" in parsed:
+            return parsed
+    except Exception:
+        pass
+    return None
+
+
+def _save_auto_download_last_run(session: Session, summary: dict[str, Any]) -> None:
+    set_setting(session, AUTO_DOWNLOAD_LAST_RUN_SETTING, json.dumps(summary))
+
+
+def _downloads_in_past_week(history: list[dict[str, Any]], now: datetime) -> int:
+    cutoff = now - timedelta(days=7)
+    count = 0
+    for entry in history:
+        raw_ts = entry.get("queued_at")
+        if not isinstance(raw_ts, str):
+            continue
+        try:
+            dt = datetime.fromisoformat(raw_ts)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            if dt >= cutoff:
+                count += 1
+        except ValueError:
+            continue
+    return count
+
+
+def _is_released_title(title: Title, today: date) -> bool:
+    """Whether a title is released and eligible for physical/digital acquisition."""
+    if title.status and title.status.strip().lower() not in ("released",):
+        return False
+    if title.release_date is not None and title.release_date > today:
+        return False
+    return not (
+        title.status is None
+        and title.release_date is None
+        and (title.year is None or title.year > today.year)
+    )
+
+
+def get_auto_download_status(
+    session: Session,
+    client: RadarrClient | None = None,
+) -> dict[str, Any]:
+    """Return auto-downloader configuration, remaining HDD space, weekly quota, and history."""
+    if client is None:
+        client = client_from_settings(session, timeout=3.0)
+    radarr_configured = client is not None
+    config = get_auto_download_config(session)
+    disk_info = inspect_radarr_disk_space(
+        session, client=client, min_free_space_gb=config["min_free_space_gb"]
+    )
+    history = _load_auto_download_history(session)
+    now = utcnow()
+    downloads_this_week = _downloads_in_past_week(history, now)
+    remaining_quota = max(0, config["weekly_limit"] - downloads_this_week)
+    last_run = _load_auto_download_last_run(session)
+
+    return {
+        "radarr_configured": radarr_configured,
+        "config": config,
+        "downloads_this_week": downloads_this_week,
+        "remaining_weekly_quota": remaining_quota,
+        "root_folders": disk_info["folders"],
+        "has_sufficient_space": disk_info["has_sufficient_space"],
+        "min_free_space_bytes": disk_info["min_free_space_bytes"],
+        "min_free_space_formatted": disk_info["min_free_space_formatted"],
+        "last_run": last_run,
+        "history": history[:20],
+    }
+
+
+def run_auto_downloader(
+    session: Session,
+    tmdb: TmdbClient,
+    user: User,
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Autonomously queue top unstreamable recommendations in Radarr with safety guardrails.
+
+    Safeguards:
+    - Configurable minimum match percentage (default >= 85%)
+    - Remaining HDD free space check on the target Radarr root folder (default >= 20 GB)
+    - Weekly download cap (default 3 movies per rolling 7-day window)
+    - Minimum audience vote count floor (default >= 500 votes across IMDb / TMDb)
+    - Released-only filter (status == Released, release_date <= today, queued with
+      minimumAvailability="released" to avoid CAM/telesync rips)
+    """
+    config = get_auto_download_config(session)
+    if not force and not config["enabled"]:
+        status = get_auto_download_status(session)
+        return {
+            "queued_count": 0,
+            "queued_items": [],
+            "skipped_low_space": 0,
+            "skipped_weekly_cap": 0,
+            "skipped_votes": 0,
+            "skipped_unreleased": 0,
+            "detail": "Auto-downloader is disabled",
+            "status": status,
+        }
+
+    client = client_from_settings(session)
+    if client is None:
+        if force:
+            raise RadarrError("Radarr is not configured in Settings")
+        status = get_auto_download_status(session, client=None)
+        return {
+            "queued_count": 0,
+            "queued_items": [],
+            "skipped_low_space": 0,
+            "skipped_weekly_cap": 0,
+            "skipped_votes": 0,
+            "skipped_unreleased": 0,
+            "detail": "Radarr is not configured",
+            "status": status,
+        }
+
+    disk_info = inspect_radarr_disk_space(
+        session, client=client, min_free_space_gb=config["min_free_space_gb"]
+    )
+    folder_free_map: dict[str, int] = {
+        str(f["path"]).rstrip("/"): int(f["free_space_bytes"])
+        for f in disk_info["folders"]
+        if f.get("free_space_bytes") is not None
+    }
+    default_root_folder = disk_info["default_root_folder"] or ""
+
+    profile_id_str = get_setting(session, QUALITY_PROFILE_SETTING)
+    profile_id = int(profile_id_str) if profile_id_str and profile_id_str.isdigit() else None
+    if profile_id is None:
+        try:
+            profiles = client.quality_profiles()
+            if profiles:
+                profile_id = profiles[0]["id"]
+        except RadarrError as err:
+            log.warning("Could not fetch Radarr quality profiles for auto-downloader: %s", err)
+
+    min_avail = (
+        "released"
+        if config["released_only"]
+        else (get_setting(session, MIN_AVAILABILITY_SETTING) or DEFAULT_MIN_AVAILABILITY)
+    )
+
+    history = _load_auto_download_history(session)
+    previously_queued_ids = {int(entry["tmdb_id"]) for entry in history if "tmdb_id" in entry}
+    now = utcnow()
+    downloads_this_week = _downloads_in_past_week(history, now)
+    remaining_quota = max(0, config["weekly_limit"] - downloads_this_week)
+
+    missing = inspect_missing_candidates(
+        session=session,
+        tmdb=tmdb,
+        user=user,
+        min_match=config["min_match"],
+    )
+    candidates = [
+        item
+        for item in missing["items"]
+        if item["radarr_status"] == "to_request"
+        and int(item["tmdb_id"]) not in previously_queued_ids
+    ]
+
+    candidate_ids = [int(item["tmdb_id"]) for item in candidates]
+    titles = (
+        {
+            t.tmdb_id: t
+            for t in session.scalars(select(Title).where(Title.tmdb_id.in_(candidate_ids)))
+        }
+        if candidate_ids
+        else {}
+    )
+
+    today = date.today()
+    min_free_bytes = max(0, config["min_free_space_gb"]) * BYTES_PER_GB
+    min_votes = max(0, config["min_votes"])
+
+    queued_items: list[dict[str, Any]] = []
+    skipped_low_space = 0
+    skipped_weekly_cap = 0
+    skipped_votes = 0
+    skipped_unreleased = 0
+
+    for item in candidates:
+        tmdb_id = int(item["tmdb_id"])
+        t = titles.get(tmdb_id)
+        if not t:
+            continue
+
+        # 1. Physical/digital release availability filter
+        if config["released_only"] and not _is_released_title(t, today):
+            skipped_unreleased += 1
+            continue
+
+        # 2. Minimum audience vote floor
+        effective_votes = max(t.imdb_votes or 0, t.vote_count or 0)
+        if min_votes > 0 and effective_votes < min_votes:
+            skipped_votes += 1
+            continue
+
+        # 3. Weekly download cap
+        if len(queued_items) >= remaining_quota:
+            skipped_weekly_cap += 1
+            continue
+
+        # 4. Remaining HDD space check on target root folder
+        target_folder = (
+            resolve_root_folder(session, t.original_language, default_root_folder)
+            if default_root_folder
+            else ""
+        )
+        norm_target = target_folder.rstrip("/")
+        matched_folder_key: str | None = None
+        avail_bytes: int | None = None
+        if norm_target and norm_target in folder_free_map:
+            matched_folder_key = norm_target
+            avail_bytes = folder_free_map[norm_target]
+        elif folder_free_map:
+            matched_folder_key = min(folder_free_map, key=lambda k: folder_free_map[k])
+            avail_bytes = folder_free_map[matched_folder_key]
+
+        if min_free_bytes > 0 and avail_bytes is not None and avail_bytes < min_free_bytes:
+            skipped_low_space += 1
+            continue
+
+        # 5. Queue in Radarr
+        try:
+            queue_movie(
+                session=session,
+                tmdb_id=tmdb_id,
+                title=t.title,
+                year=t.year,
+                language=t.original_language,
+                client=client,
+                profile_id=profile_id,
+                default_root_folder=default_root_folder or None,
+                min_avail=min_avail,
+                search=True,
+            )
+            entry = {
+                "tmdb_id": tmdb_id,
+                "title": t.title,
+                "year": t.year,
+                "match_pct": int(item["match_pct"]),
+                "root_folder": target_folder or None,
+                "queued_at": now.isoformat(),
+            }
+            queued_items.append(entry)
+            previously_queued_ids.add(tmdb_id)
+            if matched_folder_key is not None:
+                folder_free_map[matched_folder_key] = max(
+                    0, folder_free_map[matched_folder_key] - ESTIMATED_MOVIE_BYTES
+                )
+        except RadarrError as err:
+            log.warning("Auto-downloader failed to queue %s (%s): %s", t.title, tmdb_id, err)
+
+    if queued_items:
+        history = queued_items + history
+        _save_auto_download_history(session, history)
+
+    parts: list[str] = []
+    if queued_items:
+        parts.append(f"Queued {len(queued_items)} movie(s)")
+    else:
+        parts.append("No new movies queued")
+    if skipped_low_space:
+        parts.append(f"{skipped_low_space} skipped (low disk space)")
+    if skipped_weekly_cap:
+        parts.append(f"{skipped_weekly_cap} skipped (weekly cap)")
+    if skipped_votes:
+        parts.append(f"{skipped_votes} skipped (below vote floor)")
+    if skipped_unreleased:
+        parts.append(f"{skipped_unreleased} skipped (unreleased)")
+    detail = " · ".join(parts)
+
+    last_run_summary = {
+        "ran_at": now.isoformat(),
+        "queued_count": len(queued_items),
+        "skipped_low_space": skipped_low_space,
+        "skipped_weekly_cap": skipped_weekly_cap,
+        "skipped_votes": skipped_votes,
+        "skipped_unreleased": skipped_unreleased,
+        "detail": detail,
+    }
+    _save_auto_download_last_run(session, last_run_summary)
+    session.commit()
+
+    updated_status = get_auto_download_status(session, client=client)
+    return {
+        "queued_count": len(queued_items),
+        "queued_items": queued_items,
+        "skipped_low_space": skipped_low_space,
+        "skipped_weekly_cap": skipped_weekly_cap,
+        "skipped_votes": skipped_votes,
+        "skipped_unreleased": skipped_unreleased,
+        "detail": detail,
+        "status": updated_status,
     }

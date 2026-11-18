@@ -228,9 +228,9 @@ Union, de-duplicated, minus already-excluded titles, capped at a few thousand pe
 
 Completed milestones (Phases 0–5d, 5f, 5g, 7, and completed Phase 6/Mobile v1 items) are recorded in `CHANGELOG.md` and git history. Only remaining and newly planned items are tracked below.
 
-### Phase 5e — Radarr integration (remaining)
+### Phase 5e — Radarr integration
 
-- [ ] **Phase 3 — Background auto-downloader:** Autonomous downloader for top recommendations scoring $\ge 85\%$ match that are not available on any streaming platform or Jellyfin, safeguarded by strict controls (weekly download caps, minimum vote floors, and physical/digital release availability filters).
+- [x] **Phase 3 — Background auto-downloader:** Autonomous downloader for top recommendations scoring above a configurable match threshold (default $\ge 85\%$) that are not available on any streaming platform or Jellyfin, safeguarded by remaining HDD free space checks on Radarr root folders (`min_free_space_gb`), weekly download caps, minimum vote floors, and physical/digital release availability filters (`radar.py`, `api/radar.py`, `feed.py`, `AcquisitionRadarSettings.tsx`) (2026-11-18).
 
 ### Phase 6 — Optional integrations and polish (remaining)
 

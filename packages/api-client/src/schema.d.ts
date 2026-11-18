@@ -1872,6 +1872,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/library/radar/auto-download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Auto Download Settings
+         * @description Inspect background auto-downloader settings, remaining HDD space, and weekly quota.
+         */
+        get: operations["get_auto_download_settings_api_v1_library_radar_auto_download_get"];
+        /**
+         * Update Auto Download Settings
+         * @description Update background auto-downloader settings (match %, min free space GB, weekly cap).
+         */
+        put: operations["update_auto_download_settings_api_v1_library_radar_auto_download_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/library/radar/auto-download/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Auto Downloader
+         * @description Execute the background auto-downloader immediately on demand.
+         */
+        post: operations["trigger_auto_downloader_api_v1_library_radar_auto_download_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/people/favorites": {
         parameters: {
             query?: never;
@@ -2165,6 +2209,137 @@ export interface components {
             tmdb_id: number;
             /** Why */
             why: string;
+        };
+        /** AutoDownloadConfig */
+        AutoDownloadConfig: {
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Min Match
+             * @default 85
+             */
+            min_match: number;
+            /**
+             * Min Free Space Gb
+             * @default 20
+             */
+            min_free_space_gb: number;
+            /**
+             * Weekly Limit
+             * @default 3
+             */
+            weekly_limit: number;
+            /**
+             * Min Votes
+             * @default 500
+             */
+            min_votes: number;
+            /**
+             * Released Only
+             * @default true
+             */
+            released_only: boolean;
+        };
+        /** AutoDownloadHistoryItem */
+        AutoDownloadHistoryItem: {
+            /** Tmdb Id */
+            tmdb_id: number;
+            /** Title */
+            title: string;
+            /** Year */
+            year?: number | null;
+            /** Match Pct */
+            match_pct: number;
+            /** Root Folder */
+            root_folder?: string | null;
+            /** Queued At */
+            queued_at: string;
+        };
+        /** AutoDownloadLastRun */
+        AutoDownloadLastRun: {
+            /** Ran At */
+            ran_at: string;
+            /** Queued Count */
+            queued_count: number;
+            /**
+             * Skipped Low Space
+             * @default 0
+             */
+            skipped_low_space: number;
+            /**
+             * Skipped Weekly Cap
+             * @default 0
+             */
+            skipped_weekly_cap: number;
+            /**
+             * Skipped Votes
+             * @default 0
+             */
+            skipped_votes: number;
+            /**
+             * Skipped Unreleased
+             * @default 0
+             */
+            skipped_unreleased: number;
+            /** Detail */
+            detail: string;
+        };
+        /** AutoDownloadRunResponse */
+        AutoDownloadRunResponse: {
+            /** Queued Count */
+            queued_count: number;
+            /** Queued Items */
+            queued_items?: components["schemas"]["AutoDownloadHistoryItem"][];
+            /**
+             * Skipped Low Space
+             * @default 0
+             */
+            skipped_low_space: number;
+            /**
+             * Skipped Weekly Cap
+             * @default 0
+             */
+            skipped_weekly_cap: number;
+            /**
+             * Skipped Votes
+             * @default 0
+             */
+            skipped_votes: number;
+            /**
+             * Skipped Unreleased
+             * @default 0
+             */
+            skipped_unreleased: number;
+            /** Detail */
+            detail: string;
+            status: components["schemas"]["AutoDownloadStatusResponse"];
+        };
+        /** AutoDownloadStatusResponse */
+        AutoDownloadStatusResponse: {
+            /** Radarr Configured */
+            radarr_configured: boolean;
+            config: components["schemas"]["AutoDownloadConfig"];
+            /** Downloads This Week */
+            downloads_this_week: number;
+            /** Remaining Weekly Quota */
+            remaining_weekly_quota: number;
+            /** Root Folders */
+            root_folders?: components["schemas"]["RadarRootFolder"][];
+            /**
+             * Has Sufficient Space
+             * @default true
+             */
+            has_sufficient_space: boolean;
+            /** Min Free Space Bytes */
+            min_free_space_bytes?: number | null;
+            /** Min Free Space Formatted */
+            min_free_space_formatted?: string | null;
+            last_run?: components["schemas"]["AutoDownloadLastRun"] | null;
+            /** History */
+            history?: components["schemas"]["AutoDownloadHistoryItem"][];
         };
         /** BackupOut */
         BackupOut: {
@@ -3410,6 +3585,12 @@ export interface components {
             downloading_count: number;
             /** Downloaded Count */
             downloaded_count: number;
+            /** Root Folders */
+            root_folders?: components["schemas"]["RadarRootFolder"][];
+            /** Min Free Space Bytes */
+            min_free_space_bytes?: number | null;
+            /** Min Free Space Formatted */
+            min_free_space_formatted?: string | null;
             /** Items */
             items: components["schemas"]["RadarItem"][];
         };
@@ -3774,6 +3955,22 @@ export interface components {
             failed_count: number;
             /** Items */
             items: components["schemas"]["RadarQueueItemResult"][];
+        };
+        /** RadarRootFolder */
+        RadarRootFolder: {
+            /** Path */
+            path: string;
+            /** Free Space Bytes */
+            free_space_bytes?: number | null;
+            /** Free Space Gb */
+            free_space_gb?: number | null;
+            /** Free Space Formatted */
+            free_space_formatted?: string | null;
+            /**
+             * Below Threshold
+             * @default false
+             */
+            below_threshold: boolean;
         };
         /** RadarrMovieStatus */
         RadarrMovieStatus: {
@@ -7925,6 +8122,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_auto_download_settings_api_v1_library_radar_auto_download_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoDownloadStatusResponse"];
+                };
+            };
+        };
+    };
+    update_auto_download_settings_api_v1_library_radar_auto_download_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AutoDownloadConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoDownloadStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    trigger_auto_downloader_api_v1_library_radar_auto_download_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutoDownloadRunResponse"];
                 };
             };
         };
