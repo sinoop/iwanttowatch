@@ -10163,6 +10163,11 @@
             "title": "Popularity",
             "default": 0.0
           },
+          "popularity_score": {
+            "type": "number",
+            "title": "Popularity Score",
+            "default": 0.0
+          },
           "user_rating": {
             "anyOf": [
               {

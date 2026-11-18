@@ -1,11 +1,14 @@
+import gzip
 import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-from test_imports import KEY
+from test_imports import KEY, MOVIES, PEOPLE
 
+from iwanttowatch import imdb
 from iwanttowatch.models import Availability, LibraryItem, Recommendation, Title, UserTitle
 
 
@@ -400,3 +403,142 @@ def test_catalog_search_ai(client: TestClient, monkeypatch: pytest.MonkeyPatch) 
     person = data["people"][0]
     assert person["name"] == "Christopher Nolan"
     assert person["why"] == "Director known for mind-bending narrative puzzles."
+
+
+def test_person_filmography_popularity_prefers_voted_films_over_unreleased_buzz(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    monkeypatch.setitem(
+        PEOPLE,
+        901,
+        {
+            "id": 901,
+            "name": "Test Director",
+            "known_for_department": "Directing",
+            "movie_credits": {
+                "cast": [],
+                "crew": [
+                    {
+                        "id": 9101,
+                        "title": "Upcoming Hype",
+                        "original_title": "Upcoming Hype",
+                        "release_date": "2027-07-01",
+                        "job": "Director",
+                        "department": "Directing",
+                        "vote_average": 0.0,
+                        "vote_count": 0,
+                        "popularity": 180.0,
+                    },
+                    {
+                        "id": 9102,
+                        "title": "Minor Indie",
+                        "original_title": "Minor Indie",
+                        "release_date": "2018-05-01",
+                        "job": "Director",
+                        "department": "Directing",
+                        "vote_average": 6.4,
+                        "vote_count": 40,
+                        "popularity": 15.0,
+                    },
+                    {
+                        "id": 9103,
+                        "title": "Established Classic",
+                        "original_title": "Established Classic",
+                        "release_date": "2010-08-01",
+                        "job": "Director",
+                        "department": "Directing",
+                        "vote_average": 8.2,
+                        "vote_count": 25000,
+                        "popularity": 45.0,
+                    },
+                ],
+            },
+        },
+    )
+
+    res = client.get("/api/v1/people/901")
+    assert res.status_code == 200, res.text
+    filmography = res.json()["filmography"]
+    assert [f["tmdb_id"] for f in filmography] == [9103, 9102, 9101]
+    assert filmography[0]["popularity_score"] > filmography[1]["popularity_score"]
+
+
+def test_person_filmography_imdb_enrichment_lifts_regional_classics(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    client.put("/api/v1/settings/tmdb", json={"api_key": KEY})
+    # Turn IMDb ratings on and seed the local ratings dataset.
+    imdb.ratings_file(tmp_path).write_bytes(
+        gzip.compress(
+            b"tconst\taverageRating\tnumVotes\ntt8413338\t8.6\t45000\ntt9990001\t6.0\t800\n"
+        )
+    )
+    client.put("/api/v1/settings/imdb", json={"enabled": True})
+
+    monkeypatch.setitem(
+        MOVIES,
+        9201,
+        {
+            "title": "Kumbalangi Nights",
+            "original_title": "Kumbalangi Nights",
+            "lang": "ml",
+            "date": "2019-02-07",
+            "imdb": "tt8413338",
+        },
+    )
+    monkeypatch.setitem(
+        MOVIES,
+        9202,
+        {
+            "title": "Minor English Film",
+            "original_title": "Minor English Film",
+            "lang": "en",
+            "date": "2022-03-10",
+            "imdb": "tt9990001",
+        },
+    )
+    monkeypatch.setitem(
+        PEOPLE,
+        902,
+        {
+            "id": 902,
+            "name": "Regional Star",
+            "known_for_department": "Acting",
+            "movie_credits": {
+                "cast": [
+                    {
+                        "id": 9201,
+                        "title": "Kumbalangi Nights",
+                        "original_title": "Kumbalangi Nights",
+                        "release_date": "2019-02-07",
+                        "character": "Shammi",
+                        "vote_average": 8.0,
+                        "vote_count": 60,
+                        "popularity": 5.0,
+                    },
+                    {
+                        "id": 9202,
+                        "title": "Minor English Film",
+                        "original_title": "Minor English Film",
+                        "release_date": "2022-03-10",
+                        "character": "Guest",
+                        "vote_average": 6.0,
+                        "vote_count": 250,
+                        "popularity": 12.0,
+                    },
+                ],
+                "crew": [],
+            },
+        },
+    )
+
+    res = client.get("/api/v1/people/902")
+    assert res.status_code == 200, res.text
+    filmography = res.json()["filmography"]
+    # Regional classic gets enriched via external_ids + local IMDb dataset and leads!
+    assert [f["tmdb_id"] for f in filmography] == [9201, 9202]
+    assert filmography[0]["imdb_rating"] == 8.6
+    assert filmography[0]["imdb_votes"] == 45000
+    assert filmography[1]["imdb_rating"] == 6.0
+    assert filmography[1]["imdb_votes"] == 800

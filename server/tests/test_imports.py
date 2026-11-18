@@ -311,6 +311,11 @@ def fake_tmdb(request: httpx.Request) -> httpx.Response:
         tmdb_id = int(path.split("/")[2])
         hits = [_summary(i) for i in MOVIES if i != tmdb_id]
         return httpx.Response(200, json={"results": hits})
+    if path.startswith("/movie/") and path.endswith("/external_ids"):
+        tmdb_id = int(path.split("/")[2])
+        if tmdb_id not in MOVIES:
+            return httpx.Response(404)
+        return httpx.Response(200, json={"id": tmdb_id, "imdb_id": MOVIES[tmdb_id]["imdb"]})
     if path.startswith("/movie/") and path.endswith("/watch/providers"):
         tmdb_id = int(path.split("/")[2])
         if tmdb_id not in MOVIES:

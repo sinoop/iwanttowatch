@@ -1,4 +1,4 @@
-import type { Reaction } from '@iwanttowatch/api-client'
+import type { components, Reaction } from '@iwanttowatch/api-client'
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { fetchTitleDetail, ratingToReaction, type TitlePreview, useFavoritePerson, usePerson } from './api'
@@ -7,6 +7,8 @@ import { JellyfinLogo, ProviderLogo } from './Streaming'
 import { ImdbBadge, MatchBadge } from './TitleDialog'
 import { segmentedBadgeClass, segmentedTabClass } from './tabs'
 import { Button, ErrorText, Poster, SegmentedCapsule } from './ui'
+
+type PersonCredit = components['schemas']['PersonCredit']
 
 export function HeartIcon({ filled, className = 'size-4' }: { filled: boolean; className?: string }) {
   return (
@@ -21,6 +23,133 @@ export function HeartIcon({ filled, className = 'size-4' }: { filled: boolean; c
     >
       <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
     </svg>
+  )
+}
+
+function FilmCreditRow({
+  film,
+  highlight,
+  onPrefetchSchedule,
+  onPrefetchCancel,
+  onPrefetchImmediate,
+  onSelect,
+}: {
+  film: PersonCredit
+  highlight?: 'section' | 'inline'
+  onPrefetchSchedule: (tmdbId: number) => void
+  onPrefetchCancel: () => void
+  onPrefetchImmediate: (tmdbId: number) => void
+  onSelect: (film: PersonCredit) => void
+}) {
+  const rowClass =
+    highlight === 'section'
+      ? 'hover:bg-amber-400/[0.10]'
+      : highlight === 'inline'
+        ? 'border-l-2 border-amber-400/70 bg-amber-500/[0.07] hover:bg-amber-500/[0.12]'
+        : 'hover:bg-white/[0.04]'
+
+  const reaction =
+    (film.user_reaction as Reaction | null) ||
+    (film.user_rating !== null && film.user_rating !== undefined
+      ? ratingToReaction(film.user_rating)
+      : null)
+
+  return (
+    <button
+      type="button"
+      onMouseEnter={() => onPrefetchSchedule(film.tmdb_id)}
+      onMouseLeave={onPrefetchCancel}
+      onFocus={() => onPrefetchImmediate(film.tmdb_id)}
+      onClick={() => onSelect(film)}
+      className={`flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-left transition-colors group ${rowClass}`}
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <Poster
+          path={film.poster_path ?? null}
+          title={film.title}
+          className="w-10 shrink-0 rounded-md sm:w-11"
+        />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-semibold text-white transition-colors group-hover:text-accent">
+              {film.title}
+            </span>
+            {film.year && <span className="shrink-0 text-xs text-white/40">({film.year})</span>}
+            {highlight === 'inline' && (
+              <span className="shrink-0 rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300">
+                Popular
+              </span>
+            )}
+          </div>
+
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-white/50">
+            {film.job && (
+              <span
+                className={
+                  film.character
+                    ? 'rounded bg-amber-500/15 px-1.5 py-0.2 text-[10px] font-semibold text-amber-300'
+                    : 'font-medium text-white/70'
+                }
+              >
+                {film.job}
+              </span>
+            )}
+            {film.character && <span className="max-w-[200px] truncate">as {film.character}</span>}
+          </div>
+
+          {/* Badges row */}
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {film.match !== null && film.match !== undefined && <MatchBadge match={film.match} />}
+            {film.imdb_rating !== null && film.imdb_rating !== undefined ? (
+              <ImdbBadge
+                imdb={{ id: '', rating: film.imdb_rating, votes: film.imdb_votes ?? 0 }}
+                showVotes
+              />
+            ) : film.vote_average ? (
+              <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-white/70 tabular-nums">
+                TMDb {film.vote_average.toFixed(1)}
+              </span>
+            ) : null}
+            {film.in_library && (
+              <span title="On Jellyfin" className="inline-flex items-center">
+                <JellyfinLogo className="size-4.5" />
+                <span className="sr-only">On Jellyfin</span>
+              </span>
+            )}
+            {film.streaming_offers?.map((offer) => (
+              <span
+                key={offer.provider_id}
+                title={`On ${offer.name}${offer.kind === 'flatrate' ? '' : ' (free)'}`}
+                className="inline-flex items-center"
+              >
+                <ProviderLogo path={offer.logo_path} name={offer.name} className="size-4.5" />
+                <span className="sr-only">On {offer.name}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Right status: personal reaction or watched pill */}
+      <div className="flex shrink-0 items-center gap-2 text-right">
+        {reaction ? (
+          <ReactionBadge reaction={reaction} />
+        ) : film.watched ? (
+          <span className="rounded bg-white/5 px-2 py-0.5 text-xs text-white/40">✓ Watched</span>
+        ) : null}
+        <svg
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className="size-4 text-white/30 transition-colors group-hover:text-white"
+        >
+          <path
+            fillRule="evenodd"
+            d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </div>
+    </button>
   )
 }
 
@@ -89,6 +218,19 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
           return (b.vote_average ?? -1) - (a.vote_average ?? -1) || (b.vote_count ?? 0) - (a.vote_count ?? 0)
         })
 
+  const hasAudienceVotes = (f: PersonCredit) => (f.vote_count ?? 0) > 0 || (f.imdb_votes ?? 0) > 0
+  const canHighlightPopular = tab === 'all' && baseFilms.length >= 5
+  const maxPopular = Math.min(5, Math.floor(baseFilms.length / 2))
+  const popularFilms = canHighlightPopular
+    ? baseFilms.filter(hasAudienceVotes).slice(0, maxPopular)
+    : []
+  const popularIds = new Set(popularFilms.map((f) => f.tmdb_id))
+  const otherFilms = canHighlightPopular
+    ? baseFilms.filter((f) => !popularIds.has(f.tmdb_id))
+    : baseFilms
+  const showPopularSection = canHighlightPopular && popularFilms.length > 0 && otherFilms.length > 0
+  const popularHasImdb = popularFilms.some((f) => (f.imdb_votes ?? 0) > 0)
+
   const prefetchFilm = (tmdbId: number) => {
     void queryClient.prefetchQuery({
       queryKey: ['title', tmdbId],
@@ -115,6 +257,23 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
   }
 
   useEffect(() => () => cancelPrefetch(), [])
+
+  const handleSelectFilm = (film: PersonCredit) => {
+    cancelPrefetch()
+    queryClient.setQueryData<TitlePreview>(['title-preview', film.tmdb_id], {
+      title: film.title,
+      year: film.year,
+      poster_path: film.poster_path,
+      match: film.match,
+      imdb:
+        film.imdb_rating !== null && film.imdb_rating !== undefined
+          ? { id: '', rating: film.imdb_rating, votes: film.imdb_votes ?? 0 }
+          : null,
+    })
+    if (onSelectFilm) {
+      onSelectFilm(film.tmdb_id)
+    }
+  }
 
   const toggleFavorite = () => {
     if (!person) return
@@ -336,135 +495,83 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                   <p>No film credits available.</p>
                 )}
               </div>
+            ) : showPopularSection && sortBy === 'popular' ? (
+              <div
+                key={tab}
+                className="mt-3 max-h-80 sm:max-h-96 overflow-y-auto overscroll-contain pr-1.5"
+              >
+                <div className="rounded-xl border border-amber-400/25 bg-amber-500/[0.08] p-2.5">
+                  <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
+                    <div className="flex items-center gap-1.5">
+                      <svg
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="size-3.5 text-amber-400"
+                        aria-hidden="true"
+                      >
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                      <span className="text-[11px] font-semibold tracking-wider uppercase text-amber-300">
+                        Popular films
+                      </span>
+                      <span className="rounded-full bg-amber-400/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-200 tabular-nums">
+                        {popularFilms.length}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-amber-200/60">
+                      {popularHasImdb ? 'IMDb & TMDb votes' : 'TMDb votes & buzz'}
+                    </span>
+                  </div>
+                  <div className="divide-y divide-amber-400/15">
+                    {popularFilms.map((film) => (
+                      <FilmCreditRow
+                        key={film.tmdb_id}
+                        film={film}
+                        highlight="section"
+                        onPrefetchSchedule={schedulePrefetch}
+                        onPrefetchCancel={cancelPrefetch}
+                        onPrefetchImmediate={prefetchFilm}
+                        onSelect={handleSelectFilm}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <div className="mb-1 px-2">
+                    <span className="text-[11px] font-semibold tracking-wider uppercase text-white/45">
+                      All other films ({otherFilms.length})
+                    </span>
+                  </div>
+                  <div className="divide-y divide-white/5">
+                    {otherFilms.map((film) => (
+                      <FilmCreditRow
+                        key={film.tmdb_id}
+                        film={film}
+                        onPrefetchSchedule={schedulePrefetch}
+                        onPrefetchCancel={cancelPrefetch}
+                        onPrefetchImmediate={prefetchFilm}
+                        onSelect={handleSelectFilm}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
             ) : (
               <div
                 key={tab}
                 className="mt-3 max-h-80 sm:max-h-96 overflow-y-auto overscroll-contain divide-y divide-white/5 pr-1.5"
               >
                 {displayedFilms.map((film) => (
-                  <button
+                  <FilmCreditRow
                     key={film.tmdb_id}
-                    type="button"
-                    onMouseEnter={() => schedulePrefetch(film.tmdb_id)}
-                    onMouseLeave={cancelPrefetch}
-                    onFocus={() => prefetchFilm(film.tmdb_id)}
-                    onClick={() => {
-                      cancelPrefetch()
-                      queryClient.setQueryData<TitlePreview>(['title-preview', film.tmdb_id], {
-                        title: film.title,
-                        year: film.year,
-                        poster_path: film.poster_path,
-                        match: film.match,
-                        imdb:
-                          film.imdb_rating !== null && film.imdb_rating !== undefined
-                            ? { id: '', rating: film.imdb_rating, votes: film.imdb_votes ?? 0 }
-                            : null,
-                      })
-                      if (onSelectFilm) {
-                        onSelectFilm(film.tmdb_id)
-                      }
-                    }}
-                    className="flex w-full items-center justify-between gap-3 py-2.5 text-left transition-colors hover:bg-white/[0.04] rounded-lg px-2 group"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Poster
-                        path={film.poster_path ?? null}
-                        title={film.title}
-                        className="w-10 sm:w-11 shrink-0 rounded-md"
-                      />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-sm text-white group-hover:text-accent transition-colors truncate">
-                            {film.title}
-                          </span>
-                          {film.year && <span className="text-xs text-white/40 shrink-0">({film.year})</span>}
-                        </div>
-
-                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-white/50">
-                          {film.job && (
-                            <span
-                              className={
-                                film.character
-                                  ? 'rounded bg-amber-500/15 px-1.5 py-0.2 text-[10px] font-semibold text-amber-300'
-                                  : 'font-medium text-white/70'
-                              }
-                            >
-                              {film.job}
-                            </span>
-                          )}
-                          {film.character && (
-                            <span className="truncate max-w-[200px]">as {film.character}</span>
-                          )}
-                        </div>
-
-                        {/* Badges row */}
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                          {film.match !== null && film.match !== undefined && (
-                            <MatchBadge match={film.match} />
-                          )}
-                          {film.imdb_rating !== null && film.imdb_rating !== undefined ? (
-                            <ImdbBadge
-                              imdb={{ id: '', rating: film.imdb_rating, votes: film.imdb_votes ?? 0 }}
-                              showVotes
-                            />
-                          ) : film.vote_average ? (
-                            <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-medium text-white/70 tabular-nums">
-                              TMDb {film.vote_average.toFixed(1)}
-                            </span>
-                          ) : null}
-                          {film.in_library && (
-                            <span title="On Jellyfin" className="inline-flex items-center">
-                              <JellyfinLogo className="size-4.5" />
-                              <span className="sr-only">On Jellyfin</span>
-                            </span>
-                          )}
-                          {film.streaming_offers?.map((offer) => (
-                            <span
-                              key={offer.provider_id}
-                              title={`On ${offer.name}${offer.kind === 'flatrate' ? '' : ' (free)'}`}
-                              className="inline-flex items-center"
-                            >
-                              <ProviderLogo path={offer.logo_path} name={offer.name} className="size-4.5" />
-                              <span className="sr-only">On {offer.name}</span>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right status: personal reaction or watched pill */}
-                    <div className="shrink-0 flex items-center gap-2 text-right">
-                      {(() => {
-                        const reaction =
-                          (film.user_reaction as Reaction | null) ||
-                          (film.user_rating !== null && film.user_rating !== undefined
-                            ? ratingToReaction(film.user_rating)
-                            : null)
-                        if (reaction) {
-                          return <ReactionBadge reaction={reaction} />
-                        }
-                        if (film.watched) {
-                          return (
-                            <span className="rounded bg-white/5 px-2 py-0.5 text-xs text-white/40">
-                              ✓ Watched
-                            </span>
-                          )
-                        }
-                        return null
-                      })()}
-                      <svg
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                        className="size-4 text-white/30 group-hover:text-white transition-colors"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
-                    </div>
-                  </button>
+                    film={film}
+                    highlight={showPopularSection && popularIds.has(film.tmdb_id) ? 'inline' : undefined}
+                    onPrefetchSchedule={schedulePrefetch}
+                    onPrefetchCancel={cancelPrefetch}
+                    onPrefetchImmediate={prefetchFilm}
+                    onSelect={handleSelectFilm}
+                  />
                 ))}
               </div>
             )}

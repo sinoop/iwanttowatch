@@ -1,13 +1,17 @@
 """Person details, filmography, and personal taste affinity."""
 
+import math
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert
 
+from iwanttowatch import imdb
 from iwanttowatch.api.deps import CurrentUser, DbSession, Tmdb
 from iwanttowatch.api.streaming import Offer
 from iwanttowatch.children import library_owners
@@ -15,10 +19,85 @@ from iwanttowatch.db import utcnow
 from iwanttowatch.feed import clear_user_rated_matches_cache, seen
 from iwanttowatch.models import Availability, FavoritePerson, LibraryItem, Recommendation, Title
 from iwanttowatch.taste import effective_ratings, rating_to_reaction
-from iwanttowatch.tmdb import TmdbNotFound
+from iwanttowatch.tmdb import TmdbClient, TmdbError, TmdbNotFound
 
 router = APIRouter(prefix="/api/v1/people", tags=["people"])
 PERSON_CACHE = timedelta(days=7)
+EXTERNAL_IDS_CACHE = timedelta(days=30)
+IMDB_ENRICH_LIMIT = 20
+# IMDb has roughly ~50x more voters than TMDb; scale IMDb votes onto TMDb's range so
+# cached IMDb-enriched titles stay comparable to uncached TMDb-only credits while still
+# giving regional cinema with sparse TMDb votes a fair lift.
+IMDB_TO_TMDB_VOTE_RATIO = 50.0
+
+
+def _effective_votes(vote_count: int | None, imdb_votes: int | None) -> float:
+    tmdb_votes = max(0, vote_count or 0)
+    scaled_imdb = max(0, imdb_votes or 0) / IMDB_TO_TMDB_VOTE_RATIO
+    return max(float(tmdb_votes), scaled_imdb)
+
+
+def _popularity_score(
+    vote_count: int | None, popularity: float | None, imdb_votes: int | None
+) -> float:
+    """Blended fame score: cumulative audience votes (IMDb/TMDb) + mild TMDb buzz."""
+    eff_votes = _effective_votes(vote_count, imdb_votes)
+    pop = max(0.0, float(popularity or 0.0))
+    if eff_votes <= 0 and pop <= 0:
+        return 0.0
+    return round(math.log1p(eff_votes) + 0.35 * math.log1p(pop), 4)
+
+
+def _fetch_imdb_id(tmdb: TmdbClient, tmdb_id: int) -> tuple[int, str | None]:
+    try:
+        ext = tmdb.get(f"/movie/{tmdb_id}/external_ids", cache_for=EXTERNAL_IDS_CACHE)
+    except TmdbError:
+        return tmdb_id, None
+    imdb_id = ext.get("imdb_id")
+    return tmdb_id, imdb_id if isinstance(imdb_id, str) and imdb_id else None
+
+
+def _enrich_imdb_credits(
+    session: DbSession,
+    data_dir: Path,
+    tmdb: TmdbClient,
+    movies: dict[int, dict[str, Any]],
+    imdb_map: dict[int, tuple[float | None, int | None]],
+    title_imdb_ids: dict[int, str],
+) -> None:
+    """Populate IMDb ratings/votes for cached Title IMDb IDs and top uncached credits."""
+    if not imdb.enabled(session) or not imdb.ratings_file(data_dir).exists():
+        return
+
+    # 1. Resolve Title rows that already have an imdb_id without calling TMDb.
+    pending_tmdb_to_imdb = dict(title_imdb_ids)
+
+    # 2. Fetch external_ids for top uncached candidates so regional/uncached hits get IMDb votes.
+    candidates = [
+        m
+        for mid, m in movies.items()
+        if mid not in imdb_map
+        and mid not in pending_tmdb_to_imdb
+        and ((m.get("vote_count") or 0) > 0 or (m.get("popularity") or 0.0) > 0)
+    ]
+    candidates.sort(
+        key=lambda m: _popularity_score(m.get("vote_count"), m.get("popularity"), None),
+        reverse=True,
+    )
+    to_fetch = [int(m["tmdb_id"]) for m in candidates[:IMDB_ENRICH_LIMIT]]
+    if to_fetch:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for mid, imdb_id in pool.map(lambda tid: _fetch_imdb_id(tmdb, tid), to_fetch):
+                if imdb_id:
+                    pending_tmdb_to_imdb[mid] = imdb_id
+
+    if not pending_tmdb_to_imdb:
+        return
+
+    found = imdb.lookup_ratings(data_dir, list(pending_tmdb_to_imdb.values()))
+    for mid, imdb_id in pending_tmdb_to_imdb.items():
+        if imdb_id in found:
+            imdb_map[mid] = found[imdb_id]
 
 
 class PersonCredit(BaseModel):
@@ -36,6 +115,7 @@ class PersonCredit(BaseModel):
     imdb_votes: int | None = None
     match: int | None = None
     popularity: float = 0.0
+    popularity_score: float = 0.0
     user_rating: float | None = None
     user_reaction: str | None = None
     watched: bool = False
@@ -241,6 +321,7 @@ def get_people_taste(session: DbSession, user: CurrentUser) -> PeopleTasteOvervi
 
 @router.get("/{person_id}", response_model=PersonDetail)
 def get_person(
+    request: Request,
     person_id: int,
     session: DbSession,
     user: CurrentUser,
@@ -385,14 +466,21 @@ def get_person(
                 avail_map[av.tmdb_id] = list(dict.fromkeys(o.name for o in offers_list))
 
     imdb_map: dict[int, tuple[float | None, int | None]] = {}
+    title_imdb_ids: dict[int, str] = {}
     match_map: dict[int, int] = {}
     if movie_ids:
-        for row in session.execute(
-            select(Title.tmdb_id, Title.imdb_rating, Title.imdb_votes).where(
-                Title.tmdb_id.in_(movie_ids), Title.imdb_rating.is_not(None)
+        for title_row in session.execute(
+            select(Title.tmdb_id, Title.imdb_id, Title.imdb_rating, Title.imdb_votes).where(
+                Title.tmdb_id.in_(movie_ids)
             )
         ):
-            imdb_map[row.tmdb_id] = (row.imdb_rating, row.imdb_votes)
+            if title_row.imdb_rating is not None:
+                imdb_map[title_row.tmdb_id] = (title_row.imdb_rating, title_row.imdb_votes)
+            elif title_row.imdb_id and title_row.imdb_votes is None:
+                title_imdb_ids[title_row.tmdb_id] = title_row.imdb_id
+        _enrich_imdb_credits(
+            session, request.app.state.data_dir, tmdb, movies, imdb_map, title_imdb_ids
+        )
         for tmdb_id, score in session.execute(
             select(Recommendation.tmdb_id, Recommendation.score).where(
                 Recommendation.user_id == user.id, Recommendation.tmdb_id.in_(movie_ids)
@@ -409,6 +497,7 @@ def get_person(
         is_in_library = mid in library_set
         services = avail_map.get(mid, [])
         imdb_r, imdb_v = imdb_map.get(mid, (None, None))
+        pop_score = _popularity_score(m["vote_count"], m["popularity"], imdb_v)
         filmography.append(
             PersonCredit(
                 tmdb_id=mid,
@@ -425,6 +514,7 @@ def get_person(
                 imdb_votes=imdb_v,
                 match=match_map.get(mid),
                 popularity=m["popularity"],
+                popularity_score=pop_score,
                 user_rating=rating,
                 user_reaction=reaction,
                 watched=is_watched,
@@ -434,11 +524,14 @@ def get_person(
             )
         )
 
-    # Sort filmography by popularity descending, then vote count, then year descending.
+    # Sort filmography by established audience votes + TMDb buzz so classics lead over
+    # unreleased or low-vote hype, while still keeping current hits near the top.
     filmography.sort(
         key=lambda c: (
+            _effective_votes(c.vote_count, c.imdb_votes) >= 5,
+            _effective_votes(c.vote_count, c.imdb_votes) > 0,
+            c.popularity_score,
             c.popularity or 0.0,
-            c.vote_count or 0,
             c.year or 0,
         ),
         reverse=True,

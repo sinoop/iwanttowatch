@@ -3546,6 +3546,11 @@ export interface components {
              * @default 0
              */
             popularity: number;
+            /**
+             * Popularity Score
+             * @default 0
+             */
+            popularity_score: number;
             /** User Rating */
             user_rating?: number | null;
             /** User Reaction */

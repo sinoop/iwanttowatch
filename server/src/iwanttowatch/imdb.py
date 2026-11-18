@@ -12,6 +12,7 @@ import logging
 import os
 import sqlite3
 import threading
+from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
 
@@ -99,24 +100,38 @@ def _ensure_index(data_dir: Path) -> Path | None:
         return idx
 
 
-def lookup_rating(data_dir: Path, imdb_id: str) -> tuple[float, int] | None:
-    """Look up a single title's rating and votes from the indexed IMDb ratings dataset."""
+def lookup_ratings(data_dir: Path, imdb_ids: Sequence[str]) -> dict[str, tuple[float, int]]:
+    """Look up ratings and vote counts for many IMDb IDs from the indexed IMDb dataset."""
+    unique_ids = list(dict.fromkeys(i for i in imdb_ids if i))
+    if not unique_ids:
+        return {}
     try:
         idx = _ensure_index(data_dir)
         if idx is None:
-            return None
+            return {}
+        out: dict[str, tuple[float, int]] = {}
         conn = sqlite3.connect(idx)
         try:
-            row = conn.execute(
-                "SELECT rating, votes FROM ratings WHERE imdb_id = ?", (imdb_id,)
-            ).fetchone()
-            if row is not None:
-                return float(row[0]), int(row[1])
+            for start in range(0, len(unique_ids), 500):
+                batch = unique_ids[start : start + 500]
+                placeholders = ",".join("?" for _ in batch)
+                rows = conn.execute(
+                    f"SELECT imdb_id, rating, votes FROM ratings WHERE imdb_id IN ({placeholders})",
+                    batch,
+                ).fetchall()
+                for row in rows:
+                    out[str(row[0])] = (float(row[1]), int(row[2]))
         finally:
             conn.close()
+        return out
     except (OSError, ValueError, sqlite3.Error) as error:
-        log.warning("Reading IMDb ratings index failed for %s: %s", imdb_id, error)
-    return None
+        log.warning("Reading IMDb ratings index failed: %s", error)
+    return {}
+
+
+def lookup_rating(data_dir: Path, imdb_id: str) -> tuple[float, int] | None:
+    """Look up a single title's rating and votes from the indexed IMDb ratings dataset."""
+    return lookup_ratings(data_dir, [imdb_id]).get(imdb_id)
 
 
 def ensure_title_rating(session: Session, data_dir: Path, title: Title) -> None:
