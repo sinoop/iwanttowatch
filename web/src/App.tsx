@@ -56,6 +56,7 @@ function Main() {
               <Route path="taste/imports/:jobId" element={<Review />} />
               <Route path="settings" element={<Navigate to="/settings/profile" replace />} />
               <Route path="settings/:section" element={<Settings me={me.data} />} />
+              <Route path="settings/:section/:subsection" element={<Settings me={me.data} />} />
             </>
           )}
           <Route path="*" element={<Navigate to="/" replace />} />

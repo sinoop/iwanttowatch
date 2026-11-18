@@ -163,7 +163,7 @@ export function DeclutterSettings() {
               Radarr is not connected. Connect Radarr to measure exact file sizes on disk and trigger automated file deletions.
             </span>
             <Link
-              to="/settings/integrations"
+              to="/settings/integrations/radarr"
               className="ml-4 shrink-0 rounded-lg bg-amber-500/20 px-3 py-1.5 font-semibold text-amber-100 hover:bg-amber-500/30"
             >
               Connect Radarr →
@@ -177,7 +177,7 @@ export function DeclutterSettings() {
               Jellyfin is not connected. Connect Jellyfin to detect unplayable or missing media files and sync playback history.
             </span>
             <Link
-              to="/settings/integrations"
+              to="/settings/integrations/jellyfin"
               className="ml-4 shrink-0 rounded-lg bg-indigo-500/20 px-3 py-1.5 font-semibold text-indigo-100 hover:bg-indigo-500/30"
             >
               Connect Jellyfin →

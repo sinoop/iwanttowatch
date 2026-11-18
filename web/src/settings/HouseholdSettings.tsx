@@ -6,19 +6,17 @@ import { Button, ErrorText, Field } from '../ui'
 
 const CURRENT_YEAR = new Date().getFullYear()
 
-export function HouseholdSettings({ me }: { me: Me }) {
-  return (
-    <div className="space-y-6">
-      {me.is_admin && (
-        <div id="invites" className="scroll-mt-6">
-          <HouseholdInvites />
-        </div>
-      )}
-      <div id="child-profiles" className="scroll-mt-6">
-        <ChildProfilesSection me={me} />
-      </div>
-    </div>
-  )
+export function HouseholdSettings({
+  me,
+  subsection = 'invites',
+}: {
+  me: Me
+  subsection?: string
+}) {
+  if (subsection === 'invites' && me.is_admin) {
+    return <HouseholdInvites />
+  }
+  return <ChildProfilesSection me={me} />
 }
 
 function HouseholdInvites() {

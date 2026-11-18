@@ -4,26 +4,26 @@ import { useState } from 'react'
 import { api, copyToClipboard, errorMessage } from '../api'
 import { Button, ErrorText } from '../ui'
 
-export function SystemSettings({ settings }: { settings: ServerSettings }) {
-  return (
-    <div className="space-y-6">
-      <div id="logs" className="scroll-mt-6">
-        <ServerLogsSection />
-      </div>
-      <div id="profiling" className="scroll-mt-6">
-        <ProfilingSection enabled={settings.profiling_enabled ?? false} />
-      </div>
-      <div id="compaction" className="scroll-mt-6">
-        <DatabaseCompactionSection settings={settings} />
-      </div>
-      <div id="mcp" className="scroll-mt-6">
-        <McpSection enabled={settings.mcp_enabled} />
-      </div>
-      <div id="backups" className="scroll-mt-6">
-        <ServerBackups />
-      </div>
-    </div>
-  )
+export function SystemSettings({
+  settings,
+  subsection = 'logs',
+}: {
+  settings: ServerSettings
+  subsection?: string
+}) {
+  if (subsection === 'profiling') {
+    return <ProfilingSection enabled={settings.profiling_enabled ?? false} />
+  }
+  if (subsection === 'compaction') {
+    return <DatabaseCompactionSection settings={settings} />
+  }
+  if (subsection === 'mcp') {
+    return <McpSection enabled={settings.mcp_enabled} />
+  }
+  if (subsection === 'backups') {
+    return <ServerBackups />
+  }
+  return <ServerLogsSection />
 }
 
 type LogLevel = 'ALL' | 'INFO' | 'WARNING' | 'ERROR'

@@ -11,20 +11,14 @@ const SOURCE_NAMES: Record<string, string> = {
   netflix: 'Netflix',
 }
 
-export function ImportExportSettings() {
+export function ImportExportSettings({ subsection = 'import-ratings' }: { subsection?: string }) {
   const settings = useServerSettings()
   const tmdbReady = settings.data?.tmdb_configured === true
 
-  return (
-    <div className="space-y-6">
-      <div id="import-ratings" className="scroll-mt-6">
-        <ImportRatingsSection tmdbReady={tmdbReady} />
-      </div>
-      <div id="your-data" className="scroll-mt-6">
-        <YourDataSection tmdbReady={tmdbReady} />
-      </div>
-    </div>
-  )
+  if (subsection === 'your-data') {
+    return <YourDataSection tmdbReady={tmdbReady} />
+  }
+  return <ImportRatingsSection tmdbReady={tmdbReady} />
 }
 
 function ImportRatingsSection({ tmdbReady }: { tmdbReady: boolean }) {

@@ -25,17 +25,19 @@ const PURPOSES: Record<string, string> = {
   test: 'Settings test',
 }
 
-export function AiSettings({ me, settings }: { me: Me; settings: ServerSettings }) {
-  return (
-    <div className="space-y-6">
-      <div id="ai-writing" className="scroll-mt-6">
-        <LlmSection me={me} settings={settings} />
-      </div>
-      <div id="ai-activity" className="scroll-mt-6">
-        <LlmActivity />
-      </div>
-    </div>
-  )
+export function AiSettings({
+  me,
+  settings,
+  subsection = 'ai-writing',
+}: {
+  me: Me
+  settings: ServerSettings
+  subsection?: string
+}) {
+  if (subsection === 'ai-activity') {
+    return <LlmActivity />
+  }
+  return <LlmSection me={me} settings={settings} />
 }
 
 function LlmSection({ me, settings }: { me: Me; settings: ServerSettings }) {

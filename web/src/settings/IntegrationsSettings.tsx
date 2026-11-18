@@ -7,24 +7,30 @@ import { RadarrServer } from '../RadarrSettings'
 import { Button, ErrorText, Field } from '../ui'
 import { AcquisitionRadarSettings } from './AcquisitionRadarSettings'
 
-export function IntegrationsSettings({ me, settings }: { me: Me; settings: ServerSettings }) {
-  return (
-    <div className="space-y-6">
-      <div id="tmdb" className="scroll-mt-6">
-        <TmdbSection me={me} settings={settings} />
-      </div>
-      <div id="jellyfin" className="scroll-mt-6">
-        <JellyfinServer settings={settings} />
-      </div>
-      <div id="radarr" className="scroll-mt-6 space-y-6">
+export function IntegrationsSettings({
+  me,
+  settings,
+  subsection = 'tmdb',
+}: {
+  me: Me
+  settings: ServerSettings
+  subsection?: string
+}) {
+  if (subsection === 'jellyfin') {
+    return <JellyfinServer settings={settings} />
+  }
+  if (subsection === 'radarr') {
+    return (
+      <div className="space-y-6">
         <RadarrServer settings={settings} />
         <AcquisitionRadarSettings embedded />
       </div>
-      <div id="imdb" className="scroll-mt-6">
-        <ImdbSection me={me} settings={settings} />
-      </div>
-    </div>
-  )
+    )
+  }
+  if (subsection === 'imdb') {
+    return <ImdbSection me={me} settings={settings} />
+  }
+  return <TmdbSection me={me} settings={settings} />
 }
 
 function TmdbSection({ me, settings }: { me: Me; settings: ServerSettings }) {

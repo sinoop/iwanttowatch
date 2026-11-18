@@ -308,7 +308,7 @@ export function AcquisitionRadarSettings({ embedded = false }: { embedded?: bool
           </div>
           {!embedded && (
             <Link
-              to="/settings/integrations#radarr"
+              to="/settings/integrations/radarr"
               className="shrink-0 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-300"
             >
               Connect Radarr →

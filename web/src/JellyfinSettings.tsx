@@ -67,7 +67,7 @@ export function JellyfinServer({ settings }: { settings: ServerSettings }) {
   }
 
   return (
-    <section className="mt-6 max-w-xl rounded-xl border border-white/10 p-5">
+    <section className="rounded-xl border border-white/10 p-5">
       <div className="flex items-center justify-between gap-4">
         <h2 className="font-semibold">Jellyfin</h2>
         <Badge on={connected}>{connected ? 'Connected' : 'Not connected'}</Badge>
@@ -224,10 +224,26 @@ export function JellyfinAccount() {
     link.mutate()
   }
   const a = account.data
-  if (!a?.server_configured) return null
+  if (account.isPending) {
+    return (
+      <section className="rounded-xl border border-white/10 p-5 text-sm text-white/60">
+        Checking Jellyfin link…
+      </section>
+    )
+  }
+  if (!a?.server_configured) {
+    return (
+      <section className="rounded-xl border border-dashed border-white/15 p-5 text-sm text-white/60">
+        <h2 className="font-semibold text-white">Your Jellyfin account</h2>
+        <p className="mt-2">
+          A Jellyfin server has not been connected by an admin yet. Once connected, you can link your personal Jellyfin account here.
+        </p>
+      </section>
+    )
+  }
 
   return (
-    <section className="mt-6 max-w-xl rounded-xl border border-white/10 p-5">
+    <section className="rounded-xl border border-white/10 p-5">
       <div className="flex items-center justify-between gap-4">
         <h2 className="font-semibold">Your Jellyfin account</h2>
         <Badge on={a.linked}>{a.linked ? 'Linked' : 'Not linked'}</Badge>

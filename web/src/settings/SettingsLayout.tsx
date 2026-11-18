@@ -1,9 +1,15 @@
 import type { Me } from '@iwanttowatch/api-client'
-import { useEffect, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router'
 import { useServerSettings } from '../api'
 import { segmentedTabClass } from '../tabs'
 import { SegmentedCapsule } from '../ui'
+import {
+  SETTINGS_SECTIONS,
+  buildSearchEntries,
+  defaultPathForSection,
+  visibleSubpages,
+} from './settingsCatalog'
 
 export function UserIcon({ className = 'size-4' }: { className?: string }) {
   return (
@@ -88,6 +94,15 @@ export function TrashIcon({ className = 'size-4' }: { className?: string }) {
   )
 }
 
+export function SearchIcon({ className = 'size-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </svg>
+  )
+}
+
 function StatusBadge({
   status,
   variant = 'neutral',
@@ -108,12 +123,13 @@ function StatusBadge({
 interface SubMenuItem {
   id: string
   label: string
-  href: string
+  to: string
   badge?: ReactNode
 }
 
 interface NavSectionItem {
   id: string
+  sectionPath: string
   to: string
   label: string
   icon: ReactNode
@@ -121,13 +137,26 @@ interface NavSectionItem {
   subItems?: SubMenuItem[]
 }
 
+const SECTION_ICONS: Record<string, ReactNode> = {
+  profile: <UserIcon />,
+  imports: <ImportIcon />,
+  streaming: <TvIcon />,
+  household: <HouseholdIcon />,
+  integrations: <PlugIcon />,
+  ai: <SparklesIcon />,
+  declutter: <TrashIcon />,
+  system: <ServerIcon />,
+}
+
 export function SettingsLayout({
   me,
+  parentTitle,
   title,
   description,
   children,
 }: {
   me: Me
+  parentTitle?: string
   title: string
   description?: string
   children: ReactNode
@@ -135,7 +164,7 @@ export function SettingsLayout({
   const settings = useServerSettings()
   const location = useLocation()
   const navigate = useNavigate()
-  const activeHash = location.hash.replace('#', '')
+  const [searchQuery, setSearchQuery] = useState('')
 
   const tmdbConfigured = settings.data?.tmdb_configured ?? false
   const jellyfinConnected = settings.data?.jellyfin.url !== null && settings.data?.jellyfin.url !== undefined
@@ -147,118 +176,36 @@ export function SettingsLayout({
   const llmActive = (settings.data?.llm.order.length ?? 0) > 0
   const mcpEnabled = settings.data?.mcp_enabled ?? false
 
-  useEffect(() => {
-    const hash = location.hash.replace('#', '')
-    if (hash) {
-      const el = document.getElementById(hash)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth' })
+  const subBadge = (sectionId: string, subId: string): ReactNode | undefined => {
+    if (sectionId === 'integrations') {
+      if (subId === 'tmdb') {
+        return <StatusBadge status={tmdbConfigured ? 'Connected' : 'Missing'} variant={tmdbConfigured ? 'green' : 'amber'} />
+      }
+      if (subId === 'jellyfin') {
+        return <StatusBadge status={jellyfinConnected ? 'Connected' : 'Not connected'} variant={jellyfinConnected ? 'green' : 'neutral'} />
+      }
+      if (subId === 'radarr') {
+        return <StatusBadge status={radarrConnected ? 'Connected' : 'Not connected'} variant={radarrConnected ? 'green' : 'neutral'} />
+      }
+      if (subId === 'imdb') {
+        return <StatusBadge status={imdbEnabled ? 'On' : 'Off'} variant={imdbEnabled ? 'green' : 'neutral'} />
       }
     }
-  }, [location.pathname, location.hash])
-
-  const scrollToId = (id: string, targetPath: string) => {
-    if (location.pathname === targetPath) {
-      const el = document.getElementById(id)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth' })
-        window.history.replaceState(null, '', `${targetPath}#${id}`)
-      }
-    } else {
-      void navigate(`${targetPath}#${id}`)
+    if (sectionId === 'ai' && subId === 'ai-writing') {
+      return <StatusBadge status={llmActive ? 'On' : 'Off'} variant={llmActive ? 'green' : 'neutral'} />
     }
+    if (sectionId === 'system' && subId === 'mcp') {
+      return <StatusBadge status={mcpEnabled ? 'On' : 'Off'} variant={mcpEnabled ? 'green' : 'neutral'} />
+    }
+    return undefined
   }
 
-  const personalItems: NavSectionItem[] = [
-    {
-      id: 'profile',
-      to: '/settings/profile',
-      label: 'My Profile',
-      icon: <UserIcon />,
-      subItems: [
-        { id: 'languages', label: 'Languages', href: '/settings/profile#languages' },
-        { id: 'content-filter', label: 'Default Feed Content', href: '/settings/profile#content-filter' },
-        { id: 'birth-year', label: 'Birth Year', href: '/settings/profile#birth-year' },
-        { id: 'jellyfin-account', label: 'Jellyfin Account', href: '/settings/profile#jellyfin-account' },
-        { id: 'taste-profile', label: 'Taste Profile', href: '/settings/profile#taste-profile' },
-        { id: 'share-taste', label: 'Share Your Taste', href: '/settings/profile#share-taste' },
-      ],
-    },
-    {
-      id: 'imports',
-      to: '/settings/imports',
-      label: 'Import & Export',
-      icon: <ImportIcon />,
-      subItems: [
-        { id: 'import-ratings', label: 'Import Ratings', href: '/settings/imports#import-ratings' },
-        { id: 'your-data', label: 'Your Data', href: '/settings/imports#your-data' },
-      ],
-    },
-    { id: 'streaming', to: '/settings/streaming', label: 'Streaming Services', icon: <TvIcon /> },
-    {
-      id: 'household',
-      to: '/settings/household',
-      label: 'Household',
-      icon: <HouseholdIcon />,
-      subItems: [
-        ...(me.is_admin ? [{ id: 'invites', label: 'Household Invites', href: '/settings/household#invites' }] : []),
-        { id: 'child-profiles', label: 'Child Profiles', href: '/settings/household#child-profiles' },
-      ],
-    },
-  ]
-
-  const adminItems: NavSectionItem[] = [
-    {
-      id: 'integrations',
-      to: '/settings/integrations',
-      label: 'Integrations',
-      icon: <PlugIcon />,
-      badge: !tmdbConfigured ? (
-        <span className="size-2 rounded-full bg-amber-400" title="TMDb API key required" />
-      ) : undefined,
-      subItems: [
-        {
-          id: 'tmdb',
-          label: 'TMDb',
-          href: '/settings/integrations#tmdb',
-          badge: <StatusBadge status={tmdbConfigured ? 'Connected' : 'Missing'} variant={tmdbConfigured ? 'green' : 'amber'} />,
-        },
-        {
-          id: 'jellyfin',
-          label: 'Jellyfin',
-          href: '/settings/integrations#jellyfin',
-          badge: (
-            <StatusBadge
-              status={jellyfinConnected ? 'Connected' : 'Not connected'}
-              variant={jellyfinConnected ? 'green' : 'neutral'}
-            />
-          ),
-        },
-        {
-          id: 'radarr',
-          label: 'Radarr',
-          href: '/settings/integrations#radarr',
-          badge: (
-            <StatusBadge
-              status={radarrConnected ? 'Connected' : 'Not connected'}
-              variant={radarrConnected ? 'green' : 'neutral'}
-            />
-          ),
-        },
-        {
-          id: 'imdb',
-          label: 'IMDb',
-          href: '/settings/integrations#imdb',
-          badge: <StatusBadge status={imdbEnabled ? 'On' : 'Off'} variant={imdbEnabled ? 'green' : 'neutral'} />,
-        },
-      ],
-    },
-    {
-      id: 'ai',
-      to: '/settings/ai',
-      label: 'AI & LLM',
-      icon: <SparklesIcon />,
-      badge: (
+  const sectionBadge = (sectionId: string): ReactNode | undefined => {
+    if (sectionId === 'integrations' && !tmdbConfigured) {
+      return <span className="size-2 rounded-full bg-amber-400" title="TMDb API key required" />
+    }
+    if (sectionId === 'ai') {
+      return (
         <span
           className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
             llmActive ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/10 text-white/50'
@@ -266,68 +213,155 @@ export function SettingsLayout({
         >
           {llmActive ? 'On' : 'Off'}
         </span>
-      ),
-      subItems: [
-        {
-          id: 'ai-writing',
-          label: 'AI Writing',
-          href: '/settings/ai#ai-writing',
-          badge: <StatusBadge status={llmActive ? 'On' : 'Off'} variant={llmActive ? 'green' : 'neutral'} />,
-        },
-        { id: 'ai-activity', label: 'AI Activity', href: '/settings/ai#ai-activity' },
-      ],
-    },
-    {
-      id: 'declutter',
-      to: '/settings/declutter',
-      label: 'Declutter',
-      icon: <TrashIcon />,
-    },
-    {
-      id: 'system',
-      to: '/settings/system',
-      label: 'System',
-      icon: <ServerIcon />,
-      subItems: [
-        { id: 'logs', label: 'Server Logs', href: '/settings/system#logs' },
-        { id: 'profiling', label: 'Profiling', href: '/settings/system#profiling' },
-        { id: 'compaction', label: 'Compaction', href: '/settings/system#compaction' },
-        {
-          id: 'mcp',
-          label: 'Debugging (MCP)',
-          href: '/settings/system#mcp',
-          badge: <StatusBadge status={mcpEnabled ? 'On' : 'Off'} variant={mcpEnabled ? 'green' : 'neutral'} />,
-        },
-        { id: 'backups', label: 'Server Backups', href: '/settings/system#backups' },
-      ],
-    },
-  ]
+      )
+    }
+    return undefined
+  }
 
+  const opts = { isAdmin: me.is_admin, isChild: me.is_child }
+
+  const toNavItem = (section: (typeof SETTINGS_SECTIONS)[number]): NavSectionItem => {
+    const subs = visibleSubpages(section, opts)
+    return {
+      id: section.id,
+      sectionPath: `/settings/${section.id}`,
+      to: defaultPathForSection(section, opts),
+      label: section.title,
+      icon: SECTION_ICONS[section.id] ?? <ServerIcon />,
+      badge: sectionBadge(section.id),
+      subItems:
+        subs.length > 0
+          ? subs.map((sub) => ({
+              id: sub.id,
+              label: sub.label,
+              to: `/settings/${section.id}/${sub.id}`,
+              badge: subBadge(section.id, sub.id),
+            }))
+          : undefined,
+    }
+  }
+
+  const personalItems = SETTINGS_SECTIONS.filter((s) => s.group === 'personal').map(toNavItem)
+  const adminItems = SETTINGS_SECTIONS.filter((s) => s.group === 'admin').map(toNavItem)
   const allVisibleItems = me.is_admin ? [...personalItems, ...adminItems] : personalItems
-  const currentActiveItem = allVisibleItems.find((item) => location.pathname.startsWith(item.to))
+
+  const isPathInSection = (sectionPath: string) =>
+    location.pathname === sectionPath || location.pathname.startsWith(`${sectionPath}/`)
+
+  const currentActiveItem = allVisibleItems.find((item) => isPathInSection(item.sectionPath))
+
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+  const searchResults = normalizedQuery
+    ? buildSearchEntries(opts).filter((entry) =>
+        normalizedQuery
+          .split(/\s+/)
+          .every((token) => entry.searchText.includes(token)),
+      )
+    : []
+
+  const jumpTo = (to: string) => {
+    void navigate(to)
+    setSearchQuery('')
+  }
+
+  const searchBox = (
+    <div className="relative">
+      <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-white/40" />
+      <input
+        type="search"
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            setSearchQuery('')
+          } else if (e.key === 'Enter' && searchResults.length > 0) {
+            e.preventDefault()
+            jumpTo(searchResults[0].to)
+          }
+        }}
+        placeholder="Search settings…"
+        aria-label="Search settings"
+        className="w-full rounded-lg border border-white/10 bg-black/30 py-2 pr-8 pl-8 text-xs text-white placeholder-white/40 outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/30"
+      />
+      {searchQuery && (
+        <button
+          type="button"
+          onClick={() => setSearchQuery('')}
+          aria-label="Clear settings search"
+          className="absolute top-1/2 right-2 -translate-y-1/2 rounded px-1 text-xs text-white/45 hover:text-white"
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  )
+
+  const searchResultsList = normalizedQuery ? (
+    <div className="rounded-xl border border-white/10 bg-[#10141d] p-1.5 shadow-lg">
+      {searchResults.length === 0 ? (
+        <p className="px-2.5 py-3 text-xs text-white/50">No matching settings found.</p>
+      ) : (
+        <ul className="max-h-72 space-y-1 overflow-y-auto">
+          {searchResults.map((entry) => {
+            const active = location.pathname === entry.to
+            return (
+              <li key={entry.to}>
+                <button
+                  type="button"
+                  onClick={() => jumpTo(entry.to)}
+                  className={`w-full rounded-lg px-2.5 py-2 text-left transition-colors ${
+                    active
+                      ? 'bg-accent/15 text-accent-strong'
+                      : 'text-white/80 hover:bg-white/5 hover:text-white'
+                  }`}
+                >
+                  <span className="block text-[10px] font-medium uppercase tracking-wider text-white/45">
+                    {entry.sectionTitle}
+                  </span>
+                  <span className="block text-xs font-semibold">{entry.title}</span>
+                  <span className="mt-0.5 block text-[11px] text-white/50 line-clamp-1">
+                    {entry.description}
+                  </span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  ) : null
 
   return (
     <div className="md:flex md:items-start md:gap-8 lg:gap-10">
+      {/* Mobile Search Bar */}
+      <div className="md:hidden mb-3 space-y-2">
+        {searchBox}
+        {searchResultsList}
+      </div>
+
       {/* Mobile horizontal tab rail */}
       <div className="md:hidden -mx-4 mb-4 overflow-x-auto px-4 pb-2 scrollbar-none">
         <SegmentedCapsule role="tablist" aria-label="Settings sections">
-          {allVisibleItems.map((item) => (
-            <NavLink
-              key={item.id}
-              to={item.to}
-              className={({ isActive }) =>
-                segmentedTabClass({
-                  active: isActive,
-                  size: 'xs',
-                  className: 'shrink-0',
-                })
-              }
-            >
-              {item.icon}
-              <span>{item.label}</span>
-              {item.badge}
-            </NavLink>
-          ))}
+          {allVisibleItems.map((item) => {
+            const active = isPathInSection(item.sectionPath)
+            return (
+              <NavLink
+                key={item.id}
+                to={item.to}
+                className={() =>
+                  segmentedTabClass({
+                    active,
+                    size: 'xs',
+                    className: 'shrink-0',
+                  })
+                }
+              >
+                {item.icon}
+                <span>{item.label}</span>
+                {item.badge}
+              </NavLink>
+            )
+          })}
         </SegmentedCapsule>
       </div>
 
@@ -335,138 +369,136 @@ export function SettingsLayout({
       {currentActiveItem?.subItems && (
         <div className="md:hidden -mx-4 -mt-2 mb-6 flex overflow-x-auto border-b border-white/5 px-4 pb-2.5 scrollbar-none gap-2">
           {currentActiveItem.subItems.map((sub) => (
-            <a
+            <NavLink
               key={sub.id}
-              href={sub.href}
-              onClick={(e) => {
-                e.preventDefault()
-                scrollToId(sub.id, currentActiveItem.to)
-              }}
-              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                activeHash === sub.id
-                  ? 'border-accent bg-accent/15 text-accent-strong font-medium'
-                  : 'border-white/10 bg-white/[0.03] text-white/75 hover:border-white/20 hover:text-white'
-              }`}
+              to={sub.to}
+              className={({ isActive }) =>
+                `flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                  isActive
+                    ? 'border-accent bg-accent/15 text-accent-strong font-medium'
+                    : 'border-white/10 bg-white/[0.03] text-white/75 hover:border-white/20 hover:text-white'
+                }`
+              }
             >
               <span>{sub.label}</span>
               {sub.badge}
-            </a>
+            </NavLink>
           ))}
         </div>
       )}
 
-      {/* Desktop Left Sidebar (Radarr style with Submenus) */}
+      {/* Desktop Left Sidebar */}
       <aside className="hidden md:block w-60 shrink-0 lg:w-64">
-        <div className="sticky top-6 space-y-6">
-          <div>
-            <p className="px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">Personal</p>
-            <nav className="space-y-1">
-              {personalItems.map((item) => {
-                const isSectionActive = location.pathname.startsWith(item.to)
-                return (
-                  <div key={item.id}>
-                    <NavLink
-                      to={item.to}
-                      className={({ isActive }) =>
-                        `flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                          isActive
-                            ? 'border-l-2 border-accent bg-accent/15 pl-2.5 text-accent-strong font-semibold'
-                            : 'text-white/70 hover:bg-white/5 hover:text-white'
-                        }`
-                      }
-                    >
-                      <span className="flex min-w-0 items-center gap-2.5">
-                        {item.icon}
-                        <span className="truncate">{item.label}</span>
-                      </span>
-                      {item.badge}
-                    </NavLink>
+        <div className="sticky top-6 space-y-5">
+          {searchBox}
+          {searchResultsList}
 
-                    {/* Sub-menu items: shown when section is active */}
-                    {item.subItems && isSectionActive && (
-                      <div className="ml-5 mt-1 space-y-0.5 border-l border-white/10 pl-2.5">
-                        {item.subItems.map((sub) => (
-                          <a
-                            key={sub.id}
-                            href={sub.href}
-                            onClick={(e) => {
-                              e.preventDefault()
-                              scrollToId(sub.id, item.to)
-                            }}
-                            className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${
-                              activeHash === sub.id
-                                ? 'text-accent font-semibold bg-accent/10'
-                                : 'text-white/60 hover:bg-white/5 hover:text-white'
-                            }`}
-                          >
-                            <span className="truncate">{sub.label}</span>
-                            {sub.badge}
-                          </a>
-                        ))}
+          {!normalizedQuery && (
+            <>
+              <div>
+                <p className="px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">Personal</p>
+                <nav className="space-y-1">
+                  {personalItems.map((item) => {
+                    const isSectionActive = isPathInSection(item.sectionPath)
+                    return (
+                      <div key={item.id}>
+                        <NavLink
+                          to={item.to}
+                          className={() =>
+                            `flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                              isSectionActive
+                                ? 'border-l-2 border-accent bg-accent/15 pl-2.5 text-accent-strong font-semibold'
+                                : 'text-white/70 hover:bg-white/5 hover:text-white'
+                            }`
+                          }
+                        >
+                          <span className="flex min-w-0 items-center gap-2.5">
+                            {item.icon}
+                            <span className="truncate">{item.label}</span>
+                          </span>
+                          {item.badge}
+                        </NavLink>
+
+                        {item.subItems && isSectionActive && (
+                          <div className="ml-5 mt-1 space-y-0.5 border-l border-white/10 pl-2.5">
+                            {item.subItems.map((sub) => (
+                              <NavLink
+                                key={sub.id}
+                                to={sub.to}
+                                className={({ isActive }) =>
+                                  `flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                                    isActive
+                                      ? 'text-accent font-semibold bg-accent/10'
+                                      : 'text-white/60 hover:bg-white/5 hover:text-white'
+                                  }`
+                                }
+                              >
+                                <span className="truncate">{sub.label}</span>
+                                {sub.badge}
+                              </NavLink>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                )
-              })}
-            </nav>
-          </div>
+                    )
+                  })}
+                </nav>
+              </div>
 
-          {me.is_admin && (
-            <div className="border-t border-white/10 pt-4">
-              <p className="px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">Server Admin</p>
-              <nav className="space-y-1">
-                {adminItems.map((item) => {
-                  const isSectionActive = location.pathname.startsWith(item.to)
-                  // For Integrations, show sub-menu items so admin sees connectivity at all times
-                  const showSubItems = item.subItems && (isSectionActive || item.id === 'integrations')
+              {me.is_admin && (
+                <div className="border-t border-white/10 pt-4">
+                  <p className="px-3 mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">Server Admin</p>
+                  <nav className="space-y-1">
+                    {adminItems.map((item) => {
+                      const isSectionActive = isPathInSection(item.sectionPath)
+                      const showSubItems = item.subItems && (isSectionActive || item.id === 'integrations')
 
-                  return (
-                    <div key={item.id}>
-                      <NavLink
-                        to={item.to}
-                        className={({ isActive }) =>
-                          `flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                            isActive
-                              ? 'border-l-2 border-accent bg-accent/15 pl-2.5 text-accent-strong font-semibold'
-                              : 'text-white/70 hover:bg-white/5 hover:text-white'
-                          }`
-                        }
-                      >
-                        <span className="flex min-w-0 items-center gap-2.5">
-                          {item.icon}
-                          <span className="truncate">{item.label}</span>
-                        </span>
-                        {item.badge}
-                      </NavLink>
+                      return (
+                        <div key={item.id}>
+                          <NavLink
+                            to={item.to}
+                            className={() =>
+                              `flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                                isSectionActive
+                                  ? 'border-l-2 border-accent bg-accent/15 pl-2.5 text-accent-strong font-semibold'
+                                  : 'text-white/70 hover:bg-white/5 hover:text-white'
+                              }`
+                            }
+                          >
+                            <span className="flex min-w-0 items-center gap-2.5">
+                              {item.icon}
+                              <span className="truncate">{item.label}</span>
+                            </span>
+                            {item.badge}
+                          </NavLink>
 
-                      {/* Sub-menu items with status badges */}
-                      {showSubItems && item.subItems && (
-                        <div className="ml-5 mt-1 space-y-0.5 border-l border-white/10 pl-2.5">
-                          {item.subItems.map((sub) => (
-                            <a
-                              key={sub.id}
-                              href={sub.href}
-                              onClick={(e) => {
-                                e.preventDefault()
-                                scrollToId(sub.id, item.to)
-                              }}
-                              className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${
-                                isSectionActive && activeHash === sub.id
-                                  ? 'text-accent font-semibold bg-accent/10'
-                                  : 'text-white/60 hover:bg-white/5 hover:text-white'
-                              }`}
-                            >
-                              <span className="truncate">{sub.label}</span>
-                              {sub.badge}
-                            </a>
-                          ))}
+                          {showSubItems && item.subItems && (
+                            <div className="ml-5 mt-1 space-y-0.5 border-l border-white/10 pl-2.5">
+                              {item.subItems.map((sub) => (
+                                <NavLink
+                                  key={sub.id}
+                                  to={sub.to}
+                                  className={({ isActive }) =>
+                                    `flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs transition-colors ${
+                                      isSectionActive && isActive
+                                        ? 'text-accent font-semibold bg-accent/10'
+                                        : 'text-white/60 hover:bg-white/5 hover:text-white'
+                                    }`
+                                  }
+                                >
+                                  <span className="truncate">{sub.label}</span>
+                                  {sub.badge}
+                                </NavLink>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </nav>
-            </div>
+                      )
+                    })}
+                  </nav>
+                </div>
+              )}
+            </>
           )}
         </div>
       </aside>
@@ -474,6 +506,11 @@ export function SettingsLayout({
       {/* Main settings content panel */}
       <div className="min-w-0 flex-1 max-w-4xl">
         <div className="mb-6">
+          {parentTitle && (
+            <p className="mb-1 text-xs font-medium uppercase tracking-wider text-white/45">
+              {parentTitle}
+            </p>
+          )}
           <h1 className="text-2xl font-semibold tracking-tight text-white">{title}</h1>
           {description && <p className="mt-1 text-sm text-white/60">{description}</p>}
         </div>

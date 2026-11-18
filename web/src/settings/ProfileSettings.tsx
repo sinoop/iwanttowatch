@@ -37,39 +37,35 @@ function displayLanguage(code: string): string {
   }
 }
 
-export function ProfileSettings({ me }: { me: Me }) {
-  return (
-    <div className="space-y-6">
-      <div id="languages" className="scroll-mt-6">
-        <LanguagePreferences me={me} />
-      </div>
-      <div id="content-filter" className="scroll-mt-6">
+export function ProfileSettings({
+  me,
+  subsection = 'languages',
+}: {
+  me: Me
+  subsection?: string
+}) {
+  if (subsection === 'default-feed') {
+    return (
+      <div className="space-y-6">
         <DefaultContentFilter me={me} />
-      </div>
-      <div id="recently-added-days" className="scroll-mt-6">
         <RecentlyAddedDays me={me} />
-      </div>
-      <div id="birth-year" className="scroll-mt-6">
-        <BirthYear me={me} />
-      </div>
-      <div id="jellyfin-account" className="scroll-mt-6">
-        <JellyfinAccount />
-      </div>
-      <div id="continue-watching" className="scroll-mt-6">
         <ContinueWatchingPreference me={me} />
       </div>
-      {!me.is_child && (
-        <div id="taste-profile" className="scroll-mt-6">
-          <TastePersonaCard />
-        </div>
-      )}
-      {!me.is_child && (
-        <div id="share-taste" className="scroll-mt-6">
-          <ShareTasteSection />
-        </div>
-      )}
-    </div>
-  )
+    )
+  }
+  if (subsection === 'birth-year') {
+    return <BirthYear me={me} />
+  }
+  if (subsection === 'jellyfin-account') {
+    return <JellyfinAccount />
+  }
+  if (subsection === 'taste-profile' && !me.is_child) {
+    return <TastePersonaCard />
+  }
+  if (subsection === 'share-taste' && !me.is_child) {
+    return <ShareTasteSection />
+  }
+  return <LanguagePreferences me={me} />
 }
 
 function LanguagePreferences({ me }: { me: Me }) {
@@ -398,6 +394,13 @@ function TastePersonaCard() {
     onSuccess: (data) => queryClient.setQueryData(['persona'], data),
   })
   const p = persona.data
+  if (persona.isPending) {
+    return (
+      <section className="rounded-xl border border-white/10 p-5 text-sm text-white/60">
+        Loading taste profile…
+      </section>
+    )
+  }
   if (!p) return null
   const writing = write.isPending || p.refreshing
   const enough = p.current_ratings >= p.min_ratings

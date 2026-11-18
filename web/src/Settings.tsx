@@ -1,5 +1,5 @@
 import type { Me } from '@iwanttowatch/api-client'
-import { Link, Navigate, useParams } from 'react-router'
+import { Link, Navigate, useLocation, useParams } from 'react-router'
 import { useServerSettings } from './api'
 import { AiSettings } from './settings/AiSettings'
 import { DeclutterSettings } from './settings/DeclutterSettings'
@@ -9,74 +9,78 @@ import { IntegrationsSettings } from './settings/IntegrationsSettings'
 import { ProfileSettings } from './settings/ProfileSettings'
 import { SettingsLayout } from './settings/SettingsLayout'
 import { SystemSettings } from './settings/SystemSettings'
+import {
+  SETTINGS_SECTIONS,
+  defaultPathForSection,
+  resolveLegacyHashPath,
+  visibleSubpages,
+} from './settings/settingsCatalog'
 import { StreamingSettings } from './Streaming'
 
-const VALID_SECTIONS = ['profile', 'imports', 'streaming', 'household', 'integrations', 'ai', 'radar', 'declutter', 'system'] as const
-type ValidSection = (typeof VALID_SECTIONS)[number]
-
-const SECTION_META: Record<Exclude<ValidSection, 'radar'>, { title: string; description: string; adminOnly?: boolean }> = {
-  profile: {
-    title: 'My Profile',
-    description: 'Manage your birth year, linked Jellyfin account, AI taste profile, and sharing.',
-  },
-  imports: {
-    title: 'Import & Export',
-    description: 'Import ratings from IMDb, Letterboxd, or Netflix, or export and restore your account data.',
-  },
-  streaming: {
-    title: 'Streaming Services',
-    description: 'Choose your region and select the streaming providers you have access to.',
-  },
-  household: {
-    title: 'Household',
-    description: 'Manage household member invite links and child profiles.',
-  },
-  integrations: {
-    title: 'Integrations',
-    description: 'Connect metadata providers, media servers, Radarr acquisition, and external rating datasets.',
-    adminOnly: true,
-  },
-  ai: {
-    title: 'AI & LLM',
-    description: 'Configure AI writing providers (Gemini or Ollama), fallback priority, and inspect call logs.',
-    adminOnly: true,
-  },
-  declutter: {
-    title: 'Declutter Assistant',
-    description: 'Taste-driven library pruning: reclaim storage by safely removing disliked, abandoned, redundant, and cold movies.',
-    adminOnly: true,
-  },
-  system: {
-    title: 'System',
-    description: 'Server logs, performance profiling, database compaction, backups, and MCP debugging access.',
-    adminOnly: true,
-  },
-}
-
 export default function Settings({ me }: { me: Me }) {
-  const { section = 'profile' } = useParams<{ section?: string }>()
+  const { section = 'profile', subsection } = useParams<{
+    section?: string
+    subsection?: string
+  }>()
+  const location = useLocation()
   const settings = useServerSettings()
 
-  if (!VALID_SECTIONS.includes(section as ValidSection)) {
-    return <Navigate to="/settings/profile" replace />
-  }
-
   if (section === 'radar') {
-    return <Navigate to={me.is_admin ? '/settings/integrations#radarr' : '/settings/profile'} replace />
+    return (
+      <Navigate
+        to={me.is_admin ? '/settings/integrations/radarr' : '/settings/profile/languages'}
+        replace
+      />
+    )
   }
 
-  const currentSection = section as Exclude<ValidSection, 'radar'>
-  const meta = SECTION_META[currentSection]
-
-  if (meta.adminOnly && !me.is_admin) {
-    return <Navigate to="/settings/profile" replace />
+  const sectionMeta = SETTINGS_SECTIONS.find((s) => s.id === section)
+  if (!sectionMeta) {
+    return <Navigate to="/settings/profile/languages" replace />
   }
+
+  if (sectionMeta.adminOnly && !me.is_admin) {
+    return <Navigate to="/settings/profile/languages" replace />
+  }
+
+  const opts = { isAdmin: me.is_admin, isChild: me.is_child }
+
+  if (location.hash) {
+    const legacyTarget = resolveLegacyHashPath(sectionMeta.id, location.hash)
+    if (legacyTarget) {
+      return <Navigate to={legacyTarget} replace />
+    }
+  }
+
+  const subs = visibleSubpages(sectionMeta, opts)
+  const activeSub = subsection ? subs.find((s) => s.id === subsection) : undefined
+
+  if (subs.length > 0 && !activeSub) {
+    return <Navigate to={defaultPathForSection(sectionMeta, opts)} replace />
+  }
+
+  if (subs.length === 0 && subsection) {
+    return <Navigate to={`/settings/${sectionMeta.id}`} replace />
+  }
+
+  const pageTitle = activeSub ? activeSub.label : sectionMeta.title
+  const pageParent = activeSub ? sectionMeta.title : undefined
+  const pageDescription = activeSub ? activeSub.description : sectionMeta.description
 
   return (
-    <SettingsLayout me={me} title={meta.title} description={meta.description}>
-      {currentSection === 'profile' && <ProfileSettings me={me} />}
-      {currentSection === 'imports' && <ImportExportSettings />}
-      {currentSection === 'streaming' && (
+    <SettingsLayout
+      me={me}
+      parentTitle={pageParent}
+      title={pageTitle}
+      description={pageDescription}
+    >
+      {sectionMeta.id === 'profile' && (
+        <ProfileSettings me={me} subsection={activeSub?.id} />
+      )}
+      {sectionMeta.id === 'imports' && (
+        <ImportExportSettings subsection={activeSub?.id} />
+      )}
+      {sectionMeta.id === 'streaming' && (
         <>
           {settings.data?.tmdb_configured ? (
             <div className="-mt-6">
@@ -87,7 +91,10 @@ export default function Settings({ me }: { me: Me }) {
               <p>Streaming availability requires a connected TMDb API key.</p>
               {me.is_admin && (
                 <p className="mt-2">
-                  <Link to="/settings/integrations" className="text-accent underline-offset-2 hover:underline">
+                  <Link
+                    to="/settings/integrations/tmdb"
+                    className="text-accent underline-offset-2 hover:underline"
+                  >
                     Connect TMDb in Integrations →
                   </Link>
                 </p>
@@ -96,13 +103,23 @@ export default function Settings({ me }: { me: Me }) {
           )}
         </>
       )}
-      {currentSection === 'household' && <HouseholdSettings me={me} />}
-      {currentSection === 'integrations' && settings.data && (
-        <IntegrationsSettings me={me} settings={settings.data} />
+      {sectionMeta.id === 'household' && (
+        <HouseholdSettings me={me} subsection={activeSub?.id} />
       )}
-      {currentSection === 'ai' && settings.data && <AiSettings me={me} settings={settings.data} />}
-      {currentSection === 'declutter' && <DeclutterSettings />}
-      {currentSection === 'system' && settings.data && <SystemSettings settings={settings.data} />}
+      {sectionMeta.id === 'integrations' && settings.data && (
+        <IntegrationsSettings
+          me={me}
+          settings={settings.data}
+          subsection={activeSub?.id}
+        />
+      )}
+      {sectionMeta.id === 'ai' && settings.data && (
+        <AiSettings me={me} settings={settings.data} subsection={activeSub?.id} />
+      )}
+      {sectionMeta.id === 'declutter' && <DeclutterSettings />}
+      {sectionMeta.id === 'system' && settings.data && (
+        <SystemSettings settings={settings.data} subsection={activeSub?.id} />
+      )}
     </SettingsLayout>
   )
 }
