@@ -7,6 +7,7 @@ switched off. Every call is logged, with its prompt and reply, so an admin can
 see in Settings how often it's called and what it was sent.
 """
 
+import json
 import logging
 import time
 from datetime import timedelta
@@ -26,6 +27,8 @@ log = logging.getLogger(__name__)
 ORDER_SETTING = "llm_order"
 OLLAMA_URL_SETTING = "ollama_url"
 OLLAMA_MODEL_SETTING = "ollama_model"
+OLLAMA_WEB_SEARCH_KEY_SETTING = "ollama_web_search_api_key"
+OLLAMA_SEARXNG_URL_SETTING = "ollama_searxng_url"
 GEMINI_KEY_SETTING = "gemini_api_key"
 GEMINI_MODEL_SETTING = "gemini_model"
 OPENAI_URL_SETTING = "openai_base_url"
@@ -33,6 +36,32 @@ OPENAI_KEY_SETTING = "openai_api_key"
 OPENAI_MODEL_SETTING = "openai_model"
 CLAUDE_KEY_SETTING = "claude_api_key"
 CLAUDE_MODEL_SETTING = "claude_model"
+
+OLLAMA_WEB_SEARCH_URL = "https://ollama.com/api/web_search"
+SEARCH_TIMEOUT_SECONDS = 15
+MAX_TOOL_ROUNDS = 3
+MAX_SEARCH_RESULTS = 5
+
+WEB_SEARCH_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": (
+            "Search the web for current information about films, releases, cast, crew, "
+            "reviews, or facts not present in the prompt."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query string.",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
 
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 # An alias Google moves to its current Flash model, so the default survives renames.
@@ -66,22 +95,150 @@ class LlmProvider(Protocol):
 
 
 class OllamaProvider:
-    def __init__(self, base_url: str, model: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        *,
+        web_search_api_key: str | None = None,
+        searxng_url: str | None = None,
+    ) -> None:
         self._http = httpx.Client(base_url=base_url.rstrip("/"), timeout=TIMEOUT_SECONDS)
         self._model = model
+        self._web_search_api_key = (web_search_api_key or "").strip() or None
+        self._searxng_url = (searxng_url or "").strip().rstrip("/") or None
 
-    def generate(self, system: str, prompt: str, *, json_reply: bool = False) -> str:
+    @property
+    def _has_web_search(self) -> bool:
+        return bool(self._web_search_api_key or self._searxng_url)
+
+    def _search_searxng(self, query: str) -> list[dict[str, str]]:
+        assert self._searxng_url is not None
+        response = httpx.get(
+            f"{self._searxng_url}/search",
+            params={"q": query, "format": "json"},
+            timeout=SEARCH_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        raw = response.json().get("results") or []
+        return [
+            {
+                "title": str(item.get("title") or ""),
+                "url": str(item.get("url") or ""),
+                "content": str(item.get("content") or ""),
+            }
+            for item in raw[:MAX_SEARCH_RESULTS]
+            if isinstance(item, dict)
+        ]
+
+    def _search_ollama_api(self, query: str) -> list[dict[str, str]]:
+        assert self._web_search_api_key is not None
+        response = httpx.post(
+            OLLAMA_WEB_SEARCH_URL,
+            headers={"Authorization": f"Bearer {self._web_search_api_key}"},
+            json={"query": query, "max_results": MAX_SEARCH_RESULTS},
+            timeout=SEARCH_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        raw = response.json().get("results") or []
+        return [
+            {
+                "title": str(item.get("title") or ""),
+                "url": str(item.get("url") or ""),
+                "content": str(item.get("content") or ""),
+            }
+            for item in raw[:MAX_SEARCH_RESULTS]
+            if isinstance(item, dict)
+        ]
+
+    def _run_web_search(self, query: str) -> str:
+        results: list[dict[str, str]] | None = None
+        last_error: Exception | None = None
+        if self._searxng_url:
+            try:
+                results = self._search_searxng(query)
+            except (httpx.HTTPError, ValueError) as err:
+                last_error = err
+                log.warning("SearXNG search failed for %r: %s", query, err)
+        if results is None and self._web_search_api_key:
+            try:
+                results = self._search_ollama_api(query)
+            except (httpx.HTTPError, ValueError) as err:
+                last_error = err
+                log.warning("Ollama web search failed for %r: %s", query, err)
+        if results is None:
+            return json.dumps({"error": str(last_error or "Search unavailable"), "results": []})
+        log.info("Ollama web_search query=%r (%d results)", query, len(results))
+        return json.dumps({"results": results})
+
+    def _chat(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        json_reply: bool = False,
+        with_tools: bool = False,
+    ) -> dict[str, Any]:
         body: dict[str, Any] = {
             "model": self._model,
             "stream": False,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
+            "messages": messages,
         }
-        if json_reply:
+        if with_tools:
+            body["tools"] = [WEB_SEARCH_TOOL]
+        elif json_reply:
             body["format"] = "json"
-        data = _post(self._http, "/api/chat", body, "Ollama")
+        return _post(self._http, "/api/chat", body, "Ollama")
+
+    def generate(self, system: str, prompt: str, *, json_reply: bool = False) -> str:
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ]
+        if self._has_web_search:
+            for _ in range(MAX_TOOL_ROUNDS):
+                try:
+                    data = self._chat(messages, with_tools=True)
+                except LlmError as err:
+                    if "does not support tools" in str(err).lower():
+                        break
+                    raise
+                message = data.get("message") or {}
+                tool_calls = message.get("tool_calls") or []
+                if not tool_calls:
+                    content = str(message.get("content", "")).strip()
+                    if not json_reply:
+                        return content
+                    if content:
+                        try:
+                            json.loads(content)
+                            return content
+                        except ValueError:
+                            pass
+                    break
+                messages.append(message)
+                for call in tool_calls:
+                    fn = (call.get("function") or {}) if isinstance(call, dict) else {}
+                    fn_name = fn.get("name")
+                    raw_args = fn.get("arguments") or {}
+                    if isinstance(raw_args, str):
+                        try:
+                            args = json.loads(raw_args)
+                        except ValueError:
+                            args = {}
+                    elif isinstance(raw_args, dict):
+                        args = raw_args
+                    else:
+                        args = {}
+                    if fn_name == "web_search":
+                        query = str(args.get("query", "")).strip()
+                        output = (
+                            self._run_web_search(query) if query else json.dumps({"results": []})
+                        )
+                    else:
+                        output = json.dumps({"error": f"Unknown tool: {fn_name}"})
+                    messages.append({"role": "tool", "content": output})
+
+        data = self._chat(messages, json_reply=json_reply, with_tools=False)
         return str(data.get("message", {}).get("content", "")).strip()
 
 
@@ -251,10 +408,17 @@ def make_provider(
     openai_url: str | None = None,
     openai_api_key: str | None = None,
     claude_api_key: str | None = None,
+    ollama_web_search_api_key: str | None = None,
+    ollama_searxng_url: str | None = None,
 ) -> LlmProvider:
     inner: LlmProvider
     if provider == "ollama" and ollama_url:
-        inner = OllamaProvider(ollama_url, model)
+        inner = OllamaProvider(
+            ollama_url,
+            model,
+            web_search_api_key=ollama_web_search_api_key,
+            searxng_url=ollama_searxng_url,
+        )
     elif provider == "gemini" and gemini_api_key:
         inner = GeminiProvider(gemini_api_key, model)
     elif provider == "openai" and (openai_api_key or openai_url):
@@ -316,6 +480,8 @@ def provider_from_settings(
             openai_url=get_setting(session, OPENAI_URL_SETTING),
             openai_api_key=get_setting(session, OPENAI_KEY_SETTING),
             claude_api_key=get_setting(session, CLAUDE_KEY_SETTING),
+            ollama_web_search_api_key=get_setting(session, OLLAMA_WEB_SEARCH_KEY_SETTING),
+            ollama_searxng_url=get_setting(session, OLLAMA_SEARXNG_URL_SETTING),
         )
         for name in llm_order(session)
     ]

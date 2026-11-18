@@ -61,6 +61,9 @@ function LlmSection({ me, settings }: { me: Me; settings: ServerSettings }) {
     (['gemini', 'ollama', 'openai', 'claude'] as const).find((p) => !llm.order.includes(p)) ?? llm.order[0],
   )
   const [ollamaUrl, setOllamaUrl] = useState(llm.ollama_url ?? '')
+  const [ollamaSearchKey, setOllamaSearchKey] = useState('')
+  const [clearOllamaSearchKey, setClearOllamaSearchKey] = useState(false)
+  const [ollamaSearxngUrl, setOllamaSearxngUrl] = useState(llm.ollama_searxng_url ?? '')
   const [openaiUrl, setOpenaiUrl] = useState(llm.openai_base_url ?? llm.default_openai_url)
   const [model, setModel] = useState(modelOf(provider))
   const [geminiKey, setGeminiKey] = useState('')
@@ -77,6 +80,9 @@ function LlmSection({ me, settings }: { me: Me; settings: ServerSettings }) {
           provider,
           model: model || null,
           ollama_url: provider === 'ollama' ? ollamaUrl : null,
+          ollama_web_search_api_key: provider === 'ollama' ? ollamaSearchKey || null : null,
+          clear_ollama_web_search_api_key: provider === 'ollama' ? clearOllamaSearchKey : false,
+          ollama_searxng_url: provider === 'ollama' ? ollamaSearxngUrl : null,
           gemini_api_key: provider === 'gemini' ? geminiKey || null : null,
           openai_base_url: provider === 'openai' ? openaiUrl || null : null,
           openai_api_key: provider === 'openai' ? openaiKey || null : null,
@@ -88,6 +94,8 @@ function LlmSection({ me, settings }: { me: Me; settings: ServerSettings }) {
     },
     onSuccess: (data) => {
       saved(data)
+      setOllamaSearchKey('')
+      setClearOllamaSearchKey(false)
       setGeminiKey('')
       setOpenaiKey('')
       setClaudeKey('')
@@ -143,6 +151,11 @@ function LlmSection({ me, settings }: { me: Me; settings: ServerSettings }) {
                     <span className="w-8 text-xs text-white/45">{ORDINALS[n]}</span>
                     <span className="flex-1 text-white">
                       {PROVIDER_LABELS[p]} <span className="text-white/45">· {modelOf(p) || defaultModelOf(p)}</span>
+                      {p === 'ollama' && (llm.ollama_searxng_url || llm.ollama_web_search_configured) && (
+                        <span className="ml-2 rounded bg-emerald-500/15 px-1.5 py-0.5 text-xs text-emerald-300">
+                          web search
+                        </span>
+                      )}
                     </span>
                     {llm.order.length > 1 && n > 0 && (
                       <button
@@ -223,7 +236,8 @@ function LlmSection({ me, settings }: { me: Me; settings: ServerSettings }) {
                   <a className="text-accent underline-offset-2 hover:underline" href="https://ollama.com" target="_blank" rel="noreferrer">
                     Ollama
                   </a>{' '}
-                  and pull a model first, for example <code className="text-white/80">ollama pull llama3.2:3b</code>.
+                  and pull a model first, for example <code className="text-white/80">ollama pull llama3.2:3b</code> or{' '}
+                  <code className="text-white/80">ollama pull gemma4</code>.
                 </p>
                 <Field
                   label="Ollama URL"
@@ -234,11 +248,41 @@ function LlmSection({ me, settings }: { me: Me; settings: ServerSettings }) {
                 />
                 <Field
                   label="Model"
-                  placeholder="llama3.2:3b"
+                  placeholder="gemma4"
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                   required
                 />
+                <Field
+                  label="SearXNG URL (optional web search)"
+                  placeholder="http://192.168.1.10:8080"
+                  hint="Self-hosted SearXNG instance with JSON format enabled. Used first when a tool-calling model (such as gemma4) searches the web."
+                  value={ollamaSearxngUrl}
+                  onChange={(e) => setOllamaSearxngUrl(e.target.value)}
+                />
+                <Field
+                  label="Ollama Web Search API key (optional)"
+                  type="password"
+                  autoComplete="off"
+                  placeholder={llm.ollama_web_search_configured ? 'Saved; leave blank to keep it' : ''}
+                  hint="Free API key from ollama.com/settings/keys for https://ollama.com/api/web_search. Used when SearXNG is not set or unreachable."
+                  value={ollamaSearchKey}
+                  onChange={(e) => {
+                    setOllamaSearchKey(e.target.value)
+                    if (e.target.value) setClearOllamaSearchKey(false)
+                  }}
+                />
+                {llm.ollama_web_search_configured && !ollamaSearchKey && (
+                  <label className="flex items-center gap-2 text-xs text-white/65">
+                    <input
+                      type="checkbox"
+                      checked={clearOllamaSearchKey}
+                      onChange={(e) => setClearOllamaSearchKey(e.target.checked)}
+                      className="rounded border-white/20 bg-black/30"
+                    />
+                    Remove saved Ollama Web Search API key on save
+                  </label>
+                )}
               </>
             )}
             {provider === 'gemini' && (

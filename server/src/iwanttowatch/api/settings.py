@@ -39,7 +39,9 @@ from iwanttowatch.llm import (
     GEMINI_KEY_SETTING,
     GEMINI_MODEL_SETTING,
     OLLAMA_MODEL_SETTING,
+    OLLAMA_SEARXNG_URL_SETTING,
     OLLAMA_URL_SETTING,
+    OLLAMA_WEB_SEARCH_KEY_SETTING,
     OPENAI_KEY_SETTING,
     OPENAI_MODEL_SETTING,
     OPENAI_URL_SETTING,
@@ -68,6 +70,8 @@ class LlmSettings(BaseModel):
     order: list[ProviderName]
     ollama_url: str | None
     ollama_model: str | None
+    ollama_web_search_configured: bool = False
+    ollama_searxng_url: str | None = None
     gemini_configured: bool
     gemini_model: str | None
     default_gemini_model: str = DEFAULT_GEMINI_MODEL
@@ -206,6 +210,9 @@ class LlmUpdate(BaseModel):
     provider: ProviderName
     model: str | None = Field(default=None, max_length=200)
     ollama_url: str | None = Field(default=None, max_length=500)
+    ollama_web_search_api_key: str | None = Field(default=None, max_length=500)
+    clear_ollama_web_search_api_key: bool = False
+    ollama_searxng_url: str | None = Field(default=None, max_length=500)
     # Omit to keep the stored key.
     gemini_api_key: str | None = Field(default=None, max_length=500)
     openai_base_url: str | None = Field(default=None, max_length=500)
@@ -334,6 +341,9 @@ def _settings_out(session: Session, is_admin: bool) -> ServerSettings:
             order=llm_order(session),
             ollama_url=get_setting(session, OLLAMA_URL_SETTING),
             ollama_model=get_setting(session, OLLAMA_MODEL_SETTING),
+            ollama_web_search_configured=get_setting(session, OLLAMA_WEB_SEARCH_KEY_SETTING)
+            is not None,
+            ollama_searxng_url=get_setting(session, OLLAMA_SEARXNG_URL_SETTING),
             gemini_configured=get_setting(session, GEMINI_KEY_SETTING) is not None,
             gemini_model=get_setting(session, GEMINI_MODEL_SETTING),
             openai_base_url=get_setting(session, OPENAI_URL_SETTING),
@@ -530,6 +540,18 @@ def set_llm(body: LlmUpdate, _admin: AdminUser, session: DbSession) -> ServerSet
     if body.provider == "ollama":
         set_setting(session, OLLAMA_URL_SETTING, ollama_url)
         set_setting(session, OLLAMA_MODEL_SETTING, model)
+        if body.clear_ollama_web_search_api_key:
+            set_setting(session, OLLAMA_WEB_SEARCH_KEY_SETTING, None)
+        elif body.ollama_web_search_api_key and body.ollama_web_search_api_key.strip():
+            set_setting(
+                session, OLLAMA_WEB_SEARCH_KEY_SETTING, body.ollama_web_search_api_key.strip()
+            )
+        if body.ollama_searxng_url is not None:
+            set_setting(
+                session,
+                OLLAMA_SEARXNG_URL_SETTING,
+                body.ollama_searxng_url.strip().rstrip("/") or None,
+            )
     elif body.provider == "gemini":
         set_setting(session, GEMINI_KEY_SETTING, gemini_key)
         set_setting(session, GEMINI_MODEL_SETTING, model)

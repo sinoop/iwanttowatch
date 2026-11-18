@@ -78,6 +78,8 @@ def test_gemini_persona_from_ratings(
         "order": ["gemini"],
         "ollama_url": None,
         "ollama_model": None,
+        "ollama_web_search_configured": False,
+        "ollama_searxng_url": None,
         "gemini_configured": True,
         "gemini_model": "gemini-flash-latest",
         "default_gemini_model": "gemini-flash-latest",

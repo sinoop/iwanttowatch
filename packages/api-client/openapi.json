@@ -9249,6 +9249,22 @@
             ],
             "title": "Ollama Model"
           },
+          "ollama_web_search_configured": {
+            "type": "boolean",
+            "title": "Ollama Web Search Configured",
+            "default": false
+          },
+          "ollama_searxng_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ollama Searxng Url"
+          },
           "gemini_configured": {
             "type": "boolean",
             "title": "Gemini Configured"
@@ -9373,6 +9389,35 @@
               }
             ],
             "title": "Ollama Url"
+          },
+          "ollama_web_search_api_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ollama Web Search Api Key"
+          },
+          "clear_ollama_web_search_api_key": {
+            "type": "boolean",
+            "title": "Clear Ollama Web Search Api Key",
+            "default": false
+          },
+          "ollama_searxng_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ollama Searxng Url"
           },
           "gemini_api_key": {
             "anyOf": [

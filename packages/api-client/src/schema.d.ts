@@ -3230,6 +3230,13 @@ export interface components {
             ollama_url: string | null;
             /** Ollama Model */
             ollama_model: string | null;
+            /**
+             * Ollama Web Search Configured
+             * @default false
+             */
+            ollama_web_search_configured: boolean;
+            /** Ollama Searxng Url */
+            ollama_searxng_url?: string | null;
             /** Gemini Configured */
             gemini_configured: boolean;
             /** Gemini Model */
@@ -3282,6 +3289,15 @@ export interface components {
             model?: string | null;
             /** Ollama Url */
             ollama_url?: string | null;
+            /** Ollama Web Search Api Key */
+            ollama_web_search_api_key?: string | null;
+            /**
+             * Clear Ollama Web Search Api Key
+             * @default false
+             */
+            clear_ollama_web_search_api_key: boolean;
+            /** Ollama Searxng Url */
+            ollama_searxng_url?: string | null;
             /** Gemini Api Key */
             gemini_api_key?: string | null;
             /** Openai Base Url */
