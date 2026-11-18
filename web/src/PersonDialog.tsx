@@ -169,6 +169,7 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
   const [tab, setTab] = useState<'available' | 'all'>('available')
   const [roleFilter, setRoleFilter] = useState<'all' | 'directed' | 'acted'>('all')
   const [sortBy, setSortBy] = useState<'popular' | 'newest' | 'rating'>('popular')
+  const [filmSearch, setFilmSearch] = useState('')
   const [bioExpanded, setBioExpanded] = useState(false)
 
   if (personId !== prevPersonId) {
@@ -176,6 +177,7 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
     setTab('available')
     setRoleFilter('all')
     setSortBy('popular')
+    setFilmSearch('')
     setBioExpanded(false)
   }
 
@@ -201,13 +203,29 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
   const availableFilms = allFilms.filter(
     (f) => f.in_library || (f.streaming_offers?.length ?? f.streaming_services?.length ?? 0) > 0,
   )
-  const tabFilms = tab === 'available' ? availableFilms : allFilms
-  const baseFilms =
+  const filterByRole = (films: PersonCredit[]) =>
     !isDualRole || roleFilter === 'all'
-      ? tabFilms
-      : tabFilms.filter((f) =>
+      ? films
+      : films.filter((f) =>
           roleFilter === 'directed' ? f.job === 'Director' : Boolean(f.character) || !f.job,
         )
+
+  const tabFilms = tab === 'available' ? availableFilms : allFilms
+  const roleFilteredFilms = filterByRole(tabFilms)
+
+  const normalizedQuery = filmSearch.trim().toLowerCase()
+  const isSearching = normalizedQuery.length > 0
+  const matchesFilmQuery = (f: PersonCredit) => {
+    if (!isSearching) return true
+    return (
+      f.title.toLowerCase().includes(normalizedQuery) ||
+      f.original_title.toLowerCase().includes(normalizedQuery) ||
+      (f.character?.toLowerCase().includes(normalizedQuery) ?? false) ||
+      (f.year !== null && f.year !== undefined && String(f.year).includes(normalizedQuery))
+    )
+  }
+
+  const baseFilms = isSearching ? roleFilteredFilms.filter(matchesFilmQuery) : roleFilteredFilms
   const displayedFilms =
     sortBy === 'popular'
       ? baseFilms
@@ -219,17 +237,20 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
         })
 
   const hasAudienceVotes = (f: PersonCredit) => (f.vote_count ?? 0) > 0 || (f.imdb_votes ?? 0) > 0
-  const canHighlightPopular = tab === 'all' && baseFilms.length >= 5
-  const maxPopular = Math.min(5, Math.floor(baseFilms.length / 2))
+  const canHighlightPopular = tab === 'all' && roleFilteredFilms.length >= 5
+  const maxPopular = Math.min(5, Math.floor(roleFilteredFilms.length / 2))
   const popularFilms = canHighlightPopular
-    ? baseFilms.filter(hasAudienceVotes).slice(0, maxPopular)
+    ? roleFilteredFilms.filter(hasAudienceVotes).slice(0, maxPopular)
     : []
   const popularIds = new Set(popularFilms.map((f) => f.tmdb_id))
   const otherFilms = canHighlightPopular
-    ? baseFilms.filter((f) => !popularIds.has(f.tmdb_id))
-    : baseFilms
-  const showPopularSection = canHighlightPopular && popularFilms.length > 0 && otherFilms.length > 0
+    ? roleFilteredFilms.filter((f) => !popularIds.has(f.tmdb_id))
+    : roleFilteredFilms
+  const hasPopularHighlights = canHighlightPopular && popularFilms.length > 0 && otherFilms.length > 0
+  const showPopularSection = !isSearching && hasPopularHighlights
   const popularHasImdb = popularFilms.some((f) => (f.imdb_votes ?? 0) > 0)
+  const allSearchMatchesCount =
+    isSearching && tab === 'available' ? filterByRole(allFilms).filter(matchesFilmQuery).length : 0
 
   const prefetchFilm = (tmdbId: number) => {
     void queryClient.prefetchQuery({
@@ -419,7 +440,7 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
 
           {/* Filmography Section with Tabs */}
           <div className="mt-6">
-            <div className="flex items-center justify-between pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5">
               <SegmentedCapsule role="tablist" aria-label="Filmography tabs">
                 <button
                   type="button"
@@ -478,9 +499,79 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
               </div>
             </div>
 
+            {allFilms.length > 0 && (
+              <div className="relative mb-2">
+                <svg
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-white/35"
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                <input
+                  type="text"
+                  value={filmSearch}
+                  onChange={(e) => setFilmSearch(e.target.value)}
+                  placeholder={`Search ${person.name}’s films by title, role, or year…`}
+                  aria-label="Search films under this person"
+                  className="w-full rounded-xl border border-white/10 bg-black/35 py-2 pl-9 pr-20 text-xs text-white outline-none transition-colors placeholder:text-white/35 focus:border-accent focus:ring-2 focus:ring-accent/25"
+                />
+                {isSearching && (
+                  <div className="absolute right-2.5 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
+                    <span className="text-[11px] text-white/45 tabular-nums">
+                      {displayedFilms.length}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setFilmSearch('')}
+                      className="rounded p-0.5 text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+                      aria-label="Clear film search"
+                      title="Clear search"
+                    >
+                      <svg viewBox="0 0 20 20" fill="currentColor" className="size-3.5">
+                        <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {displayedFilms.length === 0 ? (
               <div className="py-12 text-center text-xs text-white/40">
-                {tab === 'available' ? (
+                {isSearching ? (
+                  <div className="space-y-2">
+                    <p>
+                      {tab === 'available'
+                        ? `No available films matching “${filmSearch.trim()}”.`
+                        : `No films matching “${filmSearch.trim()}”.`}
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-3">
+                      {tab === 'available' && allSearchMatchesCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setTab('all')}
+                          className="font-medium text-accent hover:underline"
+                        >
+                          Show {allSearchMatchesCount}{' '}
+                          {allSearchMatchesCount === 1 ? 'match' : 'matches'} in All filmography →
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setFilmSearch('')}
+                        className="font-medium text-white/70 hover:text-white hover:underline"
+                      >
+                        Clear search
+                      </button>
+                    </div>
+                  </div>
+                ) : tab === 'available' ? (
                   <div>
                     <p>No films currently found in your Jellyfin library or subscribed streaming services.</p>
                     <button
@@ -566,7 +657,7 @@ export default function PersonDialog({ personId, onClose, onSelectFilm }: Person
                   <FilmCreditRow
                     key={film.tmdb_id}
                     film={film}
-                    highlight={showPopularSection && popularIds.has(film.tmdb_id) ? 'inline' : undefined}
+                    highlight={hasPopularHighlights && popularIds.has(film.tmdb_id) ? 'inline' : undefined}
                     onPrefetchSchedule={schedulePrefetch}
                     onPrefetchCancel={cancelPrefetch}
                     onPrefetchImmediate={prefetchFilm}
