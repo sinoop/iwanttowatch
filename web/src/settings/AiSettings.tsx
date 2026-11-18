@@ -122,6 +122,11 @@ function LlmSection({ me, settings }: { me: Me; settings: ServerSettings }) {
     save.reset()
   }
   const inUse = llm.order.includes(provider)
+  const savedOpenaiUrl = (llm.openai_base_url ?? llm.default_openai_url).trim().replace(/\/+$/, '')
+  const currentOpenaiUrl = openaiUrl.trim().replace(/\/+$/, '')
+  const isOpenRouter = currentOpenaiUrl.toLowerCase().includes('openrouter.ai')
+  const openaiKeySavedForUrl = llm.openai_configured && currentOpenaiUrl === savedOpenaiUrl
+  const openaiDefaultModel = isOpenRouter ? 'openrouter/free' : llm.default_openai_model
 
   return (
     <section className="rounded-xl border border-white/10 p-5">
@@ -327,15 +332,20 @@ function LlmSection({ me, settings }: { me: Me; settings: ServerSettings }) {
                   label="API key"
                   type="password"
                   autoComplete="off"
-                  placeholder={llm.openai_configured ? 'Saved; leave blank to keep it' : ''}
+                  placeholder={openaiKeySavedForUrl ? 'Saved; leave blank to keep it' : isOpenRouter ? 'sk-or-v1-…' : ''}
+                  hint={isOpenRouter ? 'Create a key (starts with sk-or-) at openrouter.ai/settings/keys.' : undefined}
                   value={openaiKey}
                   onChange={(e) => setOpenaiKey(e.target.value)}
-                  required={!llm.openai_configured}
+                  required={!openaiKeySavedForUrl}
                 />
                 <Field
                   label="Model"
-                  placeholder={llm.default_openai_model}
-                  hint={`Leave blank to use ${llm.default_openai_model}.`}
+                  placeholder={openaiDefaultModel}
+                  hint={
+                    isOpenRouter
+                      ? 'Leave blank to use openrouter/free, or enter an OpenRouter model ID such as google/gemma-3-27b-it:free or openai/gpt-4o-mini.'
+                      : `Leave blank to use ${llm.default_openai_model}.`
+                  }
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
                 />

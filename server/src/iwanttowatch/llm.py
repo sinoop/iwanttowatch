@@ -68,6 +68,7 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
 DEFAULT_OPENAI_URL = "https://api.openai.com/v1"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_OPENROUTER_MODEL = "openrouter/free"
 CLAUDE_BASE_URL = "https://api.anthropic.com/v1"
 DEFAULT_CLAUDE_MODEL = "claude-3-5-haiku-latest"
 # Small CPU models on a home server can take a while.
@@ -263,14 +264,36 @@ class GeminiProvider:
         return "".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
 
 
+def clean_api_key(api_key: str | None) -> str:
+    """Strip whitespace, surrounding quotes, and any accidental 'Bearer ' prefix."""
+    key = (api_key or "").strip().strip("\"'").strip()
+    while key.lower().startswith("bearer "):
+        key = key[7:].strip().strip("\"'").strip()
+    return key
+
+
+def clean_openai_base_url(base_url: str | None) -> str:
+    """Strip trailing slashes and an accidental '/chat/completions' suffix."""
+    url = (base_url or "").strip().rstrip("/")
+    if url.lower().endswith("/chat/completions"):
+        url = url[: -len("/chat/completions")].rstrip("/")
+    return url
+
+
+def default_openai_model_for(base_url: str | None) -> str:
+    if "openrouter.ai" in (base_url or "").lower():
+        return DEFAULT_OPENROUTER_MODEL
+    return DEFAULT_OPENAI_MODEL
+
+
 class OpenAICompatibleProvider:
     """Any OpenAI-compatible chat completions API (OpenAI, Groq, OpenRouter, Mistral, LM Studio)."""
 
     def __init__(self, api_key: str, model: str, base_url: str = DEFAULT_OPENAI_URL) -> None:
-        headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-        self._http = httpx.Client(
-            base_url=base_url.rstrip("/"), timeout=TIMEOUT_SECONDS, headers=headers
-        )
+        key = clean_api_key(api_key)
+        url = clean_openai_base_url(base_url) or DEFAULT_OPENAI_URL
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        self._http = httpx.Client(base_url=url, timeout=TIMEOUT_SECONDS, headers=headers)
         self._model = model
 
     def generate(self, system: str, prompt: str, *, json_reply: bool = False) -> str:
@@ -283,11 +306,24 @@ class OpenAICompatibleProvider:
         }
         if json_reply:
             body["response_format"] = {"type": "json_object"}
-        data = _post(self._http, "/chat/completions", body, "OpenAI-compatible")
+        try:
+            data = _post(self._http, "/chat/completions", body, "OpenAI-compatible")
+        except LlmError as err:
+            if json_reply and "response_format" in str(err).lower():
+                body.pop("response_format", None)
+                data = _post(self._http, "/chat/completions", body, "OpenAI-compatible")
+            else:
+                raise
         choices = data.get("choices") or []
         if not choices:
             return ""
-        content = choices[0].get("message", {}).get("content", "")
+        message = choices[0].get("message") or {}
+        content = (
+            message.get("content")
+            or message.get("reasoning_content")
+            or message.get("reasoning")
+            or ""
+        )
         return str(content).strip()
 
 
@@ -458,7 +494,9 @@ def model_for(session: Session, name: ProviderName) -> str:
     if name == "ollama":
         return get_setting(session, OLLAMA_MODEL_SETTING) or ""
     if name == "openai":
-        return get_setting(session, OPENAI_MODEL_SETTING) or DEFAULT_OPENAI_MODEL
+        return get_setting(session, OPENAI_MODEL_SETTING) or default_openai_model_for(
+            get_setting(session, OPENAI_URL_SETTING)
+        )
     if name == "claude":
         return get_setting(session, CLAUDE_MODEL_SETTING) or DEFAULT_CLAUDE_MODEL
     return get_setting(session, GEMINI_MODEL_SETTING) or DEFAULT_GEMINI_MODEL

@@ -287,3 +287,72 @@ def test_ollama_web_search_settings_persistence_and_clearing(
     cleared_state = res_clear.json()["llm"]
     assert cleared_state["ollama_web_search_configured"] is False
     assert cleared_state["ollama_searxng_url"] is None
+
+
+def test_openrouter_auth_and_url_normalization(client: TestClient, mock: respx.MockRouter) -> None:
+    mock.post("https://api.groq.com/openai/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "OK"}}]},
+        )
+    )
+    openrouter_route = mock.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": None, "reasoning": "OK"}}]},
+        )
+    )
+
+    # First configure Groq with a gsk- key.
+    res_groq = client.put(
+        "/api/v1/settings/llm",
+        json={
+            "provider": "openai",
+            "openai_base_url": "https://api.groq.com/openai/v1",
+            "openai_api_key": "gsk-test",
+            "model": "llama-3.3-70b-versatile",
+        },
+    )
+    assert res_groq.status_code == 200
+
+    # Switching Base URL to OpenRouter without entering a new key must not reuse the Groq key.
+    res_missing_key = client.put(
+        "/api/v1/settings/llm",
+        json={
+            "provider": "openai",
+            "openai_base_url": "https://openrouter.ai/api/v1",
+            "openai_api_key": None,
+        },
+    )
+    assert res_missing_key.status_code == 400
+    assert "OpenRouter API key" in res_missing_key.json()["detail"]
+
+    # Entering a non-OpenRouter key for OpenRouter returns a clear message.
+    res_wrong_key = client.put(
+        "/api/v1/settings/llm",
+        json={
+            "provider": "openai",
+            "openai_base_url": "https://openrouter.ai/api/v1",
+            "openai_api_key": "gsk-wrong",
+        },
+    )
+    assert res_wrong_key.status_code == 400
+    assert "sk-or-" in res_wrong_key.json()["detail"]
+
+    # Pasting 'Bearer "sk-or-v1-abc"' and a '/chat/completions' URL is normalized cleanly,
+    # and leaving model blank defaults to 'openrouter/free'.
+    res_ok = client.put(
+        "/api/v1/settings/llm",
+        json={
+            "provider": "openai",
+            "openai_base_url": "https://openrouter.ai/api/v1/chat/completions",
+            "openai_api_key": 'Bearer "sk-or-v1-abc"',
+            "model": "",
+        },
+    )
+    assert res_ok.status_code == 200, res_ok.text
+    assert openrouter_route.called
+    assert openrouter_route.calls.last.request.headers["authorization"] == "Bearer sk-or-v1-abc"
+    llm_state = res_ok.json()["llm"]
+    assert llm_state["openai_base_url"] == "https://openrouter.ai/api/v1"
+    assert llm_state["openai_model"] == "openrouter/free"

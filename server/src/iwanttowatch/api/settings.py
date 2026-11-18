@@ -48,6 +48,9 @@ from iwanttowatch.llm import (
     ORDER_SETTING,
     LlmError,
     ProviderName,
+    clean_api_key,
+    clean_openai_base_url,
+    default_openai_model_for,
     llm_order,
     make_provider,
 )
@@ -496,18 +499,26 @@ def remove_llm(provider: ProviderName, _admin: AdminUser, session: DbSession) ->
 def set_llm(body: LlmUpdate, _admin: AdminUser, session: DbSession) -> ServerSettings:
     """Set up an LLM provider after a short test prompt. A new provider is asked after
     the ones already in use."""
-    gemini_key = (body.gemini_api_key or "").strip() or get_setting(session, GEMINI_KEY_SETTING)
-    openai_key = (body.openai_api_key or "").strip() or get_setting(session, OPENAI_KEY_SETTING)
-    openai_url = (
-        (body.openai_base_url or "").strip()
-        or get_setting(session, OPENAI_URL_SETTING)
-        or DEFAULT_OPENAI_URL
+    gemini_key = clean_api_key(body.gemini_api_key) or clean_api_key(
+        get_setting(session, GEMINI_KEY_SETTING)
     )
-    claude_key = (body.claude_api_key or "").strip() or get_setting(session, CLAUDE_KEY_SETTING)
+    stored_openai_url = (
+        clean_openai_base_url(get_setting(session, OPENAI_URL_SETTING)) or DEFAULT_OPENAI_URL
+    )
+    openai_url = clean_openai_base_url(body.openai_base_url) or stored_openai_url
+    provided_openai_key = clean_api_key(body.openai_api_key)
+    openai_key = provided_openai_key or (
+        clean_api_key(get_setting(session, OPENAI_KEY_SETTING))
+        if openai_url == stored_openai_url
+        else ""
+    )
+    claude_key = clean_api_key(body.claude_api_key) or clean_api_key(
+        get_setting(session, CLAUDE_KEY_SETTING)
+    )
     ollama_url = (body.ollama_url or "").strip() or None
     default_model = {
         "gemini": DEFAULT_GEMINI_MODEL,
-        "openai": DEFAULT_OPENAI_MODEL,
+        "openai": default_openai_model_for(openai_url),
         "claude": DEFAULT_CLAUDE_MODEL,
         "ollama": "",
     }[body.provider]
@@ -516,8 +527,25 @@ def set_llm(body: LlmUpdate, _admin: AdminUser, session: DbSession) -> ServerSet
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter the Ollama URL and a model name")
     if body.provider == "gemini" and not gemini_key:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter a Gemini API key")
-    if body.provider == "openai" and not (openai_key or body.openai_base_url):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter an API key or custom base URL")
+    if body.provider == "openai":
+        lower_url = openai_url.lower()
+        if "openrouter.ai" in lower_url:
+            if not openai_key:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "Enter an OpenRouter API key (from openrouter.ai/settings/keys)",
+                )
+            if not openai_key.startswith("sk-or-"):
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "OpenRouter API keys start with 'sk-or-' "
+                    "(create one at openrouter.ai/settings/keys)",
+                )
+        elif any(h in lower_url for h in ("api.openai.com", "api.groq.com", "api.mistral.ai")):
+            if not openai_key:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter an API key")
+        elif not (openai_key or body.openai_base_url):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter an API key or custom base URL")
     if body.provider == "claude" and not claude_key:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter an Anthropic API key")
     try:
